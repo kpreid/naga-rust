@@ -1,0 +1,155 @@
+name: Build & Test
+
+permissions: {}
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - ci
+
+env:
+  CARGO_TERM_COLOR: always
+  # Disable incremental compilation because we aren't caching incremental compilation
+  # artifacts, so they won't be useful for anything (other than maybe the exhaustive
+  # builds with different features).
+  CARGO_INCREMENTAL: 0
+  # Collect backtrace on panic.
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        toolchain: ["stable", "beta", "nightly", "1.85.0"]
+
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.toolchain != 'stable' }}
+
+    steps:
+    - uses: actions/checkout@v4.0.0
+
+    - name: Install Rust toolchain
+      # Install exactly what we need: compiler, Cargo, clippy, rustfmt
+      run: |
+          rustup toolchain install "${{ matrix.toolchain }}" --profile=minimal --component=clippy --component=rustfmt
+          rustup toolchain install nightly --profile=minimal
+          rustup override set "${{ matrix.toolchain }}"
+
+    # Load cache before doing any Rust builds
+    - uses: Swatinem/rust-cache@v2.7.7
+
+    # The repository does not have a versioned Cargo.lock file.
+    # As a substitute, we always test on minimal and maximal versions.
+    - run: cargo +nightly update -Zdirect-minimal-versions
+
+    - run: cargo test --all-features
+
+    - run: cargo update
+
+    - run: cargo test --all-features
+
+  # Run linters.
+  #
+  # This job is separate from the main "test" job so that:
+  # * Lint results are delivered quickly by running them in parallel with other jobs.
+  # * We build with `-Dwarnings` so the failures aren't silent, but don't want this to
+  #   cause *re*building in the main build job and its cache.
+  lint:
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["stable", "beta", "nightly"]
+
+    runs-on: ubuntu-latest
+    continue-on-error: false
+
+    env:
+      RUSTFLAGS: '-Dwarnings'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      run: |
+          rustup toolchain install "${{ matrix.toolchain }}" --profile=minimal --component=clippy
+          rustup override set "${{ matrix.toolchain }}"
+
+    - uses: Swatinem/rust-cache@v2.7.7
+      with:
+        # Job's likely to fail and yet have useful cache material.
+        cache-on-failure: true
+
+    - name: Lint
+      run: |
+        cargo clippy --all-features --timings
+
+    - name: Document
+      run: |
+        cargo rustdoc --all-features -- -Drustdoc::broken_intra_doc_links
+  
+    - name: Save cargo --timings output
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cargo-timings lint ${{ matrix.toolchain }}
+        path: |
+          target/cargo-timings/cargo-timing-*.html
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo fmt --check
+
+  # Run mutation testing against the changed code
+  # Based on example from https://mutants.rs/pr-diff.html
+  incremental-mutants:
+    runs-on: ubuntu-latest
+    # Running on push would require more work to determine the base revision
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Needed to ensure `main` branch is needed
+          fetch-depth: 0
+
+      - uses: Swatinem/rust-cache@v2.7.7
+        with:
+          # Job's likely to fail and yet have useful cache material.
+          cache-on-failure: true
+
+      # Not locked so that we can have a newer `syn` than is in the lockfile, for compatibility
+      # with use<> bounds. Add `--locked` back when there is a new release.
+      - run: cargo install cargo-mutants@24.11.2
+
+      - name: Relative diff
+        run: |
+          git branch -av
+          git diff origin/${{ github.base_ref }}.. | tee git.diff
+      
+      - name: Mutants
+        run: cargo mutants --in-diff git.diff -- --all-features
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: mutants-incremental.out
+          path: mutants.out
+
+  semver:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4.0.0
+
+    - uses: Swatinem/rust-cache@v2.7.7
+
+    - name: Check semver
+      uses: obi1kenobi/cargo-semver-checks-action@v2.6
+      # Use workspace target dir for cargo install's build, so that the build will be cached.
+      env:
+        CARGO_TARGET_DIR: target/
+

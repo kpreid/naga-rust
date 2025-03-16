@@ -1,0 +1,46 @@
+[workspace]
+members = [
+    ".",
+    "compile-tests",
+    "nstd",
+]
+default-members = [
+    ".",
+    "compile-tests",
+    "nstd",
+]
+resolver = "3"
+
+[workspace.package]
+repository = "https://github.com/kpreid/nosy/"
+license = "MIT OR Apache-2.0"
+
+[package]
+name = "naga-rust"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+description = "Backend for the Naga shader translator which generates Rust code."
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+bitflags.workspace = true
+naga.workspace = true
+
+[lints]
+workspace = true
+
+[workspace.dependencies]
+naga-rust = { version = "0.1.0", path = "." }
+nstd = { version = "0.1.0", path = "nstd" }
+
+bitflags = "2.9"
+naga = { version = "24.0.0", default-features = false }
+glam = "0.29"
+
+[workspace.lints]
+

@@ -1,0 +1,22 @@
+[package]
+name = "nstd"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+description = "Support library for shaders compiled to Rust via Naga."
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+# glam is a temporary measure. Eventually, we will want to replace its vector types with
+# potentially ultra-wide vector types for simultaneous SIMD-and-semantic-vector operations.
+glam.workspace = true
+mutants = "0.0.3"
+
+[lints.clippy]
+std_instead_of_alloc = "warn"
+std_instead_of_core = "warn"
+alloc_instead_of_core = "warn"

@@ -1,0 +1,14 @@
+[package]
+name = "compile-tests"
+edition = "2024"
+publish = false
+
+[build-dependencies]
+naga-rust = { path = "../" }
+naga = { workspace = true, features = ["wgsl-in"] }
+
+[dependencies]
+nstd = { workspace = true }
+
+[lints]
+workspace = true
