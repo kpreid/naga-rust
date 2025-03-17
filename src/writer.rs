@@ -413,10 +413,12 @@ impl<W: Write> Writer<W> {
         handle: Handle<naga::Type>,
         members: &[naga::StructMember],
     ) -> BackendResult {
+        // TODO: we will need to do custom dummy fields to ensure that vec3s have correct alignment.
         let visibility = self.visibility();
         write!(
             self.out,
-            "{visibility}struct {}",
+            "#[repr(C)]\n\
+            {visibility}struct {}",
             self.names[&NameKey::Type(handle)]
         )?;
         write!(self.out, " {{")?;
