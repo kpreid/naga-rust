@@ -1,4 +1,5 @@
 use alloc::borrow::Cow;
+use alloc::string::String;
 
 /// Configuration/builder for options for Rust code generation.
 ///
@@ -8,6 +9,7 @@ use alloc::borrow::Cow;
 pub struct Config {
     pub(crate) flags: WriterFlags,
     pub(crate) runtime_path: Cow<'static, str>,
+    pub(crate) global_struct: Option<String>,
 }
 
 impl Default for Config {
@@ -24,6 +26,7 @@ impl Config {
         Self {
             flags: WriterFlags::empty(),
             runtime_path: Cow::Borrowed("::naga_rust_rt"),
+            global_struct: None,
         }
     }
 
@@ -75,6 +78,18 @@ impl Config {
         );
         self.runtime_path = value;
         self
+    }
+
+    /// Allow declarations of global variables, generate a struct with the given `name` to hold
+    /// them, and make all functions methods of that struct.
+    #[must_use]
+    pub fn global_struct(mut self, name: impl Into<String>) -> Self {
+        self.global_struct = Some(name.into());
+        self
+    }
+
+    pub(crate) fn use_global_struct(&self) -> bool {
+        self.global_struct.is_some()
     }
 }
 

@@ -31,12 +31,7 @@ pub fn mix<T>(_v1: T, _v2: T, _a: f32) -> T {
     todo!()
 }
 
-pub use naga_rust_macros::dummy_attribute as addrspace;
-pub use naga_rust_macros::dummy_attribute as binding;
 pub use naga_rust_macros::dummy_attribute as compute;
 pub use naga_rust_macros::dummy_attribute as fragment;
-pub use naga_rust_macros::dummy_attribute as group;
-pub use naga_rust_macros::dummy_attribute as invariant;
-pub use naga_rust_macros::dummy_attribute as interpolate;
 pub use naga_rust_macros::dummy_attribute as vertex;
 pub use naga_rust_macros::dummy_attribute as workgroup_size;

@@ -3,7 +3,7 @@
 //! TODO: Consider whether we want to rewrite some or all of these tests to use
 //! `syn` or another parser to match trees instead of exact text.
 
-use core::error::Error;
+use core::error::Error as ErrorTrait;
 use core::fmt;
 
 use pretty_assertions::assert_eq;
@@ -11,7 +11,7 @@ use pretty_assertions::assert_eq;
 use naga_rust_back::Config;
 
 fn translate_without_header(config: Config, wgsl_source_text: &str) -> String {
-    fn inner(config: Config, wgsl_source_text: &str) -> Result<String, Box<dyn Error>> {
+    fn inner(config: Config, wgsl_source_text: &str) -> Result<String, Box<dyn ErrorTrait>> {
         let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text)?;
 
         let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
@@ -44,7 +44,7 @@ fn translate_without_header(config: Config, wgsl_source_text: &str) -> String {
 }
 
 #[track_caller]
-fn expect_unimplemented(wgsl_source_text: &str) {
+fn expect_error(config: Config, wgsl_source_text: &str) -> naga_rust_back::Error {
     let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text).unwrap();
     let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
@@ -55,11 +55,18 @@ fn expect_unimplemented(wgsl_source_text: &str) {
     .validate(&module)
     .unwrap();
 
-    match naga_rust_back::write_string(&module, &module_info, Config::default()) {
-        Err(naga_rust_back::Error::Unimplemented(_)) => {}
-        Ok(_) => panic!("expectted Error::Unimplemented, but got success"),
-        Err(e) => panic!(
-            "expectted Error::Unimplemented, but got a different error:\n{}",
+    match naga_rust_back::write_string(&module, &module_info, config) {
+        Ok(_) => panic!("expected error, but got success"),
+        Err(e) => e,
+    }
+}
+
+#[track_caller]
+fn expect_unimplemented(wgsl_source_text: &str) {
+    match expect_error(Config::default(), wgsl_source_text) {
+        naga_rust_back::Error::Unimplemented(_) => {}
+        e => panic!(
+            "expected Error::Unimplemented, but got a different error:\n{}",
             ErrorChain(&e)
         ),
     }
@@ -80,9 +87,12 @@ fn visibility_control() {
 }
 
 #[test]
-fn global_variable() {
+fn global_variable_enabled() {
     assert_eq!(
-        translate_without_header(Config::new(), r"var<private> foo: i32 = 1;"),
+        translate_without_header(
+            Config::new().global_struct("Globals"),
+            r"var<private> foo: i32 = 1;"
+        ),
         indoc::indoc! {
             "
             struct Globals {
@@ -93,9 +103,18 @@ fn global_variable() {
                     foo: 1i32,
                 }}
             }
+            impl Globals {
+            }
             "
         }
     );
+}
+#[test]
+fn global_variable_disabled() {
+    assert!(matches!(
+        expect_error(Config::new(), r"var<private> foo: i32 = 1;"),
+        naga_rust_back::Error::GlobalVariablesNotEnabled { example: _, .. }
+    ));
 }
 
 #[test]
@@ -161,7 +180,7 @@ fn array_type_sizes() {
 fn array_length() {
     assert_eq!(
         translate_without_header(
-            Config::new(),
+            Config::new().global_struct("Globals"),
             r"
             @group(0) @binding(1) var<storage> arr: array<u32>;
             fn length() -> u32 {
@@ -169,14 +188,13 @@ fn array_length() {
             }
             ",
         ),
-        // TODO: we don't support bindings properly so lots of this code is nonsense.
+        // TODO: we don't yet fully support bindings properly so lots of this code is nonsense.
         // This test is only intending to check the translation of arrayLength(), which is
         // hard to test separately since it must take a `ptr<storage, array<..>>`.
         indoc::indoc! {
             "
             struct Globals {
-                #[rt::group(0)]
-                #[rt::binding(1)]
+                // group(0) binding(1)
                 arr: [u32],
             }
             impl Default for Globals {
@@ -184,11 +202,13 @@ fn array_length() {
                     arr: Default::default(),
                 }}
             }
+            impl Globals {
             #[allow(unused, clippy::all)]
-            fn length() -> u32 {
-                return (&arr).len();
+            fn length(&self, ) -> u32 {
+                return (&self.arr).len();
             }
 
+            }
             "
         }
     );
@@ -229,7 +249,7 @@ fn unimplemented_break_if() {
 /// We bother to do this for tests because it is way more legible than `unwrap()`'s Debug format.
 /// Note that the same code exists in `naga-rust-macros` for user facing error reporting.
 #[derive(Clone, Copy, Debug)]
-struct ErrorChain<'a>(&'a (dyn Error + 'a));
+struct ErrorChain<'a>(&'a (dyn ErrorTrait + 'a));
 
 impl fmt::Display for ErrorChain<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -237,7 +257,10 @@ impl fmt::Display for ErrorChain<'_> {
     }
 }
 
-fn format_error_chain(fmt: &mut fmt::Formatter<'_>, mut error: &(dyn Error + '_)) -> fmt::Result {
+fn format_error_chain(
+    fmt: &mut fmt::Formatter<'_>,
+    mut error: &(dyn ErrorTrait + '_),
+) -> fmt::Result {
     write!(fmt, "{error}")?;
     while let Some(source) = error.source() {
         error = source;

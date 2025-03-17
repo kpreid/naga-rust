@@ -31,10 +31,6 @@ enum Attribute {
     /// `allow` attribute for ignoring lints that might occur in a generated function body.
     AllowFunctionBody,
 
-    /// Global variable binding. Ignored.
-    Binding(u32),
-    /// Global variable binding group. Ignored.
-    Group(u32),
     /// Entry point function’s stage. Ignored.
     Stage(ShaderStage),
     /// Compute entry point function’s workgroup size. Ignored.
@@ -137,9 +133,7 @@ impl<W: Write> Writer<W> {
     #[expect(clippy::missing_panics_doc, reason = "TODO: unfinished")]
     pub fn write(&mut self, module: &Module, info: &valid::ModuleInfo) -> BackendResult {
         if !module.overrides.is_empty() {
-            return Err(Error::Unimplemented(
-                "pipeline constants".into(),
-            ));
+            return Err(Error::Unimplemented("pipeline constants".into()));
         }
 
         self.reset(module);
@@ -178,13 +172,13 @@ impl<W: Write> Writer<W> {
             }
         }
 
-        if !module.global_variables.is_empty() {
-            writeln!(self.out, "struct Globals {{")?;
-            // TODO: we are going to need to sort out global variables into whether
-            // they are fields or cons
+        if let Some(global_struct) = self.config.global_struct.clone() {
+            writeln!(self.out, "struct {global_struct} {{")?;
             for (handle, global) in module.global_variables.iter() {
                 self.write_global_variable_as_struct_field(module, global, handle)?;
             }
+            // TODO: instead of trying to implement Default, make a constructor function
+            // for all globals that use bindings rather than initializers
             writeln!(
                 self.out,
                 "}}\n\
@@ -195,6 +189,13 @@ impl<W: Write> Writer<W> {
                 self.write_global_variable_as_field_initializer(module, global, handle)?;
             }
             writeln!(self.out, "{INDENT}}}}}\n}}")?;
+
+            // Start the `impl` block of the functions
+            writeln!(self.out, "impl {global_struct} {{")?;
+        } else if let Some((_, example)) = module.global_variables.iter().next() {
+            return Err(Error::GlobalVariablesNotEnabled {
+                example: example.name.clone().unwrap_or_default(),
+            });
         }
 
         // Write all regular functions
@@ -241,6 +242,11 @@ impl<W: Write> Writer<W> {
             }
         }
 
+        if self.config.use_global_struct() {
+            // End the `impl` block
+            writeln!(self.out, "}}")?;
+        }
+
         Ok(())
     }
 
@@ -261,6 +267,16 @@ impl<W: Write> Writer<W> {
         };
         let visibility = self.visibility();
         write!(self.out, "{visibility}fn {func_name}(")?;
+
+        if self.config.use_global_struct() {
+            // TODO: need to figure out whether &mut is needed
+            write!(self.out, "&self, ")?;
+        } else if func_ctx.info.global_variable_count() > 0 {
+            unreachable!(
+                "function has globals but globals are not enabled; \
+            should have been rejected earlier"
+            );
+        }
 
         // Write function arguments
         for (index, arg) in func.arguments.iter().enumerate() {
@@ -365,8 +381,6 @@ impl<W: Write> Writer<W> {
                         size[0], size[1], size[2]
                     )?;
                 }
-                Attribute::Binding(id) => write!(self.out, "{SHADER_LIB}::binding({id})")?,
-                Attribute::Group(id) => write!(self.out, "{SHADER_LIB}::group({id})")?,
             }
             writeln!(self.out, "]")?;
         }
@@ -699,7 +713,7 @@ impl<W: Write> Writer<W> {
             // which means the caller must reference it if desired.
             Ex::LocalVariable(_) => Indirection::Place,
 
-            // The plain form of `GlobalVariable(g)` is simply `g`, which is usually a
+            // The plain form of `GlobalVariable(g)` is `self.g`, which is a
             // Rust place. However, globals in the `Handle` address space are immutable,
             // and `GlobalVariable` expressions for those produce the value directly,
             // not a pointer to it. Therefore, such expressions have `Indirection::Place`.
@@ -1039,7 +1053,7 @@ impl<W: Write> Writer<W> {
             }
             Expression::GlobalVariable(handle) => {
                 let name = &self.names[&NameKey::GlobalVariable(handle)];
-                write!(self.out, "{name}")?;
+                write!(self.out, "self.{name}")?;
             }
 
             Expression::As {
@@ -1326,14 +1340,19 @@ impl<W: Write> Writer<W> {
         handle: Handle<naga::GlobalVariable>,
     ) -> BackendResult {
         // Write group and binding attributes if present
-        if let Some(ref binding) = global.binding {
-            self.write_attributes(
-                back::Level(1),
-                &[
-                    Attribute::Group(binding.group),
-                    Attribute::Binding(binding.binding),
-                ],
-            )?;
+        let &naga::GlobalVariable {
+            name: _,    // renamed instead
+            space: _,   // no address spaces exist
+            binding: _, // don't (yet) expose numeric binding locations
+            ty,
+            init: _, // TODO: need to put initializes in a newp() fn
+        } = global;
+
+        // Note bindings.
+        // These are not emitted as attributes because Rust does not allow macro attributes to be
+        // placed on struct fields.
+        if let Some(naga::ResourceBinding { group, binding }) = global.binding {
+            writeln!(self.out, "{INDENT}// group({group}) binding({binding})")?;
         }
 
         write!(
@@ -1341,7 +1360,7 @@ impl<W: Write> Writer<W> {
             "{INDENT}{}: ",
             &self.names[&NameKey::GlobalVariable(handle)]
         )?;
-        self.write_type(module, global.ty)?;
+        self.write_type(module, ty)?;
         writeln!(self.out, ",")?;
 
         Ok(())

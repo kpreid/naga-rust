@@ -185,3 +185,34 @@ fn function_call() {
 
     assert_eq!(funcs(), 7016);
 }
+
+#[test]
+fn global_uniform_binding() {
+    wgsl!(
+        global_struct = Globals,
+        r"
+        struct Uniforms {
+            @location(0) x: f32,
+            @location(1) y: f32,
+        };
+
+        @group(0) @binding(0) var<uniform> ub: Uniforms;
+
+        fn main() -> vec2<f32> {
+            return vec2(ub.x, ub.y);
+        }
+    "
+    );
+
+    // TODO: impl Default is not the proper path for this -- codegen is unconditionally using
+    // Default for all globals. There should instead be a constructor for the Globals struct
+    // (...or, actually, a version of it which contains only bindings and not workgroup or private
+    // variables).
+    impl Default for Uniforms {
+        fn default() -> Self {
+            Uniforms { x: 1.0, y: 2.0 }
+        }
+    }
+
+    assert_eq!(Globals::default().main(), Vec2::new(1.0, 2.0))
+}

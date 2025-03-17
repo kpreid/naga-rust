@@ -8,14 +8,19 @@ use std::fs;
 use std::path::PathBuf;
 
 use quote::quote;
+use syn::Token;
 
+use naga_rust_back::Config;
 use naga_rust_back::naga;
 
 #[proc_macro]
 pub fn include_wgsl_mr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let path_literal: syn::LitStr = syn::parse_macro_input!(input as syn::LitStr);
+    let ConfigAndStr {
+        config,
+        string: path_literal,
+    } = syn::parse_macro_input!(input as ConfigAndStr);
 
-    match include_wgsl_mr_impl(&path_literal) {
+    match include_wgsl_mr_impl(config, &path_literal) {
         Ok(expansion) => expansion.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -23,9 +28,12 @@ pub fn include_wgsl_mr(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 
 #[proc_macro]
 pub fn wgsl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let source_literal: syn::LitStr = syn::parse_macro_input!(input as syn::LitStr);
+    let ConfigAndStr {
+        config,
+        string: source_literal,
+    } = syn::parse_macro_input!(input as ConfigAndStr);
 
-    match parse_and_translate(source_literal.span(), &source_literal.value()) {
+    match parse_and_translate(config, source_literal.span(), &source_literal.value()) {
         Ok(expansion) => expansion.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -42,7 +50,51 @@ pub fn dummy_attribute(
 
 // -------------------------------------------------------------------------------------------------
 
+struct ConfigAndStr {
+    config: Config,
+    string: syn::LitStr,
+}
+
+impl syn::parse::Parse for ConfigAndStr {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let mut config = macro_default_config();
+        loop {
+            let not_a_string_error = match input.parse::<syn::LitStr>() {
+                Ok(string) => {
+                    return Ok(Self { config, string });
+                }
+                Err(e) => e,
+            };
+
+            let option_name = input.parse::<syn::Ident>().map_err(|mut e| {
+                e.combine(not_a_string_error);
+                e
+            })?;
+            input.parse::<Token![=]>()?;
+            match &*option_name.to_string() {
+                "global_struct" => {
+                    config = config.global_struct(input.parse::<syn::Ident>()?.to_string());
+                }
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        option_name,
+                        "unrecognized configuration option name",
+                    ));
+                }
+            }
+            input.parse::<Token![,]>()?;
+        }
+    }
+}
+
+fn macro_default_config() -> Config {
+    Config::default().runtime_path("::naga_rust::rt")
+}
+
+// -------------------------------------------------------------------------------------------------
+
 fn include_wgsl_mr_impl(
+    config: Config,
     path_literal: &syn::LitStr,
 ) -> Result<proc_macro2::TokenStream, syn::Error> {
     // We use manifest-relative paths because currently, there is no way to arrange for
@@ -70,7 +122,7 @@ fn include_wgsl_mr_impl(
         )
     })?;
 
-    let translated_tokens = parse_and_translate(path_literal.span(), &wgsl_source_text)?;
+    let translated_tokens = parse_and_translate(config, path_literal.span(), &wgsl_source_text)?;
 
     Ok(quote! {
         // Dummy include_str! call tells the compiler that we depend on this file,
@@ -82,6 +134,7 @@ fn include_wgsl_mr_impl(
 }
 
 fn parse_and_translate(
+    config: Config,
     wgsl_source_span: proc_macro2::Span,
     wgsl_source_text: &str,
 ) -> Result<proc_macro2::TokenStream, syn::Error> {
@@ -107,8 +160,6 @@ fn parse_and_translate(
             format_args!("failed to validate WGSL: {}", ErrorChain(&error)),
         )
     })?;
-
-    let config = naga_rust_back::Config::default().runtime_path("::naga_rust::rt");
 
     let translated_source: String = naga_rust_back::write_string(&module, &module_info, config)
         .map_err(|error| {
