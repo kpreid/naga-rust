@@ -97,7 +97,6 @@ pub struct Writer<W> {
     names: naga::FastHashMap<NameKey, String>,
     namer: proc::Namer,
     named_expressions: naga::FastIndexMap<Handle<Expression>, String>,
-    //required_polyfills: naga::FastIndexSet<InversePolyfill>,
 }
 
 impl<W: Write> Writer<W> {
@@ -109,7 +108,6 @@ impl<W: Write> Writer<W> {
             names: naga::FastHashMap::default(),
             namer: proc::Namer::default(),
             named_expressions: naga::FastIndexMap::default(),
-            //required_polyfills: naga::FastIndexSet::default(),
         }
     }
 
@@ -132,7 +130,6 @@ impl<W: Write> Writer<W> {
             &mut self.names,
         );
         named_expressions.clear();
-        //self.required_polyfills.clear();
     }
 
     fn is_builtin_wgsl_struct(&self, module: &Module, handle: Handle<naga::Type>) -> bool {
@@ -240,13 +237,6 @@ impl<W: Write> Writer<W> {
                 writeln!(self.out)?;
             }
         }
-
-        // Write any polyfills that were required.
-        // for polyfill in &self.required_polyfills {
-        //     writeln!(self.out)?;
-        //     write!(self.out, "{}", polyfill.source)?;
-        //     writeln!(self.out)?;
-        // }
 
         Ok(())
     }
