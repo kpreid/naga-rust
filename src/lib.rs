@@ -11,7 +11,7 @@ via translation to a normal shader language, when they are needed in both places
 
 extern crate alloc;
 
-use alloc::format;
+//use alloc::format;
 use alloc::string::String;
 
 mod conv;
@@ -53,22 +53,23 @@ impl From<fmt::Error> for Error {
 
 impl core::error::Error for Error {}
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+    fn fmt(&self, _: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!("bring back error formatting")
     }
 }
 
-impl Error {
-    /// Produce an [`Unsupported`] error for `value`.
-    ///
-    /// [`Unsupported`]: Error::Unsupported
-    fn unsupported<T: core::fmt::Debug>(kind: &'static str, value: T) -> Error {
-        Error::Unsupported {
-            kind,
-            value: format!("{value:?}"),
-        }
-    }
-}
+// TODO: are we going to need this?
+// impl Error {
+//     /// Produce an [`Unsupported`] error for `value`.
+//     ///
+//     /// [`Unsupported`]: Error::Unsupported
+//     fn unsupported<T: core::fmt::Debug>(kind: &'static str, value: T) -> Error {
+//         Error::Unsupported {
+//             kind,
+//             value: format!("{value:?}"),
+//         }
+//     }
+// }
 
 pub fn write_string(
     module: &naga::Module,

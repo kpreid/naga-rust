@@ -270,6 +270,7 @@ impl ToRust for naga::Sampling {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum BinOpClassified {
     /// Can be overloaded to take a vector and return a vector.
+    #[allow(dead_code, reason = "TODO: review whether the field should be read")]
     Vectorizable(BinOpVec),
     /// Always returns `bool`.
     ScalarBool(BinOpBool),

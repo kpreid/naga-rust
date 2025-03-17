@@ -2,7 +2,6 @@ use alloc::{
     format,
     string::{String, ToString},
     vec,
-    vec::Vec,
 };
 use core::fmt::Write;
 
@@ -21,6 +20,7 @@ use naga::{
 type BackendResult = Result<(), Error>;
 
 /// WGSL [attribute](https://gpuweb.github.io/gpuweb/wgsl/#attributes)
+#[allow(dead_code, reason = "TODO: get rid of this WGSLism")]
 enum Attribute {
     Binding(u32),
     BuiltIn(naga::BuiltIn),
@@ -85,6 +85,7 @@ enum Edition {
 pub struct Writer<W> {
     pub(super) out: W,
     flags: WriterFlags,
+    #[allow(dead_code)]
     edition: Edition,
     pub(super) names: naga::FastHashMap<NameKey, String>,
     namer: proc::Namer,
