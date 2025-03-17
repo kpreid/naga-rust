@@ -5,16 +5,20 @@ use alloc::{
 };
 use core::fmt::Write;
 
-use super::{
-    Baked, Error, LevelNext,
-    conv::{self, BinOpClassified, KEYWORDS_2024, SHADER_LIB, ToRust, unwrap_to_rust},
-};
 use naga::{
     Expression, Handle, Module, Scalar, ShaderStage, TypeInner,
     back::{self},
     proc::{self, ExpressionKindTracker, NameKey},
     valid,
 };
+
+use crate::util::{Baked, LevelNext};
+use crate::{
+    Error,
+    conv::{self, BinOpClassified, KEYWORDS_2024, SHADER_LIB, ToRust, unwrap_to_rust},
+};
+
+// -------------------------------------------------------------------------------------------------
 
 /// Shorthand result used internally by the backend
 type BackendResult = Result<(), Error>;
@@ -255,7 +259,7 @@ impl<W: Write> Writer<W> {
         // Write function name
         write!(
             self.out,
-            "#[allow(unused)]\n\
+            "#[allow(unused, clippy::all)]\n\
             pub fn {func_name}("
         )?;
 
@@ -460,12 +464,12 @@ impl<W: Write> Writer<W> {
                         let expr = &func_ctx.expressions[handle];
                         let min_ref_count = expr.bake_ref_count();
                         // Forcefully creating baking expressions in some cases to help with readability
-                        let required_baking_expr = match *expr {
+                        let required_baking_expr = matches!(
+                            *expr,
                             Expression::ImageLoad { .. }
-                            | Expression::ImageQuery { .. }
-                            | Expression::ImageSample { .. } => true,
-                            _ => false,
-                        };
+                                | Expression::ImageQuery { .. }
+                                | Expression::ImageSample { .. }
+                        );
                         if min_ref_count <= info.ref_count || required_baking_expr {
                             Some(Baked(handle).to_string())
                         } else {

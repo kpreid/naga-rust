@@ -1,29 +1,31 @@
-/*!
-Backend for generating Rust code.
-
-This backend has limited functionality and is not intended to run arbitrary
-shaders. Instead, it is intended to allow relatively simple mathematical functions
-to be written once and then executed on both the CPU, via translation to Rust, and GPU,
-via translation to a normal shader language, when they are needed in both places.
-*/
+//! [`naga`] backend allowing you to translate shader code in any language supported by Naga
+//! to Rust code.
+//!
+//! This does not necessarily mean you can run your compute or render pipelines in Rust
+//! on your CPU unchanged; this is *not* a “software renderer”. Rather, the primary goal
+//! of the project is to allow you to share selected *functions* between CPU and GPU, so
+//! that they can agree on definitions that might be executed in either place.
 
 #![no_std]
 
 extern crate alloc;
 
-//use alloc::format;
 use alloc::string::String;
+use core::fmt;
+
+// -------------------------------------------------------------------------------------------------
 
 mod conv;
 mod types;
+mod util;
 mod writer;
 
-use core::fmt;
+pub use writer::{Writer, WriterFlags};
 
 /// The version of Naga we are compatible with.
 pub use naga;
 
-pub use writer::{Writer, WriterFlags};
+// -------------------------------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub enum Error {
@@ -80,21 +82,4 @@ pub fn write_string(
     w.write(module, info)?;
     let output = w.finish();
     Ok(output)
-}
-
-struct Baked(naga::Handle<naga::Expression>);
-
-impl core::fmt::Display for Baked {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.write_prefixed(f, "_e")
-    }
-}
-
-trait LevelNext {
-    fn next(self) -> Self;
-}
-impl LevelNext for naga::back::Level {
-    fn next(self) -> Self {
-        Self(self.0.saturating_add(1))
-    }
 }
