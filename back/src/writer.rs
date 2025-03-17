@@ -154,7 +154,7 @@ impl<W: Write> Writer<W> {
             self.out,
             "\
                 #[allow(unused)]\n\
-                use ::naga_rust_rt::{{self, New as _, swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
+                use ::naga_rust::rt::{{self, New as _, swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
             "
         )?;
 

@@ -1,4 +1,4 @@
-use naga_rust_macros::wgsl;
+use naga_rust::wgsl;
 
 #[test]
 fn scalar_arithmetic() {

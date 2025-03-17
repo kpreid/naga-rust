@@ -14,8 +14,7 @@ doctest = false
 
 [dependencies]
 naga = { workspace = true, features = ["wgsl-in"] }
-# TODO: flip this dependency and make naga-rust a reexporter
-naga-rust.workspace = true
+naga-rust-back.workspace = true
 proc-macro2 = "1.0.86"
 quote = "1.0.37"
 # TODO: We don’t need full Rust parsing, just extracting literals; find a lighter library.

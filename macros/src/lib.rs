@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use quote::quote;
 
-use naga_rust::naga;
+use naga_rust_back::naga;
 
 #[proc_macro]
 pub fn include_wgsl_mr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -102,10 +102,10 @@ fn parse_and_translate(
         )
     })?;
 
-    let flags = naga_rust::WriterFlags::empty();
+    let flags = naga_rust_back::WriterFlags::empty();
 
-    let translated_source: String =
-        naga_rust::write_string(&module, &module_info, flags).map_err(|error| {
+    let translated_source: String = naga_rust_back::write_string(&module, &module_info, flags)
+        .map_err(|error| {
             // TODO: print cause chain
             syn::Error::new(
                 wgsl_source_span,

@@ -1,0 +1,18 @@
+[package]
+name = "naga-rust-back"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+description = "Backend for the Naga shader translator which generates Rust code."
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+bitflags.workspace = true
+naga.workspace = true
+
+[lints]
+workspace = true

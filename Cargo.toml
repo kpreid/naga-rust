@@ -1,20 +1,20 @@
 [workspace]
 members = [
     ".",
-    "compile-tests",
+    "back",
     "macros",
     "rt",
 ]
 default-members = [
     ".",
-    "compile-tests",
+    "back",
     "macros",
     "rt",
 ]
 resolver = "3"
 
 [workspace.package]
-repository = "https://github.com/kpreid/nosy/"
+repository = "https://github.com/kpreid/naga-rust/"
 license = "MIT OR Apache-2.0"
 
 [package]
@@ -30,10 +30,12 @@ license.workspace = true
 default = []
 
 [dependencies]
-bitflags.workspace = true
-naga.workspace = true
+naga-rust-back.workspace = true
+naga-rust-macros.workspace = true
+naga-rust-rt.workspace = true
 
 [dev-dependencies]
+# Use WGSL frontend to generate input Naga modules for testing.
 naga = { workspace = true, features = ["wgsl-in"] }
 
 [lints]
@@ -41,6 +43,7 @@ workspace = true
 
 [workspace.dependencies]
 naga-rust = { version = "0.1.0", path = "." }
+naga-rust-back = { version = "0.1.0", path = "back" }
 naga-rust-rt = { version = "0.1.0", path = "rt" }
 naga-rust-macros = { version = "0.1.0", path = "macros" }
 

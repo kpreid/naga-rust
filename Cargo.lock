@@ -46,14 +46,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compile-tests"
-version = "0.0.0"
-dependencies = [
- "naga-rust-macros",
- "naga-rust-rt",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -124,6 +116,16 @@ dependencies = [
 name = "naga-rust"
 version = "0.1.0"
 dependencies = [
+ "naga",
+ "naga-rust-back",
+ "naga-rust-macros",
+ "naga-rust-rt",
+]
+
+[[package]]
+name = "naga-rust-back"
+version = "0.1.0"
+dependencies = [
  "bitflags",
  "naga",
 ]
@@ -133,7 +135,7 @@ name = "naga-rust-macros"
 version = "0.1.0"
 dependencies = [
  "naga",
- "naga-rust",
+ "naga-rust-back",
  "proc-macro2",
  "quote",
  "syn",
