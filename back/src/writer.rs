@@ -67,6 +67,7 @@ enum Indirection {
 }
 
 bitflags::bitflags! {
+    /// Options for what Rust code is generated.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct WriterFlags: u32 {
         /// Always annotate the type information instead of inferring.
@@ -85,10 +86,16 @@ bitflags::bitflags! {
 ///
 /// We currently only support one edition, but this exists anyway to prepare to document
 /// any edition dependencies in the code generator.
+#[derive(Clone, Copy, Debug)]
 enum Edition {
     Rust2024,
 }
 
+/// [`naga`] backend allowing you to translate shader code in any language supported by Naga
+/// to Rust code.
+///
+/// Writes Rust code to a [`Write`] implementation of type `W`.
+#[allow(missing_debug_implementations, reason = "TODO")]
 pub struct Writer<W> {
     out: W,
     flags: WriterFlags,
@@ -100,6 +107,7 @@ pub struct Writer<W> {
 }
 
 impl<W: Write> Writer<W> {
+    /// Creates a new [`Writer`] for writing code to `out`.
     pub fn new(out: W, flags: WriterFlags) -> Self {
         Writer {
             out,
@@ -140,6 +148,13 @@ impl<W: Write> Writer<W> {
             .any(|t| *t == handle)
     }
 
+    /// Converts `module` to a string of Rust code.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the module cannot be represented as Rust
+    /// or if the contained [`Write`] implementation returns an error.
+    #[expect(clippy::missing_panics_doc, reason = "TODO: unfinished")]
     pub fn write(&mut self, module: &Module, info: &valid::ModuleInfo) -> BackendResult {
         if !module.overrides.is_empty() {
             return Err(Error::Unimplemented(
@@ -225,7 +240,7 @@ impl<W: Write> Writer<W> {
             self.write_attributes(&attributes)?;
 
             let func_ctx = back::FunctionCtx {
-                ty: back::FunctionType::EntryPoint(index as u16),
+                ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
                 info: info.get_entry_point(index),
                 expressions: &ep.function.expressions,
                 named_expressions: &ep.function.named_expressions,
@@ -272,7 +287,7 @@ impl<W: Write> Writer<W> {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
             // Write argument name
-            let argument_name = &self.names[&func_ctx.argument_key(index as u32)];
+            let argument_name = &self.names[&func_ctx.argument_key(index.try_into().unwrap())];
 
             write!(self.out, "{argument_name}: ")?;
             // Write argument type
@@ -325,7 +340,7 @@ impl<W: Write> Writer<W> {
             }
 
             // Finish the local with `;` and add a newline (only for readability)
-            writeln!(self.out, ";")?
+            writeln!(self.out, ";")?;
         }
 
         if !func.local_variables.is_empty() {
@@ -430,7 +445,8 @@ impl<W: Write> Writer<W> {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
             // Write struct member name and type
-            let member_name = &self.names[&NameKey::StructMember(handle, index as u32)];
+            let member_name =
+                &self.names[&NameKey::StructMember(handle, index.try_into().unwrap())];
             write!(self.out, "pub {member_name}: ")?;
             self.write_type(module, member.ty)?;
             write!(self.out, ",")?;
@@ -928,7 +944,7 @@ impl<W: Write> Writer<W> {
         &mut self,
         module: &Module,
         handle: Handle<Expression>,
-        func_ctx: &back::FunctionCtx,
+        func_ctx: &back::FunctionCtx<'_>,
         name: &str,
     ) -> BackendResult {
         // Write variable name
@@ -938,8 +954,8 @@ impl<W: Write> Writer<W> {
             let ty = &func_ctx.info[handle].ty;
             // Write variable type
             match *ty {
-                proc::TypeResolution::Handle(handle) => {
-                    self.write_type(module, handle)?;
+                proc::TypeResolution::Handle(ty_handle) => {
+                    self.write_type(module, ty_handle)?;
                 }
                 proc::TypeResolution::Value(ref inner) => {
                     self.write_type_inner(module, inner)?;
@@ -1730,6 +1746,7 @@ impl<W: Write> Writer<W> {
         }
     }
 
+    /// Returns the `W` originally provided, after writing to it.
     pub fn finish(self) -> W {
         self.out
     }

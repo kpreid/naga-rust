@@ -24,7 +24,7 @@ fn translate_without_header(flags: WriterFlags, wgsl_source_text: &str) -> Strin
         .map(|(i, _)| i)
         .nth(2)
         .unwrap();
-    translated_source.replace_range(0..header_end + 1, "");
+    translated_source.replace_range(0..=header_end, "");
 
     translated_source
 }

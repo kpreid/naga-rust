@@ -26,10 +26,13 @@ pub use naga;
 
 // -------------------------------------------------------------------------------------------------
 
+/// Errors returned by the Rust-generating backend.
 #[derive(Debug)]
+#[allow(missing_docs, reason = "TODO: clean up and document")]
+#[non_exhaustive]
 pub enum Error {
     //#[error(transparent)]
-    FmtError(core::fmt::Error),
+    FmtError(fmt::Error),
     //#[error("{0}")]
     Custom(String),
     //#[error("{0}")]
@@ -72,6 +75,11 @@ impl fmt::Display for Error {
 //     }
 // }
 
+/// Converts `module` to a string of Rust code.
+///
+/// # Errors
+///
+/// Returns an error if the module cannot be represented as Rust.
 pub fn write_string(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,

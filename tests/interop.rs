@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 // TODO: Should there should be an explicit public vector-type API module which is not rt::?
 use naga_rust::rt::Vec2;
 use naga_rust::wgsl;

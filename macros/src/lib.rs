@@ -1,5 +1,7 @@
 //! This is a proc-macro helper library. Don't use this library directly; use `naga-rust` instead.
 
+#![allow(missing_docs, reason = "not intended to be used directly")]
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,7 +13,7 @@ use naga_rust_back::naga;
 pub fn include_wgsl_mr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let path_literal: syn::LitStr = syn::parse_macro_input!(input as syn::LitStr);
 
-    match include_wgsl_mr_impl(path_literal) {
+    match include_wgsl_mr_impl(&path_literal) {
         Ok(expansion) => expansion.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -38,7 +40,9 @@ pub fn dummy_attribute(
 
 // -------------------------------------------------------------------------------------------------
 
-fn include_wgsl_mr_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenStream, syn::Error> {
+fn include_wgsl_mr_impl(
+    path_literal: &syn::LitStr,
+) -> Result<proc_macro2::TokenStream, syn::Error> {
     // We use manifest-relative paths because currently, there is no way to arrange for
     // source-file-relative paths.
     let mut absolute_path: PathBuf = PathBuf::from(
@@ -49,7 +53,7 @@ fn include_wgsl_mr_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenS
     // If this fails then we can't generate the `include_str!` we must generate.
     let absolute_path_str = absolute_path.to_str().ok_or_else(|| {
         syn::Error::new_spanned(
-            &path_literal,
+            path_literal,
             format_args!(
                 "absolute path “{p:?}” must be UTF-8",
                 p = absolute_path.display()
@@ -59,7 +63,7 @@ fn include_wgsl_mr_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenS
 
     let wgsl_source_text: String = fs::read_to_string(&absolute_path).map_err(|error| {
         syn::Error::new_spanned(
-            &path_literal,
+            path_literal,
             format_args!("failed to read “{absolute_path_str}”: {error}"),
         )
     })?;

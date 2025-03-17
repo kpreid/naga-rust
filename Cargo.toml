@@ -51,5 +51,68 @@ bitflags = "2.9"
 naga = { version = "24.0.0", default-features = false }
 glam = "0.29"
 
-[workspace.lints]
+[workspace.lints.rust]
+# rustc lints that are set to deny
+elided_lifetimes_in_paths = "deny"
 
+# rustc lints that are set to warn
+explicit_outlives_requirements = "warn"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+noop_method_call = "warn"
+redundant_lifetimes = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unnameable_types = "warn"
+unused_extern_crates = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+# This lint has false positives on dev-dependencies. Occasionally turn it on to audit non-dev deps.
+# unused_crate_dependencies = "warn"
+
+[workspace.lints.clippy]
+# clippy lint groups
+pedantic = { level = "warn", priority = -1 }
+
+# clippy default lints that are set to allow
+bool_assert_comparison = "allow" # not necessarily clearer
+
+# clippy::pedantic lints that are set to allow
+explicit_iter_loop = "allow"
+match_same_arms = "allow"
+semicolon_if_nothing_returned = "allow" # TODO: clean up and enable
+too_many_lines = "allow"
+unused_self = "allow" # TODO: enable?
+
+# clippy lints that are set to deny
+should_panic_without_expect = "deny"
+
+# clippy lints that are set to warn
+assigning_clones = "warn"
+cast_lossless = "warn"
+cast_possible_wrap = "warn"
+doc_markdown = "warn"
+exhaustive_enums = "warn"
+exhaustive_structs = "warn"
+into_iter_without_iter = "warn"
+inconsistent_struct_constructor = "warn"
+infinite_loop = "warn"
+iter_without_into_iter = "warn"
+manual_let_else = "warn"
+map_unwrap_or = "warn"
+map_with_unused_argument_over_ranges = "warn"
+missing_fields_in_debug = "warn"
+module_name_repetitions = "warn"
+needless_pass_by_value = "warn"
+option_as_ref_cloned = "warn"
+pub_without_shorthand = "warn"
+return_self_not_must_use = "warn"
+# shadow_unrelated = "warn" # TODO: enable
+suboptimal_flops = "warn"
+trivially_copy_pass_by_ref = "warn"
+undocumented_unsafe_blocks = "warn"
+uninlined_format_args = "warn"
+unnecessary_self_imports = "warn"
+unnecessary_wraps = "warn"
+unused_async = "warn"
+wrong_self_convention = "warn"

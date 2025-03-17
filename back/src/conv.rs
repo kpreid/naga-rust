@@ -23,7 +23,7 @@ pub(crate) trait ToRust: Sized {
 }
 
 /// Types that may be able to return the Rust source representation
-/// for their values as a `'static' string.
+/// for their values as a `'static` string.
 ///
 /// This trait is specifically for types whose values are either
 /// simple enough that their Rust form can be represented a static
