@@ -142,7 +142,7 @@ impl<W: Write> Writer<W> {
             self.out,
             "\
                 #[allow(unused)]\n\
-                use {{nstd::New as _, nstd::swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
+                use ::naga_rust_rt::{{self, New as _, swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
             "
         )?;
 
@@ -1159,7 +1159,7 @@ impl<W: Write> Writer<W> {
                     }
                     (_, BinOpClassified::ScalarBool(bop)) => {
                         // TODO: generated function name is a placeholder
-                        write!(self.out, "nstd::{}(", bop.to_vector_fn())?;
+                        write!(self.out, "{SHADER_LIB}::{}(", bop.to_vector_fn())?;
                         self.write_expr(module, left, func_ctx)?;
                         write!(self.out, ", ")?;
                         self.write_expr(module, right, func_ctx)?;

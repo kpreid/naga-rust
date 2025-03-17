@@ -51,7 +51,7 @@ version = "0.0.0"
 dependencies = [
  "naga",
  "naga-rust",
- "nstd",
+ "naga-rust-rt",
 ]
 
 [[package]]
@@ -136,7 +136,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nstd"
+name = "naga-rust-rt"
 version = "0.1.0"
 dependencies = [
  "glam",

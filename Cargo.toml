@@ -2,12 +2,12 @@
 members = [
     ".",
     "compile-tests",
-    "nstd",
+    "rt",
 ]
 default-members = [
     ".",
     "compile-tests",
-    "nstd",
+    "rt",
 ]
 resolver = "3"
 
@@ -36,7 +36,7 @@ workspace = true
 
 [workspace.dependencies]
 naga-rust = { version = "0.1.0", path = "." }
-nstd = { version = "0.1.0", path = "nstd" }
+naga-rust-rt = { version = "0.1.0", path = "rt" }
 
 bitflags = "2.9"
 naga = { version = "24.0.0", default-features = false }

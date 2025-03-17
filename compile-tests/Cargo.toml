@@ -4,11 +4,11 @@ edition = "2024"
 publish = false
 
 [build-dependencies]
-naga-rust = { path = "../" }
+naga-rust = { workspace = true }
 naga = { workspace = true, features = ["wgsl-in"] }
 
 [dependencies]
-nstd = { workspace = true }
+naga-rust-rt = { workspace = true }
 
 [lints]
 workspace = true
