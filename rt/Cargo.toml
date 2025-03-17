@@ -7,6 +7,10 @@ description = "Support library for shaders compiled to Rust via the `naga-rust` 
 repository.workspace = true
 license.workspace = true
 
+[lib]
+test = false
+doctest = false
+
 [features]
 default = []
 
