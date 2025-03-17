@@ -46,3 +46,18 @@ fn declare_and_modify_struct() {
     modify_struct(&mut s);
     assert!(matches!(s, StructTest { a: 2, b: 3.0 }));
 }
+
+#[test]
+fn while_loop() {
+    wgsl!(
+        r"fn count(n: i32) -> i32 {
+            var i: i32 = 0;
+            while i < n {
+                i += 1;
+            }
+            return i;
+        }"
+    );
+
+    assert_eq!(count(10), 10);
+}
