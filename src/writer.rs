@@ -63,8 +63,6 @@ enum Indirection {
 }
 
 bitflags::bitflags! {
-    #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
-    #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct WriterFlags: u32 {
         /// Always annotate the type information instead of inferring.
