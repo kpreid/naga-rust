@@ -52,7 +52,14 @@ fn include_wgsl_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenStre
         )
     })?;
 
-    let module: naga::Module = naga::front::wgsl::parse_str(&wgsl_source_text).unwrap();
+    let module: naga::Module =
+        naga::front::wgsl::parse_str(&wgsl_source_text).map_err(|error| {
+            // TODO: print cause chain
+            syn::Error::new_spanned(
+                &path_literal,
+                format_args!("failed to parse WGSL text: {error}"),
+            )
+        })?;
 
     // TODO: allow skipping some validation
     let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
@@ -62,7 +69,13 @@ fn include_wgsl_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenStre
     .subgroup_stages(naga::valid::ShaderStages::all())
     .subgroup_operations(naga::valid::SubgroupOperationSet::all())
     .validate(&module)
-    .unwrap();
+    .map_err(|error| {
+        // TODO: print cause chain
+        syn::Error::new_spanned(
+            &path_literal,
+            format_args!("failed to validate WGSL: {error}"),
+        )
+    })?;
 
     let flags = naga_rust::WriterFlags::empty();
 
