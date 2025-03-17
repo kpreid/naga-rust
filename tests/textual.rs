@@ -1,6 +1,6 @@
 //! Tests of the exact source text produced by the Rust backend.
 
-use naga_rust::WriterFlags;
+use naga_rust_back::WriterFlags;
 
 fn translate_without_header(flags: WriterFlags, wgsl_source_text: &str) -> String {
     let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text).unwrap();
@@ -15,7 +15,7 @@ fn translate_without_header(flags: WriterFlags, wgsl_source_text: &str) -> Strin
     .unwrap();
 
     let mut translated_source: String =
-        naga_rust::write_string(&module, &module_info, flags).unwrap();
+        naga_rust_back::write_string(&module, &module_info, flags).unwrap();
 
     // Kludge: Strip off the first boilerplate lines without caring what they are exactly.
     let header_end = translated_source

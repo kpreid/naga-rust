@@ -22,7 +22,7 @@ name = "naga-rust"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.0"
-description = "Backend for the Naga shader translator which generates Rust code."
+description = "Translates WGSL shader code to Rust you can embed in your Rust code."
 repository.workspace = true
 license.workspace = true
 
@@ -30,13 +30,13 @@ license.workspace = true
 default = []
 
 [dependencies]
-naga-rust-back.workspace = true
 naga-rust-macros.workspace = true
 naga-rust-rt.workspace = true
 
 [dev-dependencies]
-# Use WGSL frontend to generate input Naga modules for testing.
+# Use WGSL frontend and Rust backend to run tests/textual.rs
 naga = { workspace = true, features = ["wgsl-in"] }
+naga-rust-back = { workspace = true }
 
 [lints]
 workspace = true
@@ -44,8 +44,8 @@ workspace = true
 [workspace.dependencies]
 naga-rust = { version = "0.1.0", path = "." }
 naga-rust-back = { version = "0.1.0", path = "back" }
-naga-rust-rt = { version = "0.1.0", path = "rt" }
 naga-rust-macros = { version = "0.1.0", path = "macros" }
+naga-rust-rt = { version = "0.1.0", path = "rt" }
 
 bitflags = "2.9"
 naga = { version = "24.0.0", default-features = false }
