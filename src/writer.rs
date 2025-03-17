@@ -87,11 +87,11 @@ enum Edition {
 }
 
 pub struct Writer<W> {
-    pub(super) out: W,
+    out: W,
     flags: WriterFlags,
     #[allow(dead_code)]
     edition: Edition,
-    pub(super) names: naga::FastHashMap<NameKey, String>,
+    names: naga::FastHashMap<NameKey, String>,
     namer: proc::Namer,
     named_expressions: naga::FastIndexMap<Handle<Expression>, String>,
     //required_polyfills: naga::FastIndexSet<InversePolyfill>,
@@ -111,8 +111,16 @@ impl<W: Write> Writer<W> {
     }
 
     fn reset(&mut self, module: &Module) {
-        self.names.clear();
-        self.namer.reset(
+        let Self {
+            out: _,
+            flags: _,
+            edition: _,
+            names,
+            namer,
+            named_expressions,
+        } = self;
+        names.clear();
+        namer.reset(
             module,
             KEYWORDS_2024,
             &[SHADER_LIB],
@@ -120,7 +128,7 @@ impl<W: Write> Writer<W> {
             &[],
             &mut self.names,
         );
-        self.named_expressions.clear();
+        named_expressions.clear();
         //self.required_polyfills.clear();
     }
 
