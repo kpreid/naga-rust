@@ -75,6 +75,9 @@ bitflags::bitflags! {
         /// Generate code using raw pointers instead of references.
         /// The resulting code is `unsafe` and may be unsound if the WGSL uses invalid pointers.
         const RAW_POINTERS = 0x2;
+
+        /// Generate items with `pub` visibility instead of private.
+        const PUBLIC = 0x3;
     }
 }
 
@@ -265,10 +268,11 @@ impl<W: Write> Writer<W> {
         };
 
         // Write function name
+        let visibility = self.visibility();
         write!(
             self.out,
             "#[allow(unused, clippy::all)]\n\
-            pub fn {func_name}("
+            {visibility}fn {func_name}("
         )?;
 
         // Write function arguments
@@ -419,9 +423,10 @@ impl<W: Write> Writer<W> {
         handle: Handle<naga::Type>,
         members: &[naga::StructMember],
     ) -> BackendResult {
+        let visibility = self.visibility();
         write!(
             self.out,
-            "pub struct {}",
+            "{visibility}struct {}",
             self.names[&NameKey::Type(handle)]
         )?;
         write!(self.out, " {{")?;
@@ -1725,8 +1730,14 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    // See https://github.com/rust-lang/rust-clippy/issues/4979.
-    #[allow(clippy::missing_const_for_fn)]
+    fn visibility(&self) -> &'static str {
+        if self.flags.contains(WriterFlags::PUBLIC) {
+            "pub "
+        } else {
+            ""
+        }
+    }
+
     pub fn finish(self) -> W {
         self.out
     }

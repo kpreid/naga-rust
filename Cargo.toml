@@ -33,6 +33,9 @@ default = []
 bitflags.workspace = true
 naga.workspace = true
 
+[dev-dependencies]
+naga = { workspace = true, features = ["wgsl-in"] }
+
 [lints]
 workspace = true
 
