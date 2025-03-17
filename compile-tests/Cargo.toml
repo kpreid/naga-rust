@@ -3,12 +3,9 @@ name = "compile-tests"
 edition = "2024"
 publish = false
 
-[build-dependencies]
-naga-rust = { workspace = true }
-naga = { workspace = true, features = ["wgsl-in"] }
-
 [dependencies]
 naga-rust-rt = { workspace = true }
+naga-rust-macros = { workspace = true }
 
 [lints]
 workspace = true

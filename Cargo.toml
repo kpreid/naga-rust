@@ -2,11 +2,13 @@
 members = [
     ".",
     "compile-tests",
+    "macros",
     "rt",
 ]
 default-members = [
     ".",
     "compile-tests",
+    "macros",
     "rt",
 ]
 resolver = "3"
@@ -37,6 +39,7 @@ workspace = true
 [workspace.dependencies]
 naga-rust = { version = "0.1.0", path = "." }
 naga-rust-rt = { version = "0.1.0", path = "rt" }
+naga-rust-macros = { version = "0.1.0", path = "macros" }
 
 bitflags = "2.9"
 naga = { version = "24.0.0", default-features = false }

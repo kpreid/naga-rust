@@ -14,7 +14,7 @@ default = []
 # glam is a temporary measure. Eventually, we will want to replace its vector types with
 # potentially ultra-wide vector types for simultaneous SIMD-and-semantic-vector operations.
 glam.workspace = true
-mutants = "0.0.3"
+naga-rust-macros.workspace = true
 
 [lints.clippy]
 std_instead_of_alloc = "warn"

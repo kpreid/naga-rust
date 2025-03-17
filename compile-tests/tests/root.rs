@@ -1,5 +1,5 @@
 mod shade {
-    include!(concat!(env!("OUT_DIR"), "/translated.rs"));
+    naga_rust_macros::include_wgsl_mr!("tests/input.wgsl");
 }
 
 #[test]

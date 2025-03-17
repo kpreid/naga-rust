@@ -49,8 +49,7 @@ dependencies = [
 name = "compile-tests"
 version = "0.0.0"
 dependencies = [
- "naga",
- "naga-rust",
+ "naga-rust-macros",
  "naga-rust-rt",
 ]
 
@@ -101,12 +100,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30bde2b3dc3671ae49d8e2e9f044c7c005836e7a023ee57cffa25ab82764bb9e"
 
 [[package]]
-name = "mutants"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc0287524726960e07b119cebd01678f852f147742ae0d925e6a520dca956126"
-
-[[package]]
 name = "naga"
 version = "24.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -136,11 +129,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "naga-rust-macros"
+version = "0.1.0"
+dependencies = [
+ "naga",
+ "naga-rust",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "naga-rust-rt"
 version = "0.1.0"
 dependencies = [
  "glam",
- "mutants",
+ "naga-rust-macros",
 ]
 
 [[package]]
