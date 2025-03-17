@@ -1,3 +1,5 @@
+// TODO: Should there should be an explicit public vector-type API module which is not rt::?
+use naga_rust::rt::Vec2;
 use naga_rust::wgsl;
 
 #[test]
@@ -12,7 +14,18 @@ fn scalar_arithmetic() {
 }
 
 #[test]
-fn use_struct_definition_inline() {
+fn vector_arithmetic() {
+    wgsl!(
+        r"fn add_one(x: vec2f) -> vec2f {
+            return x + vec2f(1.0);
+        }"
+    );
+
+    assert_eq!(add_one(Vec2::new(0.5, 10.0)), Vec2::new(1.5, 11.0));
+}
+
+#[test]
+fn declare_and_modify_struct() {
     wgsl!(
         r"
         struct StructTest {
