@@ -1,3 +1,5 @@
+//! This is a proc-macro helper library. Don't use this library directly; use `naga-rust` instead.
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -15,7 +17,6 @@ pub fn include_wgsl_mr(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
     }
 }
 
-/// Converts the provided WGSL string literal to Rust.
 #[proc_macro]
 pub fn wgsl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let source_literal: syn::LitStr = syn::parse_macro_input!(input as syn::LitStr);

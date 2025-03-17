@@ -1,10 +1,10 @@
 //! [`naga`] backend allowing you to translate shader code in any language supported by Naga
 //! to Rust code.
 //!
-//! This does not necessarily mean you can run your compute or render pipelines in Rust
-//! on your CPU unchanged; this is *not* a “software renderer”. Rather, the primary goal
-//! of the project is to allow you to share selected *functions* between CPU and GPU, so
-//! that they can agree on definitions that might be executed in either place.
+//! The generated code requires the `naga-rust` library.
+//! You should probably also use that library’s macros to embed code in your project,
+//! unless you have special code generation requirements or you want to do it in a build
+//! script instead of macros.
 
 #![no_std]
 
