@@ -9,7 +9,18 @@ use naga_rust::naga;
 pub fn include_wgsl_mr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let path_literal: syn::LitStr = syn::parse_macro_input!(input as syn::LitStr);
 
-    match include_wgsl_impl(path_literal) {
+    match include_wgsl_mr_impl(path_literal) {
+        Ok(expansion) => expansion.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Converts the provided WGSL string literal to Rust.
+#[proc_macro]
+pub fn wgsl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let source_literal: syn::LitStr = syn::parse_macro_input!(input as syn::LitStr);
+
+    match parse_and_translate(source_literal.span(), &source_literal.value()) {
         Ok(expansion) => expansion.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -26,7 +37,7 @@ pub fn dummy_attribute(
 
 // -------------------------------------------------------------------------------------------------
 
-fn include_wgsl_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenStream, syn::Error> {
+fn include_wgsl_mr_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenStream, syn::Error> {
     // We use manifest-relative paths because currently, there is no way to arrange for
     // source-file-relative paths.
     let mut absolute_path: PathBuf = PathBuf::from(
@@ -52,14 +63,28 @@ fn include_wgsl_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenStre
         )
     })?;
 
-    let module: naga::Module =
-        naga::front::wgsl::parse_str(&wgsl_source_text).map_err(|error| {
-            // TODO: print cause chain
-            syn::Error::new_spanned(
-                &path_literal,
-                format_args!("failed to parse WGSL text: {error}"),
-            )
-        })?;
+    let translated_tokens = parse_and_translate(path_literal.span(), &wgsl_source_text)?;
+
+    Ok(quote! {
+        // Dummy include_str! call tells the compiler that we depend on this file,
+        // which it would not notice otherwise.
+        const _: &str = include_str!(#absolute_path_str);
+
+        #translated_tokens
+    })
+}
+
+fn parse_and_translate(
+    wgsl_source_span: proc_macro2::Span,
+    wgsl_source_text: &str,
+) -> Result<proc_macro2::TokenStream, syn::Error> {
+    let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text).map_err(|error| {
+        // TODO: print cause chain
+        syn::Error::new(
+            wgsl_source_span,
+            format_args!("failed to parse WGSL text: {error}"),
+        )
+    })?;
 
     // TODO: allow skipping some validation
     let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
@@ -71,8 +96,8 @@ fn include_wgsl_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenStre
     .validate(&module)
     .map_err(|error| {
         // TODO: print cause chain
-        syn::Error::new_spanned(
-            &path_literal,
+        syn::Error::new(
+            wgsl_source_span,
             format_args!("failed to validate WGSL: {error}"),
         )
     })?;
@@ -82,25 +107,19 @@ fn include_wgsl_impl(path_literal: syn::LitStr) -> Result<proc_macro2::TokenStre
     let translated_source: String =
         naga_rust::write_string(&module, &module_info, flags).map_err(|error| {
             // TODO: print cause chain
-            syn::Error::new_spanned(
-                &path_literal,
+            syn::Error::new(
+                wgsl_source_span,
                 format_args!("failed to translate shader to Rust: {error}"),
             )
         })?;
 
     let translated_tokens: proc_macro2::TokenStream =
         translated_source.parse().map_err(|error| {
-            syn::Error::new_spanned(
-                &path_literal,
+            syn::Error::new(
+                wgsl_source_span,
                 format_args!("internal error: translator did not produce valid Rust: {error}"),
             )
         })?;
 
-    Ok(quote! {
-        // Dummy include_str! call tells the compiler that we depend on this file,
-        // which it would not notice otherwise.
-        const _: &str = include_str!(#absolute_path_str);
-
-        #translated_tokens
-    })
+    Ok(translated_tokens)
 }
