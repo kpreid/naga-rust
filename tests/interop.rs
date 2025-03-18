@@ -91,6 +91,22 @@ fn declare_and_modify_struct() {
 }
 
 #[test]
+fn array_access_fixed() {
+    wgsl!(
+        r"
+        fn modify_array(a_ptr: ptr<private, array<u32, 2>>) {
+            (*a_ptr)[0] += 1;
+            (*a_ptr)[1] += 2;
+        }
+        "
+    );
+
+    let mut a = [10, 100];
+    modify_array(&mut a);
+    assert_eq!(a, [11, 102]);
+}
+
+#[test]
 fn switch() {
     wgsl!(
         r"fn switching(x: i32) -> i32 {

@@ -237,7 +237,7 @@ impl<W: Write> Writer<W> {
                 ],
             };
 
-            self.write_attributes(&attributes)?;
+            self.write_attributes(back::Level(0), &attributes)?;
 
             let func_ctx = back::FunctionCtx {
                 ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
@@ -360,9 +360,10 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    /// Helper method to write a attribute
-    fn write_attributes(&mut self, attributes: &[Attribute]) -> BackendResult {
+    /// Helper method to write attributes
+    fn write_attributes(&mut self, level: back::Level, attributes: &[Attribute]) -> BackendResult {
         for attribute in attributes {
+            write!(self.out, "{level}")?;
             match *attribute {
                 Attribute::Location(id) => write!(self.out, "@location({id}) ")?,
                 Attribute::BlendSrc(blend_src) => write!(self.out, "@blend_src({blend_src}) ")?,
@@ -1152,9 +1153,8 @@ impl<W: Write> Writer<W> {
                 write!(self.out, "{}", self.names[&func_ctx.name_key(handle)])?
             }
             Expression::ArrayLength(expr) => {
-                write!(self.out, "arrayLength(")?;
                 self.write_expr(module, expr, func_ctx)?;
-                write!(self.out, ")")?;
+                write!(self.out, ".len()")?;
             }
 
             Expression::Math {
@@ -1388,10 +1388,13 @@ impl<W: Write> Writer<W> {
     ) -> BackendResult {
         // Write group and binding attributes if present
         if let Some(ref binding) = global.binding {
-            self.write_attributes(&[
-                Attribute::Group(binding.group),
-                Attribute::Binding(binding.binding),
-            ])?;
+            self.write_attributes(
+                back::Level(1),
+                &[
+                    Attribute::Group(binding.group),
+                    Attribute::Binding(binding.binding),
+                ],
+            )?;
         }
 
         write!(

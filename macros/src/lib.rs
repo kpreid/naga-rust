@@ -2,6 +2,8 @@
 
 #![allow(missing_docs, reason = "not intended to be used directly")]
 
+use std::error::Error;
+use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 
@@ -84,10 +86,9 @@ fn parse_and_translate(
     wgsl_source_text: &str,
 ) -> Result<proc_macro2::TokenStream, syn::Error> {
     let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text).map_err(|error| {
-        // TODO: print cause chain
         syn::Error::new(
             wgsl_source_span,
-            format_args!("failed to parse WGSL text: {error}"),
+            format_args!("failed to parse WGSL text: {}", ErrorChain(&error)),
         )
     })?;
 
@@ -100,10 +101,9 @@ fn parse_and_translate(
     .subgroup_operations(naga::valid::SubgroupOperationSet::all())
     .validate(&module)
     .map_err(|error| {
-        // TODO: print cause chain
         syn::Error::new(
             wgsl_source_span,
-            format_args!("failed to validate WGSL: {error}"),
+            format_args!("failed to validate WGSL: {}", ErrorChain(&error)),
         )
     })?;
 
@@ -111,10 +111,9 @@ fn parse_and_translate(
 
     let translated_source: String = naga_rust_back::write_string(&module, &module_info, flags)
         .map_err(|error| {
-            // TODO: print cause chain
             syn::Error::new(
                 wgsl_source_span,
-                format_args!("failed to translate shader to Rust: {error}"),
+                format_args!("failed to translate shader to Rust: {}", ErrorChain(&error)),
             )
         })?;
 
@@ -122,9 +121,36 @@ fn parse_and_translate(
         translated_source.parse().map_err(|error| {
             syn::Error::new(
                 wgsl_source_span,
-                format_args!("internal error: translator did not produce valid Rust: {error}"),
+                format_args!(
+                    "internal error: translator did not produce valid Rust: {}",
+                    ErrorChain(&error)
+                ),
             )
         })?;
 
     Ok(translated_tokens)
+}
+
+// -------------------------------------------------------------------------------------------------
+
+/// Formatting wrapper which prints an [`Error`] together with its `source()` chain.
+///
+/// The text begins with the [`fmt::Display`] format of the error.
+#[derive(Clone, Copy, Debug)]
+struct ErrorChain<'a>(&'a (dyn Error + 'a));
+
+impl fmt::Display for ErrorChain<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        format_error_chain(fmt, self.0)
+    }
+}
+
+fn format_error_chain(fmt: &mut fmt::Formatter<'_>, mut error: &(dyn Error + '_)) -> fmt::Result {
+    write!(fmt, "{error}")?;
+    while let Some(source) = error.source() {
+        error = source;
+        write!(fmt, "\n↳ {error}")?;
+    }
+
+    Ok(())
 }
