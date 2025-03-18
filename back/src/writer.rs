@@ -139,14 +139,6 @@ impl<W: Write> Writer<W> {
         named_expressions.clear();
     }
 
-    fn is_builtin_wgsl_struct(&self, module: &Module, handle: Handle<naga::Type>) -> bool {
-        module
-            .special_types
-            .predeclared_types
-            .values()
-            .any(|t| *t == handle)
-    }
-
     /// Converts `module` to a string of Rust code.
     ///
     /// # Errors
@@ -176,10 +168,8 @@ impl<W: Write> Writer<W> {
         for (handle, ty) in module.types.iter() {
             if let TypeInner::Struct { ref members, .. } = ty.inner {
                 {
-                    if !self.is_builtin_wgsl_struct(module, handle) {
-                        self.write_struct(module, handle, members)?;
-                        writeln!(self.out)?;
-                    }
+                    self.write_struct(module, handle, members)?;
+                    writeln!(self.out)?;
                 }
             }
         }
