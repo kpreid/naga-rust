@@ -31,22 +31,21 @@ pub use naga;
 #[allow(missing_docs, reason = "TODO: clean up and document")]
 #[non_exhaustive]
 pub enum Error {
-    //#[error(transparent)]
+    /// The provided [`fmt::Write`] implementation returned an error.
     FmtError(fmt::Error),
-    //#[error("{0}")]
-    Custom(String),
-    //#[error("{0}")]
-    Unimplemented(String), // TODO: Error used only during development
-    //#[error("Unsupported relational function: {0:?}")]
-    UnsupportedRelationalFunction(naga::RelationalFunction),
-    //#[error("Unsupported {kind}: {value}")]
-    Unsupported {
-        /// What kind of unsupported thing this is: interpolation, builtin, etc.
-        kind: &'static str,
 
-        /// The debug form of the Naga IR value that this backend can't express.
-        value: String,
-    },
+    // TODO: this should not be a thing when finished
+    //#[error("{0}")]
+    Unimplemented(String),
+    // TODO: remove if not used
+    //#[error("Unsupported {kind}: {value}")]
+    // Unsupported {
+    //     /// What kind of unsupported thing this is: interpolation, builtin, etc.
+    //     kind: &'static str,
+    //
+    //     /// The debug form of the Naga IR value that this backend can't express.
+    //     value: String,
+    // },
 }
 
 impl From<fmt::Error> for Error {

@@ -1,5 +1,4 @@
 use alloc::{
-    format,
     string::{String, ToString},
     vec,
 };
@@ -1053,9 +1052,7 @@ impl<W: Write> Writer<W> {
                 }
                 naga::Literal::U64(value) => write!(self.out, "{value}u64")?,
                 naga::Literal::AbstractInt(_) | naga::Literal::AbstractFloat(_) => {
-                    return Err(Error::Custom(
-                        "Abstract types should not appear in IR presented to backends".into(),
-                    ));
+                    unreachable!("abstract types should not appear in IR presented to backends");
                 }
             },
             Expression::Constant(handle) => {
@@ -1232,7 +1229,7 @@ impl<W: Write> Writer<W> {
                             &self.names[&NameKey::StructMember(ty, index)]
                         )?
                     }
-                    ref other => return Err(Error::Custom(format!("Cannot index {other:?}"))),
+                    ref other => unreachable!("cannot index into a {other:?}"),
                 }
             }
             Expression::ImageSample {
@@ -1545,12 +1542,11 @@ impl<W: Write> Writer<W> {
                 let fun_name = match fun {
                     Rf::All => "all",
                     Rf::Any => "any",
-                    _ => return Err(Error::UnsupportedRelationalFunction(fun)),
+                    Rf::IsNan => "is_nan",
+                    Rf::IsInf => "is_inf",
                 };
-                write!(self.out, "{fun_name}(")?;
-
+                write!(self.out, "{SHADER_LIB}::{fun_name}(")?;
                 self.write_expr(module, argument, func_ctx)?;
-
                 write!(self.out, ")")?
             }
             // Not supported yet
