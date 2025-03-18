@@ -507,7 +507,6 @@ impl<W: Write> Writer<W> {
                     }
                 }
             }
-            // TODO: copy-paste from glsl-out
             Statement::If {
                 condition,
                 ref accept,
@@ -538,20 +537,14 @@ impl<W: Write> Writer<W> {
                 writeln!(self.out, "{level}}}")?
             }
             Statement::Return { value } => {
-                write!(self.out, "{level}")?;
-                write!(self.out, "return")?;
+                write!(self.out, "{level}return")?;
                 if let Some(return_value) = value {
-                    // The leading space is important
                     write!(self.out, " ")?;
                     self.write_expr(module, return_value, func_ctx)?;
                 }
                 writeln!(self.out, ";")?;
             }
-            // TODO: copy-paste from glsl-out
-            Statement::Kill => {
-                write!(self.out, "{level}")?;
-                writeln!(self.out, "discard;")?
-            }
+            Statement::Kill => write!(self.out, "{level}{SHADER_LIB}::discard();")?,
             Statement::Store { pointer, value } => {
                 write!(self.out, "{level}")?;
 
@@ -560,21 +553,18 @@ impl<W: Write> Writer<W> {
                     .is_atomic_pointer(&module.types);
 
                 if is_atomic_pointer {
-                    write!(self.out, "atomicStore(")?;
-                    self.write_expr(module, pointer, func_ctx)?;
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, value, func_ctx)?;
-                    write!(self.out, ")")?;
-                } else {
-                    self.write_expr_with_indirection(
-                        module,
-                        pointer,
-                        func_ctx,
-                        Indirection::Reference,
-                    )?;
-                    write!(self.out, " = ")?;
-                    self.write_expr(module, value, func_ctx)?;
+                    return Err(Error::Unimplemented("atomic operations".into()));
                 }
+
+                self.write_expr_with_indirection(
+                    module,
+                    pointer,
+                    func_ctx,
+                    Indirection::Reference,
+                )?;
+                write!(self.out, " = ")?;
+                self.write_expr(module, value, func_ctx)?;
+
                 writeln!(self.out, ";")?
             }
             Statement::Call {
@@ -599,34 +589,21 @@ impl<W: Write> Writer<W> {
                 writeln!(self.out, ");")?
             }
             Statement::Atomic { .. } => {
-                todo!("Statement::Atomic");
+                return Err(Error::Unimplemented("atomic operations".into()));
             }
             Statement::ImageAtomic { .. } => {
-                todo!("Statement::ImageAtomic");
+                return Err(Error::TexturesAreUnsupported {
+                    found: "textureAtomic",
+                });
             }
             Statement::WorkGroupUniformLoad { .. } => {
                 todo!("Statement::WorkGroupUniformLoad");
             }
-            Statement::ImageStore {
-                image,
-                coordinate,
-                array_index,
-                value,
-            } => {
-                write!(self.out, "{level}")?;
-                write!(self.out, "textureStore(")?;
-                self.write_expr(module, image, func_ctx)?;
-                write!(self.out, ", ")?;
-                self.write_expr(module, coordinate, func_ctx)?;
-                if let Some(array_index_expr) = array_index {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, array_index_expr, func_ctx)?;
-                }
-                write!(self.out, ", ")?;
-                self.write_expr(module, value, func_ctx)?;
-                writeln!(self.out, ");")?;
+            Statement::ImageStore { .. } => {
+                return Err(Error::TexturesAreUnsupported {
+                    found: "textureStore",
+                });
             }
-            // TODO: copy-paste from glsl-out
             Statement::Block(ref block) => {
                 write!(self.out, "{level}")?;
                 writeln!(self.out, "{{")?;
@@ -736,137 +713,16 @@ impl<W: Write> Writer<W> {
             Statement::Continue => {
                 writeln!(self.out, "{level}continue;")?;
             }
-            Statement::Barrier(barrier) => {
-                if barrier.contains(naga::Barrier::STORAGE) {
-                    writeln!(self.out, "{level}nstd::storage_barrier();")?;
-                }
-
-                if barrier.contains(naga::Barrier::WORK_GROUP) {
-                    writeln!(self.out, "{level}nstd::workgroup_barrier();")?;
-                }
-
-                if barrier.contains(naga::Barrier::SUB_GROUP) {
-                    writeln!(self.out, "{level}nstd::subgroup_barrier();")?;
-                }
-
-                // if barrier.contains(naga::Barrier::TEXTURE) {
-                //     writeln!(self.out, "{level}nstd::texture_barrier();")?;
-                // }
-
-                // TODO: exhaustivity
+            Statement::Barrier(_) => {
+                return Err(Error::Unimplemented("barriers".into()));
             }
-            Statement::RayQuery { .. } => unreachable!(),
-            Statement::SubgroupBallot { result, predicate } => {
-                write!(self.out, "{level}")?;
-                let res_name = Baked(result).to_string();
-                self.start_named_expr(module, result, func_ctx, &res_name)?;
-                self.named_expressions.insert(result, res_name);
-
-                write!(self.out, "subgroupBallot(")?;
-                if let Some(predicate) = predicate {
-                    self.write_expr(module, predicate, func_ctx)?;
-                }
-                writeln!(self.out, ");")?;
+            Statement::RayQuery { .. } => {
+                return Err(Error::Unimplemented("raytracing".into()));
             }
-            Statement::SubgroupCollectiveOperation {
-                op,
-                collective_op,
-                argument,
-                result,
-            } => {
-                write!(self.out, "{level}")?;
-                let res_name = Baked(result).to_string();
-                self.start_named_expr(module, result, func_ctx, &res_name)?;
-                self.named_expressions.insert(result, res_name);
-
-                match (collective_op, op) {
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::All) => {
-                        write!(self.out, "subgroupAll(")?
-                    }
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::Any) => {
-                        write!(self.out, "subgroupAny(")?
-                    }
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::Add) => {
-                        write!(self.out, "subgroupAdd(")?
-                    }
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::Mul) => {
-                        write!(self.out, "subgroupMul(")?
-                    }
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::Max) => {
-                        write!(self.out, "subgroupMax(")?
-                    }
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::Min) => {
-                        write!(self.out, "subgroupMin(")?
-                    }
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::And) => {
-                        write!(self.out, "subgroupAnd(")?
-                    }
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::Or) => {
-                        write!(self.out, "subgroupOr(")?
-                    }
-                    (naga::CollectiveOperation::Reduce, naga::SubgroupOperation::Xor) => {
-                        write!(self.out, "subgroupXor(")?
-                    }
-                    (naga::CollectiveOperation::ExclusiveScan, naga::SubgroupOperation::Add) => {
-                        write!(self.out, "subgroupExclusiveAdd(")?
-                    }
-                    (naga::CollectiveOperation::ExclusiveScan, naga::SubgroupOperation::Mul) => {
-                        write!(self.out, "subgroupExclusiveMul(")?
-                    }
-                    (naga::CollectiveOperation::InclusiveScan, naga::SubgroupOperation::Add) => {
-                        write!(self.out, "subgroupInclusiveAdd(")?
-                    }
-                    (naga::CollectiveOperation::InclusiveScan, naga::SubgroupOperation::Mul) => {
-                        write!(self.out, "subgroupInclusiveMul(")?
-                    }
-                    _ => unimplemented!(),
-                }
-                self.write_expr(module, argument, func_ctx)?;
-                writeln!(self.out, ");")?;
-            }
-            Statement::SubgroupGather {
-                mode,
-                argument,
-                result,
-            } => {
-                write!(self.out, "{level}")?;
-                let res_name = Baked(result).to_string();
-                self.start_named_expr(module, result, func_ctx, &res_name)?;
-                self.named_expressions.insert(result, res_name);
-
-                match mode {
-                    naga::GatherMode::BroadcastFirst => {
-                        write!(self.out, "subgroupBroadcastFirst(")?;
-                    }
-                    naga::GatherMode::Broadcast(_) => {
-                        write!(self.out, "subgroupBroadcast(")?;
-                    }
-                    naga::GatherMode::Shuffle(_) => {
-                        write!(self.out, "subgroupShuffle(")?;
-                    }
-                    naga::GatherMode::ShuffleDown(_) => {
-                        write!(self.out, "subgroupShuffleDown(")?;
-                    }
-                    naga::GatherMode::ShuffleUp(_) => {
-                        write!(self.out, "subgroupShuffleUp(")?;
-                    }
-                    naga::GatherMode::ShuffleXor(_) => {
-                        write!(self.out, "subgroupShuffleXor(")?;
-                    }
-                }
-                self.write_expr(module, argument, func_ctx)?;
-                match mode {
-                    naga::GatherMode::BroadcastFirst => {}
-                    naga::GatherMode::Broadcast(index)
-                    | naga::GatherMode::Shuffle(index)
-                    | naga::GatherMode::ShuffleDown(index)
-                    | naga::GatherMode::ShuffleUp(index)
-                    | naga::GatherMode::ShuffleXor(index) => {
-                        write!(self.out, ", ")?;
-                        self.write_expr(module, index, func_ctx)?;
-                    }
-                }
-                writeln!(self.out, ");")?;
+            Statement::SubgroupBallot { .. }
+            | Statement::SubgroupCollectiveOperation { .. }
+            | Statement::SubgroupGather { .. } => {
+                return Err(Error::Unimplemented("workgroup operations".into()));
             }
         }
 
@@ -1225,165 +1081,20 @@ impl<W: Write> Writer<W> {
                     ref other => unreachable!("cannot index into a {other:?}"),
                 }
             }
-            Expression::ImageSample {
-                image,
-                sampler,
-                gather: None,
-                coordinate,
-                array_index,
-                offset,
-                level,
-                depth_ref,
-            } => {
-                use naga::SampleLevel as Sl;
-
-                let suffix_cmp = match depth_ref {
-                    Some(_) => "Compare",
-                    None => "",
-                };
-                let suffix_level = match level {
-                    Sl::Auto => "",
-                    Sl::Zero | Sl::Exact(_) => "Level",
-                    Sl::Bias(_) => "Bias",
-                    Sl::Gradient { .. } => "Grad",
-                };
-
-                write!(self.out, "textureSample{suffix_cmp}{suffix_level}(")?;
-                self.write_expr(module, image, func_ctx)?;
-                write!(self.out, ", ")?;
-                self.write_expr(module, sampler, func_ctx)?;
-                write!(self.out, ", ")?;
-                self.write_expr(module, coordinate, func_ctx)?;
-
-                if let Some(array_index) = array_index {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, array_index, func_ctx)?;
-                }
-
-                if let Some(depth_ref) = depth_ref {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, depth_ref, func_ctx)?;
-                }
-
-                match level {
-                    Sl::Auto => {}
-                    Sl::Zero => {
-                        // Level 0 is implied for depth comparison
-                        if depth_ref.is_none() {
-                            write!(self.out, ", 0.0")?;
-                        }
-                    }
-                    Sl::Exact(expr) => {
-                        write!(self.out, ", ")?;
-                        self.write_expr(module, expr, func_ctx)?;
-                    }
-                    Sl::Bias(expr) => {
-                        write!(self.out, ", ")?;
-                        self.write_expr(module, expr, func_ctx)?;
-                    }
-                    Sl::Gradient { x, y } => {
-                        write!(self.out, ", ")?;
-                        self.write_expr(module, x, func_ctx)?;
-                        write!(self.out, ", ")?;
-                        self.write_expr(module, y, func_ctx)?;
-                    }
-                }
-
-                if let Some(offset) = offset {
-                    write!(self.out, ", ")?;
-                    self.write_const_expression(module, offset, func_ctx.expressions)?;
-                }
-
-                write!(self.out, ")")?;
+            Expression::ImageSample { .. } => {
+                return Err(Error::TexturesAreUnsupported {
+                    found: "textureSample",
+                });
             }
-
-            Expression::ImageSample {
-                image,
-                sampler,
-                gather: Some(component),
-                coordinate,
-                array_index,
-                offset,
-                level: _,
-                depth_ref,
-            } => {
-                let suffix_cmp = match depth_ref {
-                    Some(_) => "Compare",
-                    None => "",
-                };
-
-                write!(self.out, "textureGather{suffix_cmp}(")?;
-                match *func_ctx.resolve_type(image, &module.types) {
-                    TypeInner::Image {
-                        class: naga::ImageClass::Depth { multi: _ },
-                        ..
-                    } => {}
-                    _ => {
-                        write!(self.out, "{}, ", component as u8)?;
-                    }
-                }
-                self.write_expr(module, image, func_ctx)?;
-                write!(self.out, ", ")?;
-                self.write_expr(module, sampler, func_ctx)?;
-                write!(self.out, ", ")?;
-                self.write_expr(module, coordinate, func_ctx)?;
-
-                if let Some(array_index) = array_index {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, array_index, func_ctx)?;
-                }
-
-                if let Some(depth_ref) = depth_ref {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, depth_ref, func_ctx)?;
-                }
-
-                if let Some(offset) = offset {
-                    write!(self.out, ", ")?;
-                    self.write_const_expression(module, offset, func_ctx.expressions)?;
-                }
-
-                write!(self.out, ")")?;
+            Expression::ImageQuery { .. } => {
+                return Err(Error::TexturesAreUnsupported {
+                    found: "texture queries",
+                });
             }
-            Expression::ImageQuery { image, query } => {
-                use naga::ImageQuery as Iq;
-
-                let texture_function = match query {
-                    Iq::Size { .. } => "textureDimensions",
-                    Iq::NumLevels => "textureNumLevels",
-                    Iq::NumLayers => "textureNumLayers",
-                    Iq::NumSamples => "textureNumSamples",
-                };
-
-                write!(self.out, "{texture_function}(")?;
-                self.write_expr(module, image, func_ctx)?;
-                if let Iq::Size { level: Some(level) } = query {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, level, func_ctx)?;
-                };
-                write!(self.out, ")")?;
-            }
-
-            Expression::ImageLoad {
-                image,
-                coordinate,
-                array_index,
-                sample,
-                level,
-            } => {
-                write!(self.out, "textureLoad(")?;
-                self.write_expr(module, image, func_ctx)?;
-                write!(self.out, ", ")?;
-                self.write_expr(module, coordinate, func_ctx)?;
-                if let Some(array_index) = array_index {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, array_index, func_ctx)?;
-                }
-                if let Some(index) = sample.or(level) {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, index, func_ctx)?;
-                }
-                write!(self.out, ")")?;
+            Expression::ImageLoad { .. } => {
+                return Err(Error::TexturesAreUnsupported {
+                    found: "textureLoad",
+                });
             }
             Expression::GlobalVariable(handle) => {
                 let name = &self.names[&NameKey::GlobalVariable(handle)];
@@ -1587,7 +1298,7 @@ impl<W: Write> Writer<W> {
                 write!(self.out, "{SHADER_LIB}::SamplerComparison")?;
             }
             TypeInner::Image { .. } => {
-                unimplemented!()
+                write!(self.out, "{SHADER_LIB}::Image")?;
             }
             TypeInner::Scalar(scalar) => {
                 write!(self.out, "{}", unwrap_to_rust(scalar))?;
@@ -1615,9 +1326,7 @@ impl<W: Write> Writer<W> {
                 }
                 write!(self.out, "]")?;
             }
-            TypeInner::BindingArray { .. } => {
-                unimplemented!() // TODO
-            }
+            TypeInner::BindingArray { .. } => {}
             TypeInner::Matrix {
                 columns,
                 rows,
@@ -1658,15 +1367,16 @@ impl<W: Write> Writer<W> {
                 } else {
                     write!(self.out, "&mut ")?;
                 }
-            }
-            TypeInner::AccelerationStructure { .. } => {
-                unimplemented!()
+                todo!()
             }
             TypeInner::Struct { .. } => {
                 unreachable!("should only see a struct by name");
             }
+            TypeInner::AccelerationStructure { .. } => {
+                return Err(Error::Unimplemented("type AccelerationStructure".into()));
+            }
             TypeInner::RayQuery { .. } => {
-                unimplemented!()
+                return Err(Error::Unimplemented("type RayQuery".into()));
             }
         }
 

@@ -1,4 +1,7 @@
 //! Tests of the exact source text produced by the Rust backend.
+//!
+//! TODO: Consider whether we want to rewrite some or all of these tests to use
+//! `syn` or another parser to match trees instead of exact text.
 
 use pretty_assertions::assert_eq;
 
@@ -93,7 +96,7 @@ fn switch() {
                     }
                 }
             }
-            
+
             "
         }
     );

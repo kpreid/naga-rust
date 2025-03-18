@@ -37,15 +37,14 @@ pub enum Error {
     // TODO: this should not be a thing when finished
     //#[error("{0}")]
     Unimplemented(String),
-    // TODO: remove if not used
-    //#[error("Unsupported {kind}: {value}")]
-    // Unsupported {
-    //     /// What kind of unsupported thing this is: interpolation, builtin, etc.
-    //     kind: &'static str,
-    //
-    //     /// The debug form of the Naga IR value that this backend can't express.
-    //     value: String,
-    // },
+
+    /// We don’t (yet) support texture operations in Rust,
+    /// and this is a notably broad category.
+    TexturesAreUnsupported {
+        /// The specific kind of thing found that is unsupported.
+        /// Represented as a WGSL-flavored string.
+        found: &'static str,
+    },
 }
 
 impl From<fmt::Error> for Error {
@@ -60,22 +59,12 @@ impl fmt::Display for Error {
         match self {
             Error::FmtError(fmt::Error) => write!(f, "formatting cancelled"),
             Error::Unimplemented(msg) => write!(f, "{msg}"),
+            Error::TexturesAreUnsupported { found } => {
+                write!(f, "texture operations, such as {found}, are not supported")
+            }
         }
     }
 }
-
-// TODO: are we going to need this?
-// impl Error {
-//     /// Produce an [`Unsupported`] error for `value`.
-//     ///
-//     /// [`Unsupported`]: Error::Unsupported
-//     fn unsupported<T: core::fmt::Debug>(kind: &'static str, value: T) -> Error {
-//         Error::Unsupported {
-//             kind,
-//             value: format!("{value:?}"),
-//         }
-//     }
-// }
 
 /// Converts `module` to a string of Rust code.
 ///
