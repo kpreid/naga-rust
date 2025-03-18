@@ -1703,21 +1703,22 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    /// Helper method used to write global constants
-    ///
-    /// # Notes
-    /// Ends in a newline
+    /// Writes a Rust `const` item for a [`naga::Constant`], with trailing newline.
     fn write_global_constant(
         &mut self,
         module: &Module,
         handle: Handle<naga::Constant>,
     ) -> BackendResult {
         let name = &self.names[&NameKey::Constant(handle)];
-        // First write only constant name
-        write!(self.out, "#[allow(non_upper_case_globals)]\nconst {name}: ")?;
+        let visibility = self.visibility();
+        let init = module.constants[handle].init;
+
+        write!(
+            self.out,
+            "#[allow(non_upper_case_globals)]\n{visibility}const {name}: "
+        )?;
         self.write_type(module, module.constants[handle].ty)?;
         write!(self.out, " = ")?;
-        let init = module.constants[handle].init;
         self.write_const_expression(module, init, &module.global_expressions)?;
         writeln!(self.out, ";")?;
 
