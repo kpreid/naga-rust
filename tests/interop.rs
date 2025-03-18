@@ -91,6 +91,23 @@ fn declare_and_modify_struct() {
 }
 
 #[test]
+fn switch() {
+    wgsl!(
+        r"fn switching(x: i32) -> i32 {
+            switch (x) {
+                case 0 { return 0; }
+                case 1 { return 1; }
+                case default { return 2; }
+            }
+        }"
+    );
+
+    assert_eq!(switching(0), 0);
+    assert_eq!(switching(1), 1);
+    assert_eq!(switching(2), 2);
+}
+
+#[test]
 fn while_loop() {
     wgsl!(
         r"fn count(n: i32) -> i32 {

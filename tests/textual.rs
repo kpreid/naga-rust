@@ -61,3 +61,40 @@ fn global_variable() {
         }
     );
 }
+
+#[test]
+fn switch() {
+    assert_eq!(
+        translate_without_header(
+            WriterFlags::empty(),
+            r"
+            fn switching(x: i32) -> i32 {
+                switch (x) {
+                    case 0 { return 0; }
+                    case 1, 2 { return 1; }
+                    case default { return 2; }
+                }
+            }
+            "
+        ),
+        indoc::indoc! {
+            "
+            #[allow(unused, clippy::all)]
+            fn switching(x: i32) -> i32 {
+                match x {
+                    0i32 => {
+                        return 0i32;
+                    }
+                    1i32 | 2i32 => {
+                        return 1i32;
+                    }
+                    _ => {
+                        return 2i32;
+                    }
+                }
+            }
+            
+            "
+        }
+    );
+}

@@ -640,60 +640,52 @@ impl<W: Write> Writer<W> {
                 selector,
                 ref cases,
             } => {
-                // Start the switch
+                // Beginning of the match expression
                 write!(self.out, "{level}")?;
-                write!(self.out, "switch ")?;
+                write!(self.out, "match ")?;
                 self.write_expr(module, selector, func_ctx)?;
                 writeln!(self.out, " {{")?;
 
+                // Generate each arm, collapsing empty fall-through into a single arm.
                 let l2 = level.next();
-                let mut new_case = true;
+                let mut new_match_arm = true;
                 for case in cases {
                     if case.fall_through && !case.body.is_empty() {
-                        // TODO: we could do the same workaround as we did for the HLSL backend
+                        // TODO
                         return Err(Error::Unimplemented(
                             "fall-through switch case block".into(),
                         ));
                     }
 
+                    if new_match_arm {
+                        // Write initial indentation.
+                        write!(self.out, "{l2}")?;
+                    } else {
+                        // Write or-pattern to combine cases.
+                        write!(self.out, " | ")?;
+                    }
+                    // Write the case's pattern
                     match case.value {
                         naga::SwitchValue::I32(value) => {
-                            if new_case {
-                                write!(self.out, "{l2}case ")?;
-                            }
-                            write!(self.out, "{value}")?;
+                            write!(self.out, "{value}i32")?;
                         }
                         naga::SwitchValue::U32(value) => {
-                            if new_case {
-                                write!(self.out, "{l2}case ")?;
-                            }
-                            write!(self.out, "{value}u")?;
+                            write!(self.out, "{value}u32")?;
                         }
                         naga::SwitchValue::Default => {
-                            if new_case {
-                                if case.fall_through {
-                                    write!(self.out, "{l2}case ")?;
-                                } else {
-                                    write!(self.out, "{l2}")?;
-                                }
-                            }
-                            write!(self.out, "default")?;
+                            write!(self.out, "_")?;
                         }
                     }
 
-                    new_case = !case.fall_through;
+                    new_match_arm = !case.fall_through;
 
-                    if case.fall_through {
-                        write!(self.out, ", ")?;
-                    } else {
-                        writeln!(self.out, ": {{")?;
-                    }
-
-                    for sta in case.body.iter() {
-                        self.write_stmt(module, sta, func_ctx, l2.next())?;
-                    }
-
-                    if !case.fall_through {
+                    // End this pattern and begin the body of this arm,
+                    // if it is not fall-through.
+                    if new_match_arm {
+                        writeln!(self.out, " => {{")?;
+                        for sta in case.body.iter() {
+                            self.write_stmt(module, sta, func_ctx, l2.next())?;
+                        }
                         writeln!(self.out, "{l2}}}")?;
                     }
                 }
