@@ -56,8 +56,11 @@ impl From<fmt::Error> for Error {
 
 impl core::error::Error for Error {}
 impl fmt::Display for Error {
-    fn fmt(&self, _: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!("bring back error formatting")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::FmtError(fmt::Error) => write!(f, "formatting cancelled"),
+            Error::Unimplemented(msg) => write!(f, "{msg}"),
+        }
     }
 }
 
