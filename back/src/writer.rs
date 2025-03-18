@@ -170,7 +170,7 @@ impl<W: Write> Writer<W> {
         for (handle, ty) in module.types.iter() {
             if let TypeInner::Struct { ref members, .. } = ty.inner {
                 {
-                    self.write_struct(module, handle, members)?;
+                    self.write_struct_definition(module, handle, members)?;
                     writeln!(self.out)?;
                 }
             }
@@ -412,17 +412,13 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    /// Helper method used to write structs
-    /// Write the full declaration of a struct type.
-    ///
     /// Write out a definition of the struct type referred to by
-    /// `handle` in `module`. The output will be an instance of the
-    /// `struct_decl` production in the WGSL grammar.
+    /// `handle` in `module`.
     ///
     /// Use `members` as the list of `handle`'s members. (This
     /// function is usually called after matching a `TypeInner`, so
     /// the callers already have the members at hand.)
-    fn write_struct(
+    fn write_struct_definition(
         &mut self,
         module: &Module,
         handle: Handle<naga::Type>,
@@ -447,7 +443,7 @@ impl<W: Write> Writer<W> {
             // Write struct member name and type
             let member_name =
                 &self.names[&NameKey::StructMember(handle, index.try_into().unwrap())];
-            write!(self.out, "pub {member_name}: ")?;
+            write!(self.out, "{visibility}{member_name}: ")?;
             self.write_type(module, member.ty)?;
             write!(self.out, ",")?;
             writeln!(self.out)?;
@@ -1315,10 +1311,10 @@ impl<W: Write> Writer<W> {
                 match size {
                     naga::ArraySize::Constant(len) => {
                         self.write_type(module, base)?;
-                        write!(self.out, ", {len}")?;
+                        write!(self.out, "; {len}")?;
                     }
                     naga::ArraySize::Pending(..) => {
-                        unimplemented!()
+                        return Err(Error::Unimplemented("override array size".into()));
                     }
                     naga::ArraySize::Dynamic => {
                         self.write_type(module, base)?;

@@ -101,3 +101,25 @@ fn switch() {
         }
     );
 }
+
+#[test]
+fn array_type_sizes() {
+    assert_eq!(
+        translate_without_header(
+            WriterFlags::empty(),
+            r"struct Foo {
+                x: array<i32, 10>,
+                y: array<i32>,
+            }"
+        ),
+        indoc::indoc! {
+            "#[repr(C)]
+            struct Foo {
+                x: [i32; 10],
+                y: [i32],
+            }
+
+            "
+        }
+    );
+}
