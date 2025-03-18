@@ -6,7 +6,7 @@ use core::fmt::Write;
 
 use naga::{
     Expression, Handle, Module, Scalar, ShaderStage, TypeInner,
-    back::{self},
+    back::{self, INDENT},
     proc::{self, ExpressionKindTracker, NameKey},
     valid,
 };
@@ -131,7 +131,9 @@ impl<W: Write> Writer<W> {
         namer.reset(
             module,
             KEYWORDS_2024,
-            &[SHADER_LIB],
+            // TODO: Figure out a more systematic answer to how we manage global variables
+            // than reserving this one name, `Globals`.
+            &[SHADER_LIB, "Globals"],
             &[],
             &[],
             &mut self.names,
@@ -192,10 +194,19 @@ impl<W: Write> Writer<W> {
             writeln!(self.out, "struct Globals {{")?;
             // TODO: we are going to need to sort out global variables into whether
             // they are fields or cons
-            for (ty, global) in module.global_variables.iter() {
-                self.write_global_variable_as_field(module, global, ty)?;
+            for (handle, global) in module.global_variables.iter() {
+                self.write_global_variable_as_struct_field(module, global, handle)?;
             }
-            writeln!(self.out, "}}")?;
+            writeln!(
+                self.out,
+                "}}\n\
+                impl Default for Globals {{\n\
+                {INDENT}fn default() -> Self {{ Self {{"
+            )?;
+            for (handle, global) in module.global_variables.iter() {
+                self.write_global_variable_as_field_initializer(module, global, handle)?;
+            }
+            writeln!(self.out, "{INDENT}}}}}\n}}")?;
         }
 
         // Write all regular functions
@@ -304,7 +315,7 @@ impl<W: Write> Writer<W> {
         // Write function local variables
         for (handle, local) in func.local_variables.iter() {
             // Write indentation (only for readability)
-            write!(self.out, "{}", back::INDENT)?;
+            write!(self.out, "{INDENT}")?;
 
             // Write the local name
             // The leading space is important
@@ -429,7 +440,7 @@ impl<W: Write> Writer<W> {
         writeln!(self.out)?;
         for (index, member) in members.iter().enumerate() {
             // The indentation is only for readability
-            write!(self.out, "{}", back::INDENT)?;
+            write!(self.out, "{INDENT}")?;
             // if let Some(ref binding) = member.binding {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
@@ -1667,7 +1678,7 @@ impl<W: Write> Writer<W> {
     }
 
     /// Helper method used to write global variables as translated into struct fields
-    fn write_global_variable_as_field(
+    fn write_global_variable_as_struct_field(
         &mut self,
         module: &Module,
         global: &naga::GlobalVariable,
@@ -1683,19 +1694,32 @@ impl<W: Write> Writer<W> {
 
         write!(
             self.out,
-            " {}: ",
+            "{INDENT}{}: ",
+            &self.names[&NameKey::GlobalVariable(handle)]
+        )?;
+        self.write_type(module, global.ty)?;
+        writeln!(self.out, ",")?;
+
+        Ok(())
+    }
+    fn write_global_variable_as_field_initializer(
+        &mut self,
+        module: &Module,
+        global: &naga::GlobalVariable,
+        handle: Handle<naga::GlobalVariable>,
+    ) -> BackendResult {
+        write!(
+            self.out,
+            "{INDENT}{INDENT}{}: ",
             &self.names[&NameKey::GlobalVariable(handle)]
         )?;
 
-        // Write global type
-        self.write_type(module, global.ty)?;
-
-        // Write initializer
-        // TODO: need to generate a separate initializer expression
-        // if let Some(init) = global.init {
-        //     write!(self.out, " = ")?;
-        //     self.write_const_expression(module, init, &module.global_expressions)?;
-        // }
+        if let Some(init) = global.init {
+            self.write_const_expression(module, init, &module.global_expressions)?;
+        } else {
+            // Default will generally produce zero
+            write!(self.out, "Default::default()")?;
+        }
 
         // End with comma separating from the next field
         writeln!(self.out, ",")?;
