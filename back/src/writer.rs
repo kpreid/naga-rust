@@ -1624,7 +1624,7 @@ impl<W: Write> Writer<W> {
                 write!(self.out, "]")?;
             }
             TypeInner::BindingArray { .. } => {
-                unimplemented!()
+                unimplemented!() // TODO
             }
             TypeInner::Matrix {
                 columns,
@@ -1658,10 +1658,14 @@ impl<W: Write> Writer<W> {
             }
             TypeInner::ValuePointer {
                 size: _,
-                scalar,
+                scalar: _,
                 space: _,
             } => {
-                write!(self.out, "*mut {}", unwrap_to_rust(scalar))?;
+                if self.flags.contains(WriterFlags::RAW_POINTERS) {
+                    write!(self.out, "*mut ")?;
+                } else {
+                    write!(self.out, "&mut ")?;
+                }
             }
             TypeInner::AccelerationStructure { .. } => {
                 unimplemented!()

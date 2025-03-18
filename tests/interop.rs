@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 // TODO: Should there should be an explicit public vector-type API module which is not rt::?
-use naga_rust::rt::Vec2;
+use naga_rust::rt::{IVec2, Vec2};
 use naga_rust::wgsl;
 
 #[test]
@@ -31,7 +31,6 @@ fn scalar_arithmetic() {
 
     assert_eq!(add_one(10), 11);
 }
-
 #[test]
 fn vector_arithmetic() {
     wgsl!(
@@ -41,6 +40,33 @@ fn vector_arithmetic() {
     );
 
     assert_eq!(add_one(Vec2::new(0.5, 10.0)), Vec2::new(1.5, 11.0));
+}
+
+#[test]
+fn scalar_pointer() {
+    wgsl!(
+        r"fn add_one_ptr(p: ptr<function, i32>) {
+            *p += 1;
+        }"
+    );
+
+    let mut x = 10;
+    add_one_ptr(&mut x);
+    assert_eq!(x, 11);
+}
+
+#[test]
+fn vector_pointer() {
+    wgsl!(
+        r"fn add_to_ptr(p: ptr<function, vec2i>) {
+            (*p).x += 1;
+            (*p).y += 2;
+        }"
+    );
+
+    let mut x = IVec2::new(10, 10);
+    add_to_ptr(&mut x);
+    assert_eq!(x, IVec2::new(11, 12));
 }
 
 #[test]
