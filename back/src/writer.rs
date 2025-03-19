@@ -36,33 +36,31 @@ enum Attribute {
     WorkGroupSize([u32; 3]),
 }
 
-/// The WGSL form that `write_expr_with_indirection` should use to render a Naga
+/// The Rust form that `write_expr_with_indirection` should use to render a Naga
 /// expression.
 ///
 /// Sometimes a Naga `Expression` alone doesn't provide enough information to
-/// choose the right rendering for it in WGSL. For example, one natural WGSL
-/// rendering of a Naga `LocalVariable(x)` expression might be `&x`, since
-/// `LocalVariable` produces a pointer to the local variable's storage. But when
-/// rendering a `Store` statement, the `pointer` operand must be the left hand
-/// side of a WGSL assignment, so the proper rendering is `x`.
+/// choose the right rendering for it in Rust.
+/// This is because the Naga IR does not have the Rust concept of “place expressions”
+/// (or WGSL “references”); everything that might be read or written separately
+/// from evaluating the expression itself is expressed via expressions whose Naga IR
+/// types are pointers. But in Rust, we need to know whether to borrow (take a
+/// reference or pointer to) a place, and if so, *how* to borrow it (`&`, `&mut`,
+/// or `&raw`) to satisfy type and borrow checking.
 ///
-/// The caller of `write_expr_with_indirection` must provide an `Expected` value
-/// to indicate how ambiguous expressions should be rendered.
+/// The caller of `write_expr_with_indirection` must therefore provide this parameter
+/// to say what kind of Rust expression it wants, relative to the type of the Naga IR
+/// expression.
 #[derive(Clone, Copy, Debug)]
 enum Indirection {
-    /// Render pointer-construction expressions as WGSL `ptr`-typed expressions.
-    ///
-    /// This is the right choice for most cases. Whenever a Naga pointer
-    /// expression is not the `pointer` operand of a `Load` or `Store`, it
-    /// must be a WGSL pointer expression.
-    Ordinary,
+    /// The Naga expression must have a pointer type, and
+    /// the Rust expression will be a place expression for the referent of that pointer.
+    Place,
 
-    /// Render pointer-construction expressions as WGSL reference-typed
-    /// expressions.
-    ///
-    /// For example, this is the right choice for the `pointer` operand when
-    /// rendering a `Store` statement as a WGSL assignment.
-    Reference,
+    /// The Rust expression has the same corresponding type as the Naga expression.
+    /// The Rust expression is not necessarily a mutable place; it may be borrowed
+    /// immutably but not mutably.
+    Ordinary,
 }
 
 bitflags::bitflags! {
@@ -73,7 +71,8 @@ bitflags::bitflags! {
         const EXPLICIT_TYPES = 0x1;
 
         /// Generate code using raw pointers instead of references.
-        /// The resulting code is `unsafe` and may be unsound if the WGSL uses invalid pointers.
+        /// The resulting code is `unsafe` and may be unsound if the input module
+        /// uses pointers incorrectly.
         const RAW_POINTERS = 0x2;
 
         /// Generate items with `pub` visibility instead of private.
@@ -256,9 +255,6 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    /// Helper method used to write
-    /// [functions](https://gpuweb.github.io/gpuweb/wgsl/#functions)
-    ///
     /// # Notes
     /// Ends in a newline
     fn write_function(
@@ -553,12 +549,10 @@ impl<W: Write> Writer<W> {
                     return Err(Error::Unimplemented("atomic operations".into()));
                 }
 
-                self.write_expr_with_indirection(
-                    module,
-                    pointer,
-                    func_ctx,
-                    Indirection::Reference,
-                )?;
+                // We have a Naga “pointer” but it might actually denote a plain variable.
+                // We ask for `Indirection::Place` to say: please dereference the logical pointer
+                // and give me the dereference op *or* plain variable to assign to.
+                self.write_expr_with_indirection(module, pointer, func_ctx, Indirection::Place)?;
                 write!(self.out, " = ")?;
                 self.write_expr(module, value, func_ctx)?;
 
@@ -728,26 +722,14 @@ impl<W: Write> Writer<W> {
 
     /// Return the sort of indirection that `expr`'s plain form evaluates to.
     ///
-    /// An expression's 'plain form' is the most general rendition of that
-    /// expression into WGSL, lacking `&` or `*` operators:
+    /// An expression's 'plain form' is the shortest rendition of that
+    /// expression's meaning into Rust, lacking `&` or `*` operators.
+    /// Therefore, it may not have a type which matches the Naga IR expression
+    /// type (because Naga does not have places, only pointers and non-pointer values).
     ///
-    /// - The plain form of `LocalVariable(x)` is simply `x`, which is a reference
-    ///   to the local variable's storage.
-    ///
-    /// - The plain form of `GlobalVariable(g)` is simply `g`, which is usually a
-    ///   reference to the global variable's storage. However, globals in the
-    ///   `Handle` address space are immutable, and `GlobalVariable` expressions for
-    ///   those produce the value directly, not a pointer to it. Such
-    ///   `GlobalVariable` expressions are `Ordinary`.
-    ///
-    /// - `Access` and `AccessIndex` are `Reference` when their `base` operand is a
-    ///   pointer. If they are applied directly to a composite value, they are
-    ///   `Ordinary`.
-    ///
-    /// Note that `FunctionArgument` expressions are never `Reference`, even when
-    /// the argument's type is `Pointer`. `FunctionArgument` always evaluates to the
-    /// argument's value directly, so any pointer it produces is merely the value
-    /// passed by the caller.
+    /// This function is in a sense a secondary return value from
+    /// [`Self::write_expr_plain_form()`], but we need to have it available
+    /// *before* writing the expression itself.
     fn plain_form_indirection(
         &self,
         expr: Handle<Expression>,
@@ -756,27 +738,38 @@ impl<W: Write> Writer<W> {
     ) -> Indirection {
         use naga::Expression as Ex;
 
-        // Named expressions are `let` expressions, which apply the Load Rule,
-        // so if their type is a Naga pointer, then that must be a WGSL pointer
+        // Named expressions are `let` bindings.
+        // so if their type is a Naga pointer, then that must be a Rust pointer
         // as well.
         if self.named_expressions.contains_key(&expr) {
             return Indirection::Ordinary;
         }
 
         match func_ctx.expressions[expr] {
-            Ex::LocalVariable(_) => Indirection::Reference,
+            // In Naga, a `LocalVariable(x)` expression produces a pointer,
+            // but our plain form is a variable name `x`,
+            // which means the caller must reference it if desired.
+            Ex::LocalVariable(_) => Indirection::Place,
+
+            // The plain form of `GlobalVariable(g)` is simply `g`, which is usually a
+            // Rust place. However, globals in the `Handle` address space are immutable,
+            // and `GlobalVariable` expressions for those produce the value directly,
+            // not a pointer to it. Therefore, such expressions have `Indirection::Place`.
+            // (Note that the exception for Handle is a fact about Naga IR, not this backend.)
             Ex::GlobalVariable(handle) => {
                 let global = &module.global_variables[handle];
                 match global.space {
                     naga::AddressSpace::Handle => Indirection::Ordinary,
-                    _ => Indirection::Reference,
+                    _ => Indirection::Place,
                 }
             }
+
+            // `Access` and `AccessIndex` pass through the pointer-ness of their `base` value.
             Ex::Access { base, .. } | Ex::AccessIndex { base, .. } => {
                 let base_ty = func_ctx.resolve_type(base, &module.types);
                 match *base_ty {
                     TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. } => {
-                        Indirection::Reference
+                        Indirection::Place
                     }
                     _ => Indirection::Ordinary,
                 }
@@ -824,18 +817,14 @@ impl<W: Write> Writer<W> {
         self.write_expr_with_indirection(module, expr, func_ctx, Indirection::Ordinary)
     }
 
-    /// Write `expr` as a WGSL expression with the requested indirection.
+    /// Write `expr` as a Rust expression with the requested indirection.
     ///
-    /// In terms of the WGSL grammar, the resulting expression is a
-    /// `singular_expression`. It may be parenthesized. This makes it suitable
-    /// for use as the operand of a unary or binary operator without worrying
-    /// about precedence.
+    /// The expression is parenthesized if necessary to ensure it cannot be affected by precedence.
     ///
     /// This does not produce newlines or indentation.
     ///
-    /// The `requested` argument indicates (roughly) whether Naga
-    /// `Pointer`-valued expressions represent WGSL references or pointers. See
-    /// `Indirection` for details.
+    /// The `requested` argument indicates how the produced Rust expression’s type should relate
+    /// to the Naga type of the input expression. See [`Indirection`]’s documentation for details.
     fn write_expr_with_indirection(
         &mut self,
         module: &Module,
@@ -847,17 +836,27 @@ impl<W: Write> Writer<W> {
         // operator necessary to correct that.
         let plain = self.plain_form_indirection(expr, module, func_ctx);
         match (requested, plain) {
-            (Indirection::Ordinary, Indirection::Reference) => {
+            // The plain form expression will be a place.
+            // Convert it to a reference to match the Naga pointer type.
+            // TODO: We need to choose which borrow operator to use.
+            (Indirection::Ordinary, Indirection::Place) => {
                 write!(self.out, "(&")?;
                 self.write_expr_plain_form(module, expr, func_ctx, plain)?;
                 write!(self.out, ")")?;
             }
-            (Indirection::Reference, Indirection::Ordinary) => {
+
+            // The plain form expression will be a pointer, but the caller wants its pointee.
+            // Insert a dereference operator.
+            (Indirection::Place, Indirection::Ordinary) => {
                 write!(self.out, "(*")?;
                 self.write_expr_plain_form(module, expr, func_ctx, plain)?;
                 write!(self.out, ")")?;
             }
-            (_, _) => self.write_expr_plain_form(module, expr, func_ctx, plain)?,
+            // Matches.
+            (Indirection::Place, Indirection::Place)
+            | (Indirection::Ordinary, Indirection::Ordinary) => {
+                self.write_expr_plain_form(module, expr, func_ctx, plain)?
+            }
         }
 
         Ok(())
@@ -960,11 +959,16 @@ impl<W: Write> Writer<W> {
 
     /// Write the 'plain form' of `expr`.
     ///
-    /// An expression's 'plain form' is the most general rendition of that
-    /// expression into WGSL, lacking `&` or `*` operators. The plain forms of
-    /// `LocalVariable(x)` and `GlobalVariable(g)` are simply `x` and `g`. Such
-    /// Naga expressions represent both WGSL pointers and references; it's the
-    /// caller's responsibility to distinguish those cases appropriately.
+    /// An expression's 'plain form' is the shortest rendition of that
+    /// expression's meaning into Rust, lacking `&` or `*` operators.
+    /// Therefore, it may not have a type which matches the Naga IR expression
+    /// type (because Naga does not have places, only pointers and non-pointer values).
+    ///
+    /// When it does not match, this is indicated by [`Self::plain_form_indirection()`].
+    /// It is the caller’s responsibility to adapt as needed, usually via
+    /// [`Self::write_expr_with_indirection()`].
+    ///
+    /// TODO: explain the indirection parameter of *this* function.
     fn write_expr_plain_form(
         &mut self,
         module: &Module,
@@ -979,14 +983,6 @@ impl<W: Write> Writer<W> {
 
         let expression = &func_ctx.expressions[expr];
 
-        // Write the plain WGSL form of a Naga expression.
-        //
-        // The plain form of `LocalVariable` and `GlobalVariable` expressions is
-        // simply the variable name; `*` and `&` operators are never emitted.
-        //
-        // The plain form of `Access` and `AccessIndex` expressions are WGSL
-        // `postfix_expression` forms for member/component access and
-        // subscripting.
         match *expression {
             Expression::Literal(_)
             | Expression::Constant(_)
@@ -1142,12 +1138,7 @@ impl<W: Write> Writer<W> {
                 }
             }
             Expression::Load { pointer } => {
-                self.write_expr_with_indirection(
-                    module,
-                    pointer,
-                    func_ctx,
-                    Indirection::Reference,
-                )?;
+                self.write_expr_with_indirection(module, pointer, func_ctx, Indirection::Place)?;
             }
             Expression::LocalVariable(handle) => {
                 write!(self.out, "{}", self.names[&func_ctx.name_key(handle)])?
