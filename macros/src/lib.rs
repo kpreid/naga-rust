@@ -61,8 +61,13 @@ impl syn::parse::Parse for ConfigAndStr {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let mut config = macro_default_config();
         loop {
+            // Try parsing the final string literal.
             let not_a_string_error = match input.parse::<syn::LitStr>() {
                 Ok(string) => {
+                    // Accept a final optional comma after the string.
+                    if !input.is_empty() {
+                        input.parse::<Token![,]>()?;
+                    }
                     return Ok(Self { config, string });
                 }
                 Err(e) => e,

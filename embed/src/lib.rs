@@ -30,14 +30,57 @@
 /// source file, a new `include_wgsl!` macro will be provided and this `include_wgsl_mr!` will be
 /// deprecated.)
 ///
-/// TODO: Document the details of the translation.
+/// This macro should be used in a position where items are allowed
+/// (e.g. inside a crate, module, function body, or block).
+///
+/// ```
+/// # use naga_rust_embed::include_wgsl_mr;
+/// include_wgsl_mr!("src/example.wgsl");
+/// ```
+///
+/// If any configuration is needed, write it attribute-style before the source code literal:
+///
+/// ```
+/// # use naga_rust_embed::include_wgsl_mr;
+/// include_wgsl_mr!(
+///     global_struct = Globals,
+///     "src/example.wgsl",
+/// );
+/// ```
+///
+#[doc = include_str!("configuration_syntax.md")]
 ///
 /// [`CARGO_MANIFEST_DIR`]: https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates
 pub use naga_rust_macros::include_wgsl_mr;
 
 /// Converts the provided WGSL string literal to Rust.
 ///
-/// TODO: Document the details of the translation.
+/// The macro should be given a single string literal containing the source code,
+/// and used in a position where items are allowed
+/// (e.g. inside a crate, module, function body, or block).
+///
+/// ```
+/// # use naga_rust_embed::wgsl;
+/// wgsl!("fn wgsl_hello_world() {}");
+///
+/// fn main() {
+///     wgsl_hello_world();
+/// }
+/// ```
+///
+/// If any configuration is needed, write it attribute-style before the source code literal:
+///
+/// ```
+/// # use naga_rust_embed::wgsl;
+/// wgsl!(
+///     global_struct = Globals,
+///     "var<private> foo: i32 = 10;",
+/// );
+///
+/// assert_eq!(Globals::default().foo, 10);
+/// ```
+///
+#[doc = include_str!("configuration_syntax.md")]
 pub use naga_rust_macros::wgsl;
 
 /// Support library for the generated Rust code.
