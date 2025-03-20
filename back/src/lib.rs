@@ -13,6 +13,8 @@ extern crate alloc;
 use alloc::string::String;
 use core::fmt;
 
+use naga::valid::Capabilities;
+
 // -------------------------------------------------------------------------------------------------
 
 mod config;
@@ -34,7 +36,7 @@ pub use naga;
 /// Rust.
 // TODO: There are probably some additional capabilities which should be enabled here
 // either because we can support them or they don’t affect us.
-pub const CAPABILITIES: naga::valid::Capabilities = naga::valid::Capabilities::FLOAT64;
+pub const CAPABILITIES: Capabilities = Capabilities::FLOAT64;
 
 /// Errors returned by the Rust-generating backend.
 #[derive(Debug)]
