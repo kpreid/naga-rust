@@ -13,7 +13,7 @@ use naga::{
 
 use crate::config::WriterFlags;
 use crate::conv::{self, BinOpClassified, KEYWORDS_2024, SHADER_LIB, ToRust, unwrap_to_rust};
-use crate::util::{Baked, LevelNext};
+use crate::util::{Gensym, LevelNext};
 use crate::{Config, Error};
 
 // -------------------------------------------------------------------------------------------------
@@ -142,7 +142,7 @@ impl<W: Write> Writer<W> {
         write!(
             self.out,
             "\
-                #[allow(unused)]\n\
+                #[allow(dead_code)]\n\
                 use {runtime_path}::{{self as rt, New as _, swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
             ",
             runtime_path = self.config.runtime_path,
@@ -172,6 +172,7 @@ impl<W: Write> Writer<W> {
             }
         }
 
+        // If we are using global variables, write the `struct` that contains them.
         if let Some(global_struct) = self.config.global_struct.clone() {
             writeln!(self.out, "struct {global_struct} {{")?;
             for (handle, global) in module.global_variables.iter() {
@@ -198,7 +199,7 @@ impl<W: Write> Writer<W> {
             });
         }
 
-        // Write all regular functions
+        // Write all regular functions (which may or may not be in the `impl` block from above).
         for (handle, function) in module.functions.iter() {
             let fun_info = &info[handle];
 
@@ -274,7 +275,7 @@ impl<W: Write> Writer<W> {
         } else if func_ctx.info.global_variable_count() > 0 {
             unreachable!(
                 "function has globals but globals are not enabled; \
-            should have been rejected earlier"
+                should have been rejected earlier"
             );
         }
 
@@ -328,12 +329,7 @@ impl<W: Write> Writer<W> {
 
             // Write the local initializer if needed
             if let Some(init) = local.init {
-                // Put the equal signal only if there's a initializer
-                // The leading and trailing spaces aren't needed but help with readability
                 write!(self.out, " = ")?;
-
-                // Write the constant
-                // `write_constant` adds no trailing or leading space/newline
                 self.write_expr(module, init, func_ctx)?;
             }
 
@@ -463,7 +459,7 @@ impl<W: Write> Writer<W> {
                                 | Expression::ImageSample { .. }
                         );
                         if min_ref_count <= info.ref_count || required_baking_expr {
-                            Some(Baked(handle).to_string())
+                            Some(Gensym(handle).to_string())
                         } else {
                             None
                         }
@@ -483,28 +479,20 @@ impl<W: Write> Writer<W> {
                 ref accept,
                 ref reject,
             } => {
-                write!(self.out, "{level}")?;
-                write!(self.out, "if ")?;
+                let l2 = level.next();
+
+                write!(self.out, "{level}if ")?;
                 self.write_expr(module, condition, func_ctx)?;
                 writeln!(self.out, " {{")?;
-
-                let l2 = level.next();
-                for sta in accept {
-                    // Increase indentation to help with readability
-                    self.write_stmt(module, sta, func_ctx, l2)?;
+                for s in accept {
+                    self.write_stmt(module, s, func_ctx, l2)?;
                 }
-
-                // If there are no statements in the reject block we skip writing it
-                // This is only for readability
                 if !reject.is_empty() {
                     writeln!(self.out, "{level}}} else {{")?;
-
-                    for sta in reject {
-                        // Increase indentation to help with readability
-                        self.write_stmt(module, sta, func_ctx, l2)?;
+                    for s in reject {
+                        self.write_stmt(module, s, func_ctx, l2)?;
                     }
                 }
-
                 writeln!(self.out, "{level}}}")?
             }
             Statement::Return { value } => {
@@ -517,8 +505,6 @@ impl<W: Write> Writer<W> {
             }
             Statement::Kill => write!(self.out, "{level}{SHADER_LIB}::discard();")?,
             Statement::Store { pointer, value } => {
-                write!(self.out, "{level}")?;
-
                 let is_atomic_pointer = func_ctx
                     .resolve_type(pointer, &module.types)
                     .is_atomic_pointer(&module.types);
@@ -527,6 +513,7 @@ impl<W: Write> Writer<W> {
                     return Err(Error::Unimplemented("atomic operations".into()));
                 }
 
+                write!(self.out, "{level}")?;
                 // We have a Naga “pointer” but it might actually denote a plain variable.
                 // We ask for `Indirection::Place` to say: please dereference the logical pointer
                 // and give me the dereference op *or* plain variable to assign to.
@@ -543,7 +530,7 @@ impl<W: Write> Writer<W> {
             } => {
                 write!(self.out, "{level}")?;
                 if let Some(expr) = result {
-                    let name = Baked(expr).to_string();
+                    let name = Gensym(expr).to_string();
                     self.start_named_expr(module, expr, func_ctx, &name)?;
                     self.named_expressions.insert(expr, name);
                 }
@@ -576,11 +563,10 @@ impl<W: Write> Writer<W> {
             Statement::Block(ref block) => {
                 write!(self.out, "{level}")?;
                 writeln!(self.out, "{{")?;
-                for sta in block.iter() {
-                    // Increase the indentation to help with readability
-                    self.write_stmt(module, sta, func_ctx, level.next())?
+                for s in block.iter() {
+                    self.write_stmt(module, s, func_ctx, level.next())?;
                 }
-                writeln!(self.out, "{level}}}")?
+                writeln!(self.out, "{level}}}")?;
             }
             Statement::Switch {
                 selector,
@@ -636,7 +622,7 @@ impl<W: Write> Writer<W> {
                     }
                 }
 
-                writeln!(self.out, "{level}}}")?
+                writeln!(self.out, "{level}}}")?;
             }
             Statement::Loop {
                 ref body,
@@ -658,14 +644,10 @@ impl<W: Write> Writer<W> {
                     return Err(Error::Unimplemented("break_if".into()));
                 }
 
-                writeln!(self.out, "{level}}}")?
+                writeln!(self.out, "{level}}}")?;
             }
-            Statement::Break => {
-                writeln!(self.out, "{level}break;")?;
-            }
-            Statement::Continue => {
-                writeln!(self.out, "{level}continue;")?;
-            }
+            Statement::Break => writeln!(self.out, "{level}break;")?,
+            Statement::Continue => writeln!(self.out, "{level}continue;")?,
             Statement::Barrier(_) => {
                 return Err(Error::Unimplemented("barriers".into()));
             }
