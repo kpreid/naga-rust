@@ -1,3 +1,5 @@
+use alloc::borrow::Cow;
+
 /// Configuration/builder for options for Rust code generation.
 ///
 /// This configuration allows you to control syntactic characteristics of the output,
@@ -5,6 +7,7 @@
 #[derive(Debug)]
 pub struct Config {
     pub(crate) flags: WriterFlags,
+    pub(crate) runtime_path: Cow<'static, str>,
 }
 
 impl Default for Config {
@@ -20,6 +23,7 @@ impl Config {
     pub const fn new() -> Self {
         Self {
             flags: WriterFlags::empty(),
+            runtime_path: Cow::Borrowed("::naga_rust_rt"),
         }
     }
 
@@ -52,6 +56,24 @@ impl Config {
     #[must_use]
     pub fn public_items(mut self, value: bool) -> Self {
         self.flags.set(WriterFlags::PUBLIC, value);
+        self
+    }
+
+    /// Sets the Rust module path to the runtime support library.
+    ///
+    /// The default is `"::naga_rust_rt"`.
+    ///
+    /// # Panics
+    ///
+    /// May panic if the path is not syntactically valid or not an absolute path.
+    #[must_use]
+    pub fn runtime_path(mut self, value: impl Into<Cow<'static, str>>) -> Self {
+        let value = value.into();
+        assert!(
+            value.starts_with("::") || value.starts_with("crate::"),
+            "path should be an absolute path"
+        );
+        self.runtime_path = value;
         self
     }
 }

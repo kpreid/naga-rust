@@ -9,7 +9,8 @@ use naga::{MathFunction, Scalar};
 /// Local path to the module which is the “standard library” for shader functionality
 /// that doesn't map directly to Rust `core`.
 ///
-/// This is not the crate name, but is guaranteed to be provided via a `use`.
+/// To keep the output concise, this is not the crate name,
+/// but is guaranteed to be provided via a `use` in the same scope.
 pub(crate) const SHADER_LIB: &str = "rt";
 
 /// Types that can return the Rust source representation of their

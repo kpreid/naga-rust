@@ -149,8 +149,9 @@ impl<W: Write> Writer<W> {
             self.out,
             "\
                 #[allow(unused)]\n\
-                use ::naga_rust::rt::{{self, New as _, swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
-            "
+                use {runtime_path}::{{self as rt, New as _, swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
+            ",
+            runtime_path = self.config.runtime_path,
         )?;
 
         // Write all structs

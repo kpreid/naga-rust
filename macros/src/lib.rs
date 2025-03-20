@@ -108,7 +108,7 @@ fn parse_and_translate(
         )
     })?;
 
-    let config = naga_rust_back::Config::default();
+    let config = naga_rust_back::Config::default().runtime_path("::naga_rust::rt");
 
     let translated_source: String = naga_rust_back::write_string(&module, &module_info, config)
         .map_err(|error| {

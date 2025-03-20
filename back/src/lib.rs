@@ -1,10 +1,10 @@
 //! [`naga`] backend allowing you to translate shader code in any language supported by Naga
 //! to Rust code.
 //!
-//! The generated code requires the `naga-rust` library.
-//! You should probably also use that library’s macros to embed code in your project,
-//! unless you have special code generation requirements or you want to do it in a build
-//! script instead of macros.
+//! The generated code requires the `naga-rust-rt` library.
+//! Alternatively, you can use `naga-rust`, which combines this library with `naga-rust-rt`
+//! and provides convenient macros for embedding translated WGSL in your Rust code.
+// TODO: ^ add crates.io/docs.rs links here once published
 
 #![no_std]
 
