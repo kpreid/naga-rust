@@ -363,7 +363,10 @@ impl<W: Write> Writer<W> {
             write!(self.out, "{level}#[")?;
             match *attribute {
                 Attribute::AllowFunctionBody => {
-                    write!(self.out, "allow(unused, clippy::all)")?;
+                    write!(
+                        self.out,
+                        "allow(unused_parens, clippy::all, clippy::pedantic)"
+                    )?;
                 }
                 Attribute::Stage(shader_stage) => {
                     let stage_str = match shader_stage {
