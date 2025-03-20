@@ -104,7 +104,7 @@ impl<W: Write> Writer<W> {
     fn reset(&mut self, module: &Module) {
         let Self {
             out: _,
-            config: _,
+            config,
             edition: _,
             names,
             namer,
@@ -114,13 +114,16 @@ impl<W: Write> Writer<W> {
         namer.reset(
             module,
             KEYWORDS_2024,
-            // TODO: Figure out a more systematic answer to how we manage global variables
-            // than reserving this one name, `Globals`.
-            &[SHADER_LIB, "Globals"],
+            &[SHADER_LIB],
             &[],
             &[],
             &mut self.names,
         );
+        if let Some(g) = &config.global_struct {
+            // TODO: We actually want to say “treat this as reserved but do not rename it”,
+            // but Namer doesn’t have that option
+            namer.call(g);
+        }
         named_expressions.clear();
     }
 
@@ -183,7 +186,7 @@ impl<W: Write> Writer<W> {
             writeln!(
                 self.out,
                 "}}\n\
-                impl Default for Globals {{\n\
+                impl Default for {global_struct} {{\n\
                 {INDENT}fn default() -> Self {{ Self {{"
             )?;
             for (handle, global) in module.global_variables.iter() {
