@@ -36,9 +36,9 @@ enum Attribute {
     Binding(u32),
     /// Global variable binding group. Ignored.
     Group(u32),
-    /// Entry point function’s stage.
+    /// Entry point function’s stage. Ignored.
     Stage(ShaderStage),
-    /// Compute entry point function’s workgroup size.
+    /// Compute entry point function’s workgroup size. Ignored.
     WorkGroupSize([u32; 3]),
 }
 

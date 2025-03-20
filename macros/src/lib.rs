@@ -92,7 +92,7 @@ fn parse_and_translate(
         )
     })?;
 
-    // TODO: allow skipping some validation
+    // TODO: allow the user of the macro to configure which validation is done.
     let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::all(),

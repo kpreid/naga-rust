@@ -28,18 +28,18 @@ pub use naga;
 
 /// Errors returned by the Rust-generating backend.
 #[derive(Debug)]
-#[allow(missing_docs, reason = "TODO: clean up and document")]
 #[non_exhaustive]
 pub enum Error {
     /// The provided [`fmt::Write`] implementation returned an error.
     FmtError(fmt::Error),
 
-    // TODO: this should not be a thing when finished
-    //#[error("{0}")]
+    /// The Rust backend currently does not support this particular shader functionality.
+    // TODO: this should not be a thing when finished; everything should be either supported
+    // or fall into a well-defined category of unsupportedness.
     Unimplemented(String),
 
     /// We don’t (yet) support texture operations in Rust,
-    /// and this is a notably broad category.
+    /// and this is a notably broad category so it gets its own variant.
     TexturesAreUnsupported {
         /// The specific kind of thing found that is unsupported.
         /// Represented as a WGSL-flavored string.
