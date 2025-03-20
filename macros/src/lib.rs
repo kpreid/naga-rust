@@ -95,10 +95,11 @@ fn parse_and_translate(
     // TODO: allow the user of the macro to configure which validation is done.
     let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::all(),
+        naga_rust_back::CAPABILITIES,
     )
     .subgroup_stages(naga::valid::ShaderStages::all())
-    .subgroup_operations(naga::valid::SubgroupOperationSet::all())
+    // TODO: Add support for subgroup operations, then update this.
+    .subgroup_operations(naga::valid::SubgroupOperationSet::empty())
     .validate(&module)
     .map_err(|error| {
         syn::Error::new(

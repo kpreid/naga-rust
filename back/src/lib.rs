@@ -26,6 +26,14 @@ pub use naga;
 
 // -------------------------------------------------------------------------------------------------
 
+/// The [`Capabilities`] supported by our Rust runtime library.
+///
+/// Pass this to [`naga::valid::Validator`] when validating a module that is to be translated to
+/// Rust.
+// TODO: There are probably some additional capabilities which should be enabled here
+// either because we can support them or they don’t affect us.
+pub const CAPABILITIES: naga::valid::Capabilities = naga::valid::Capabilities::FLOAT64;
+
 /// Errors returned by the Rust-generating backend.
 #[derive(Debug)]
 #[non_exhaustive]
