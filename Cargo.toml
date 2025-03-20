@@ -37,6 +37,8 @@ naga-rust-rt.workspace = true
 # Use WGSL frontend and Rust backend to run tests/textual.rs
 naga = { workspace = true, features = ["wgsl-in"] }
 naga-rust-back = { workspace = true }
+
+exhaust.workspace = true
 indoc.workspace = true
 pretty_assertions.workspace = true
 
@@ -44,6 +46,7 @@ pretty_assertions.workspace = true
 workspace = true
 
 [workspace.dependencies]
+exhaust = { version = "0.2.0", default-features = false }
 indoc = { version = "2.0.1", default-features = false }
 naga-rust = { version = "0.1.0", path = "." }
 naga-rust-back = { version = "0.1.0", path = "back" }

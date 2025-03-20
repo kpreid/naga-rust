@@ -1,5 +1,7 @@
 #![allow(missing_docs)]
 
+use exhaust::Exhaust as _;
+
 // TODO: Should there should be an explicit public vector-type API module which is not rt::?
 use naga_rust::rt::{IVec2, Vec2};
 use naga_rust::wgsl;
@@ -88,6 +90,19 @@ fn declare_and_modify_struct() {
     let mut s = StructTest { a: 1, b: 2.0 };
     modify_struct(&mut s);
     assert!(matches!(s, StructTest { a: 2, b: 3.0 }));
+}
+
+#[test]
+fn logical_ops() {
+    wgsl!(
+        r"fn logic(a: bool, b: bool, c: bool) -> bool {
+            return a && b || c;
+        }"
+    );
+
+    for [a, b, c] in <[bool; 3]>::exhaust() {
+        assert_eq!(logic(a, b, c), a && b || c);
+    }
 }
 
 #[test]

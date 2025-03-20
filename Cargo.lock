@@ -52,10 +52,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
 
 [[package]]
+name = "either"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+
+[[package]]
+name = "exhaust"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "089df14b2fd09b5c76c21eff264603198c480a779d47d1180b1c7849ece5102e"
+dependencies = [
+ "exhaust-macros",
+ "mutants",
+ "paste",
+]
+
+[[package]]
+name = "exhaust-macros"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2b9102b00a5237a5c503c211623652aa22d05de2c6eb227eed331186463d62"
+dependencies = [
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "glam"
@@ -98,10 +127,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c7245a08504955605670dbf141fceab975f15ca21570696aebe9d2e71576bd"
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "log"
 version = "0.4.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30bde2b3dc3671ae49d8e2e9f044c7c005836e7a023ee57cffa25ab82764bb9e"
+
+[[package]]
+name = "mutants"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc0287524726960e07b119cebd01678f852f147742ae0d925e6a520dca956126"
 
 [[package]]
 name = "naga"
@@ -128,6 +172,7 @@ dependencies = [
 name = "naga-rust"
 version = "0.1.0"
 dependencies = [
+ "exhaust",
  "indoc",
  "naga",
  "naga-rust-back",
@@ -162,6 +207,12 @@ dependencies = [
  "glam",
  "naga-rust-macros",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pretty_assertions"
