@@ -15,11 +15,13 @@ use core::fmt;
 
 // -------------------------------------------------------------------------------------------------
 
+mod config;
 mod conv;
 mod util;
 mod writer;
 
-pub use writer::{Writer, WriterFlags};
+pub use config::Config;
+pub use writer::Writer;
 
 /// The version of Naga we are compatible with.
 pub use naga;
@@ -82,9 +84,9 @@ impl fmt::Display for Error {
 pub fn write_string(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
-    flags: WriterFlags,
+    config: Config,
 ) -> Result<String, Error> {
-    let mut w = Writer::new(String::new(), flags);
+    let mut w = Writer::new(String::new(), config);
     w.write(module, info)?;
     let output = w.finish();
     Ok(output)

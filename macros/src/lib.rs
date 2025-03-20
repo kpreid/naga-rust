@@ -108,9 +108,9 @@ fn parse_and_translate(
         )
     })?;
 
-    let flags = naga_rust_back::WriterFlags::empty();
+    let config = naga_rust_back::Config::default();
 
-    let translated_source: String = naga_rust_back::write_string(&module, &module_info, flags)
+    let translated_source: String = naga_rust_back::write_string(&module, &module_info, config)
         .map_err(|error| {
             syn::Error::new(
                 wgsl_source_span,

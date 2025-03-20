@@ -8,10 +8,10 @@ use core::fmt;
 
 use pretty_assertions::assert_eq;
 
-use naga_rust_back::WriterFlags;
+use naga_rust_back::Config;
 
-fn translate_without_header(flags: WriterFlags, wgsl_source_text: &str) -> String {
-    fn inner(flags: WriterFlags, wgsl_source_text: &str) -> Result<String, Box<dyn Error>> {
+fn translate_without_header(config: Config, wgsl_source_text: &str) -> String {
+    fn inner(config: Config, wgsl_source_text: &str) -> Result<String, Box<dyn Error>> {
         let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text)?;
 
         let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
@@ -23,7 +23,7 @@ fn translate_without_header(flags: WriterFlags, wgsl_source_text: &str) -> Strin
         .validate(&module)?;
 
         let mut translated_source: String =
-            naga_rust_back::write_string(&module, &module_info, flags)?;
+            naga_rust_back::write_string(&module, &module_info, config)?;
 
         // Kludge: Strip off the first boilerplate lines without caring what they are exactly.
         let header_end = translated_source
@@ -37,7 +37,7 @@ fn translate_without_header(flags: WriterFlags, wgsl_source_text: &str) -> Strin
         Ok(translated_source)
     }
 
-    match inner(flags, wgsl_source_text) {
+    match inner(config, wgsl_source_text) {
         Ok(translated_source) => translated_source,
         Err(e) => panic!("{}", ErrorChain(&*e)),
     }
@@ -46,11 +46,11 @@ fn translate_without_header(flags: WriterFlags, wgsl_source_text: &str) -> Strin
 #[test]
 fn visibility_control() {
     assert_eq!(
-        translate_without_header(WriterFlags::empty(), "fn foo() {}"),
+        translate_without_header(Config::new(), "fn foo() {}"),
         "#[allow(unused, clippy::all)]\nfn foo() {\n    return;\n}\n\n"
     );
     assert_eq!(
-        translate_without_header(WriterFlags::PUBLIC, "fn foo() {}"),
+        translate_without_header(Config::new().public_items(true), "fn foo() {}"),
         "#[allow(unused, clippy::all)]\npub fn foo() {\n    return;\n}\n\n"
     );
 }
@@ -58,7 +58,7 @@ fn visibility_control() {
 #[test]
 fn global_variable() {
     assert_eq!(
-        translate_without_header(WriterFlags::empty(), r"var<private> foo: i32 = 1;"),
+        translate_without_header(Config::new(), r"var<private> foo: i32 = 1;"),
         indoc::indoc! {
             "
             struct Globals {
@@ -78,7 +78,7 @@ fn global_variable() {
 fn switch() {
     assert_eq!(
         translate_without_header(
-            WriterFlags::empty(),
+            Config::new(),
             r"
             fn switching(x: i32) -> i32 {
                 switch (x) {
@@ -115,7 +115,7 @@ fn switch() {
 fn array_type_sizes() {
     assert_eq!(
         translate_without_header(
-            WriterFlags::empty(),
+            Config::new(),
             r"struct Foo {
                 x: array<i32, 10>,
                 y: array<i32>,
@@ -137,7 +137,7 @@ fn array_type_sizes() {
 fn array_length() {
     assert_eq!(
         translate_without_header(
-            WriterFlags::empty(),
+            Config::new(),
             r"
             @group(0) @binding(1) var<storage> arr: array<u32>;
             fn length() -> u32 {

@@ -11,11 +11,10 @@ use naga::{
     valid,
 };
 
+use crate::config::WriterFlags;
+use crate::conv::{self, BinOpClassified, KEYWORDS_2024, SHADER_LIB, ToRust, unwrap_to_rust};
 use crate::util::{Baked, LevelNext};
-use crate::{
-    Error,
-    conv::{self, BinOpClassified, KEYWORDS_2024, SHADER_LIB, ToRust, unwrap_to_rust},
-};
+use crate::{Config, Error};
 
 // -------------------------------------------------------------------------------------------------
 
@@ -69,23 +68,6 @@ enum Indirection {
     Ordinary,
 }
 
-bitflags::bitflags! {
-    /// Options for what Rust code is generated.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct WriterFlags: u32 {
-        /// Always annotate the type information instead of inferring.
-        const EXPLICIT_TYPES = 0x1;
-
-        /// Generate code using raw pointers instead of references.
-        /// The resulting code is `unsafe` and may be unsound if the input module
-        /// uses pointers incorrectly.
-        const RAW_POINTERS = 0x2;
-
-        /// Generate items with `pub` visibility instead of private.
-        const PUBLIC = 0x3;
-    }
-}
-
 /// Edition of Rust code to generate.
 ///
 /// We currently only support one edition, but this exists anyway to prepare to document
@@ -102,7 +84,7 @@ enum Edition {
 #[allow(missing_debug_implementations, reason = "TODO")]
 pub struct Writer<W> {
     out: W,
-    flags: WriterFlags,
+    config: Config,
     #[allow(dead_code)]
     edition: Edition,
     names: naga::FastHashMap<NameKey, String>,
@@ -112,10 +94,10 @@ pub struct Writer<W> {
 
 impl<W: Write> Writer<W> {
     /// Creates a new [`Writer`] for writing code to `out`.
-    pub fn new(out: W, flags: WriterFlags) -> Self {
+    pub fn new(out: W, config: Config) -> Self {
         Writer {
             out,
-            flags,
+            config,
             edition: Edition::Rust2024,
             names: naga::FastHashMap::default(),
             namer: proc::Namer::default(),
@@ -126,7 +108,7 @@ impl<W: Write> Writer<W> {
     fn reset(&mut self, module: &Module) {
         let Self {
             out: _,
-            flags: _,
+            config: _,
             edition: _,
             names,
             namer,
@@ -768,7 +750,7 @@ impl<W: Write> Writer<W> {
     ) -> BackendResult {
         // Write variable name
         write!(self.out, "let {name}")?;
-        if self.flags.contains(WriterFlags::EXPLICIT_TYPES) {
+        if self.config.flags.contains(WriterFlags::EXPLICIT_TYPES) {
             write!(self.out, ": ")?;
             let ty = &func_ctx.info[handle].ty;
             // Write variable type
@@ -1318,7 +1300,7 @@ impl<W: Write> Writer<W> {
                 }
             }
             TypeInner::Pointer { base, space: _ } => {
-                if self.flags.contains(WriterFlags::RAW_POINTERS) {
+                if self.config.flags.contains(WriterFlags::RAW_POINTERS) {
                     write!(self.out, "*mut ")?;
                 } else {
                     write!(self.out, "&mut ")?;
@@ -1330,7 +1312,7 @@ impl<W: Write> Writer<W> {
                 scalar: _,
                 space: _,
             } => {
-                if self.flags.contains(WriterFlags::RAW_POINTERS) {
+                if self.config.flags.contains(WriterFlags::RAW_POINTERS) {
                     write!(self.out, "*mut ")?;
                 } else {
                     write!(self.out, "&mut ")?;
@@ -1427,7 +1409,7 @@ impl<W: Write> Writer<W> {
     }
 
     fn visibility(&self) -> &'static str {
-        if self.flags.contains(WriterFlags::PUBLIC) {
+        if self.config.flags.contains(WriterFlags::PUBLIC) {
             "pub "
         } else {
             ""
