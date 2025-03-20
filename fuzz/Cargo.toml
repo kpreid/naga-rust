@@ -1,0 +1,25 @@
+[workspace]
+# Excludes this from containing workspace to avoid imposing any build requirements
+# resulting from libfuzzer.
+
+[package]
+name = "naga-rust-fuzz"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+# Note: Cannot use workspace dependencies here!
+naga-rust-back = { path = "../back" }
+naga = { version = "24.0.0", features = ["arbitrary"] }
+arbitrary = { version = "1.4.1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+pretty_assertions = { version = "1.2.0" }
+
+[[bin]]
+name = "fuzz_compile_fail"
+path = "fuzz_targets/fuzz_compile_fail.rs"
+test = false
+doc = false
