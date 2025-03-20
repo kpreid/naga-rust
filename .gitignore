@@ -1,2 +1,4 @@
 /target
 /.vscode
+/mutants.out
+/mutants.out.old
