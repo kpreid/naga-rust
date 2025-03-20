@@ -45,6 +45,17 @@ fn vector_arithmetic() {
 }
 
 #[test]
+fn vector_cast() {
+    wgsl!(
+        r"fn func(x: vec2f) -> vec2i {
+            return vec2i(x);
+        }"
+    );
+
+    // Expect truncation
+    assert_eq!(func(Vec2::new(1.5, -1.5)), IVec2::new(1, -1));
+}
+#[test]
 fn scalar_pointer() {
     wgsl!(
         r"fn add_one_ptr(p: ptr<function, i32>) {
@@ -151,4 +162,26 @@ fn while_loop() {
     );
 
     assert_eq!(count(10), 10);
+}
+
+#[test]
+fn function_call() {
+    wgsl!(
+        r"
+        fn func0() -> i32 {
+            return 10;
+        }
+        fn func1(x: i32) -> i32 {
+            return x * 3;
+        }
+        fn func2(x: i32, y: i32) -> i32 {
+            return x + y;
+        }
+        fn funcs() -> i32 {
+            return func0() + func1(2) + func2(1000, 6000);
+        }
+        "
+    );
+
+    assert_eq!(funcs(), 7016);
 }
