@@ -817,6 +817,13 @@ impl<W: Write> Writer<W> {
         })
     }
 
+    /// Writes an expression of the kinds that can appear both in constants and in function bodies.
+    ///
+    /// The difference between these two cases is that function bodies have access to a
+    /// [`back::FunctionCtx`], but this doesn’t.
+    //
+    // Arguably we could do a runtime check for that instead of the `unreachable!()`s
+    // on matching the expression enum.
     fn write_possibly_const_expression<E>(
         &mut self,
         module: &Module,
