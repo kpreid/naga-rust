@@ -22,17 +22,23 @@ use crate::{
 /// Shorthand result used internally by the backend
 type BackendResult = Result<(), Error>;
 
-/// WGSL [attribute](https://gpuweb.github.io/gpuweb/wgsl/#attributes)
-#[allow(dead_code, reason = "TODO: get rid of this WGSLism")]
+/// Rust attributes that we generate to correspond to shader properties that don’t
+/// map directly to Rust code generation.
+///
+/// Currently, many of these attributes have no effect (they are discarded by the
+/// corresponding attribute macros) and exist solely for documentation purposes.
+/// Arguably, they could be comments instead.
 enum Attribute {
+    /// `allow` attribute for ignoring lints that might occur in a generated function body.
+    AllowFunctionBody,
+
+    /// Global variable binding. Ignored.
     Binding(u32),
-    BuiltIn(naga::BuiltIn),
+    /// Global variable binding group. Ignored.
     Group(u32),
-    Invariant,
-    Interpolate(Option<naga::Interpolation>, Option<naga::Sampling>),
-    Location(u32),
-    BlendSrc(u32),
+    /// Entry point function’s stage.
     Stage(ShaderStage),
+    /// Compute entry point function’s workgroup size.
     WorkGroupSize([u32; 3]),
 }
 
@@ -263,18 +269,15 @@ impl<W: Write> Writer<W> {
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
     ) -> BackendResult {
+        self.write_attributes(back::Level(0), &[Attribute::AllowFunctionBody])?;
+
+        // Write start of function item
         let func_name = match func_ctx.ty {
             back::FunctionType::EntryPoint(index) => &self.names[&NameKey::EntryPoint(index)],
             back::FunctionType::Function(handle) => &self.names[&NameKey::Function(handle)],
         };
-
-        // Write function name
         let visibility = self.visibility();
-        write!(
-            self.out,
-            "#[allow(unused, clippy::all)]\n\
-            {visibility}fn {func_name}("
-        )?;
+        write!(self.out, "{visibility}fn {func_name}(")?;
 
         // Write function arguments
         for (index, arg) in func.arguments.iter().enumerate() {
@@ -356,16 +359,13 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    /// Helper method to write attributes
+    /// Writes one or more [`Attribute`]s as outer attributes.
     fn write_attributes(&mut self, level: back::Level, attributes: &[Attribute]) -> BackendResult {
         for attribute in attributes {
-            write!(self.out, "{level}")?;
+            write!(self.out, "{level}#[")?;
             match *attribute {
-                Attribute::Location(id) => write!(self.out, "@location({id}) ")?,
-                Attribute::BlendSrc(blend_src) => write!(self.out, "@blend_src({blend_src}) ")?,
-                Attribute::BuiltIn(_builtin_attrib) => {
-                    // let builtin = builtin_attrib.to_wgsl_if_implemented()?;
-                    // write!(self.out, "@builtin({builtin}) ")?;
+                Attribute::AllowFunctionBody => {
+                    write!(self.out, "allow(unused, clippy::all)")?;
                 }
                 Attribute::Stage(shader_stage) => {
                     let stage_str = match shader_stage {
@@ -373,38 +373,19 @@ impl<W: Write> Writer<W> {
                         ShaderStage::Fragment => "fragment",
                         ShaderStage::Compute => "compute",
                     };
-                    writeln!(self.out, "#[{SHADER_LIB}::{stage_str}]")?;
+                    write!(self.out, "{SHADER_LIB}::{stage_str}")?;
                 }
                 Attribute::WorkGroupSize(size) => {
-                    writeln!(
+                    write!(
                         self.out,
-                        "#[{SHADER_LIB}::workgroup_size({}, {}, {})]",
+                        "{SHADER_LIB}::workgroup_size({}, {}, {})",
                         size[0], size[1], size[2]
                     )?;
                 }
-                Attribute::Binding(id) => writeln!(self.out, "#[{SHADER_LIB}::binding({id})]")?,
-                Attribute::Group(id) => writeln!(self.out, "#[{SHADER_LIB}::group({id})]")?,
-                Attribute::Invariant => writeln!(self.out, "#[{SHADER_LIB}::invariant]")?,
-                Attribute::Interpolate(interpolation, sampling) => {
-                    if sampling.is_some() && sampling != Some(naga::Sampling::Center) {
-                        let interpolation = interpolation
-                            .unwrap_or(naga::Interpolation::Perspective)
-                            .to_rust();
-                        let sampling = sampling.unwrap_or(naga::Sampling::Center).to_rust();
-                        writeln!(
-                            self.out,
-                            "#[{SHADER_LIB}::interpolate({interpolation}, {sampling})]"
-                        )?;
-                    } else if interpolation.is_some()
-                        && interpolation != Some(naga::Interpolation::Perspective)
-                    {
-                        let interpolation = interpolation
-                            .unwrap_or(naga::Interpolation::Perspective)
-                            .to_rust();
-                        writeln!(self.out, "#[{SHADER_LIB}::interpolate({interpolation})]")?;
-                    }
-                }
-            };
+                Attribute::Binding(id) => write!(self.out, "{SHADER_LIB}::binding({id})")?,
+                Attribute::Group(id) => write!(self.out, "{SHADER_LIB}::group({id})")?,
+            }
+            writeln!(self.out, "]")?;
         }
         Ok(())
     }
