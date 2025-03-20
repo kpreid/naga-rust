@@ -2,7 +2,7 @@
 //! to Rust code.
 //!
 //! The generated code requires the `naga-rust-rt` library.
-//! Alternatively, you can use `naga-rust`, which combines this library with `naga-rust-rt`
+//! Alternatively, you can use `naga-rust-embed`, which combines this library with `naga-rust-rt`
 //! and provides convenient macros for embedding translated WGSL in your Rust code.
 // TODO: ^ add crates.io/docs.rs links here once published
 

@@ -3,7 +3,7 @@ name = "naga-rust-rt"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.0"
-description = "Support library for shaders compiled to Rust via the `naga-rust` library."
+description = "Support library for shaders compiled to Rust via the `naga-rust-back` library."
 repository.workspace = true
 license.workspace = true
 

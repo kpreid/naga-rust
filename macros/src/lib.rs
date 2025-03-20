@@ -1,4 +1,6 @@
-//! This is a proc-macro helper library. Don't use this library directly; use `naga-rust` instead.
+//! This is a proc-macro helper library. Don't use this library directly; use `naga-rust-embed`
+//! instead.
+// TODO: add docs.rs link when published
 
 #![allow(missing_docs, reason = "not intended to be used directly")]
 
@@ -89,7 +91,7 @@ impl syn::parse::Parse for ConfigAndStr {
 }
 
 fn macro_default_config() -> Config {
-    Config::default().runtime_path("::naga_rust::rt")
+    Config::default().runtime_path("::naga_rust_embed::rt")
 }
 
 // -------------------------------------------------------------------------------------------------

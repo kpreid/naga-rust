@@ -1,11 +1,11 @@
 Rust backend for Naga
 =====================
 
-`naga-rust` allows you to translate shader code in any language supported by [Naga]
+These libraries allow you to translate shader code in any language supported by [Naga]
 to Rust code.
 
 This does not necessarily mean you can run your compute or render pipelines in Rust
-on your CPU unchanged; this is *not* a “software renderer”. Rather, the primary goal
+on your CPU unchanged; this is *not* a full “software renderer”. Rather, the primary goal
 of the project is to allow you to share selected *functions* between CPU and GPU, so
 that they can agree on definitions that might be executed in either place.
 
@@ -14,9 +14,11 @@ that they can agree on definitions that might be executed in either place.
 Packages in the system
 ----------------------
 
-* `naga-rust` is the translator itself.
+* `naga-rust-back` is the Rust backend (code generator) itself.
 * `naga-rust-rt` is the runtime support library, which provides data types and functions
   used by the generated code.
+* `naga-rust-embed` provides macros for translating WGSL and embedding the Rust output
+  in your Rust code.
   
 
 License

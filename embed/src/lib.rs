@@ -1,7 +1,7 @@
 //! Translates WGSL shader code to Rust you can embed in your Rust code.
 //!
 //! This does not necessarily mean you can run your compute or render pipelines in Rust
-//! on your CPU unchanged; this is *not* a “software renderer”. Rather, the primary goal
+//! on your CPU unchanged; this is *not* a full “software renderer”. Rather, the primary goal
 //! of the project is to allow you to share simple functions between CPU and GPU code, so
 //! that the two parts of your code can agree on definitions.
 //!
@@ -12,7 +12,7 @@
 //!
 // TODO: Make this example more obviously an example of WGSL and not Rust.
 //! ```
-//! naga_rust::wgsl!(r"
+//! naga_rust_embed::wgsl!(r"
 //!     fn add_one(x: i32) -> i32 {
 //!         return x + 1;
 //!     }

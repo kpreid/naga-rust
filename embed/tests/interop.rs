@@ -3,8 +3,8 @@
 use exhaust::Exhaust as _;
 
 // TODO: Should there should be an explicit public vector-type API module which is not rt::?
-use naga_rust::rt::{IVec2, Vec2};
-use naga_rust::wgsl;
+use naga_rust_embed::rt::{IVec2, Vec2};
+use naga_rust_embed::wgsl;
 
 #[test]
 fn global_constant() {

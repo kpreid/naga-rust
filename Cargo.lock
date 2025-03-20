@@ -169,7 +169,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "naga-rust"
+name = "naga-rust-back"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "indoc",
+ "naga",
+ "pretty_assertions",
+]
+
+[[package]]
+name = "naga-rust-embed"
 version = "0.1.0"
 dependencies = [
  "exhaust",
@@ -178,16 +188,6 @@ dependencies = [
  "naga-rust-back",
  "naga-rust-macros",
  "naga-rust-rt",
- "pretty_assertions",
-]
-
-[[package]]
-name = "naga-rust-back"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "indoc",
- "naga",
  "pretty_assertions",
 ]
 
