@@ -14,5 +14,9 @@ default = []
 bitflags.workspace = true
 naga.workspace = true
 
+[dev-dependencies]
+indoc.workspace = true
+pretty_assertions.workspace = true
+
 [lints]
 workspace = true

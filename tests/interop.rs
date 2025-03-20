@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Tests which actually execute shader code and exercise interoperation with ordinary Rust.
 
 use exhaust::Exhaust as _;
 

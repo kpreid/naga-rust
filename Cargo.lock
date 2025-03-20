@@ -186,7 +186,9 @@ name = "naga-rust-back"
 version = "0.1.0"
 dependencies = [
  "bitflags",
+ "indoc",
  "naga",
+ "pretty_assertions",
 ]
 
 [[package]]
