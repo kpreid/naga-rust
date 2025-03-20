@@ -70,7 +70,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::FmtError(fmt::Error) => write!(f, "formatting cancelled"),
-            Error::Unimplemented(msg) => write!(f, "{msg}"),
+            Error::Unimplemented(msg) => write!(f, "not yet implemented for Rust: {msg}"),
             Error::TexturesAreUnsupported { found } => {
                 write!(f, "texture operations, such as {found}, are not supported")
             }

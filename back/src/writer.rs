@@ -138,7 +138,7 @@ impl<W: Write> Writer<W> {
     pub fn write(&mut self, module: &Module, info: &valid::ModuleInfo) -> BackendResult {
         if !module.overrides.is_empty() {
             return Err(Error::Unimplemented(
-                "Pipeline constants are not yet supported for this back-end".to_string(),
+                "pipeline constants".into(),
             ));
         }
 
@@ -637,27 +637,11 @@ impl<W: Write> Writer<W> {
                     self.write_stmt(module, sta, func_ctx, l2)?;
                 }
 
-                // The continuing is optional so we don't need to write it if
-                // it is empty, but the `break if` counts as a continuing statement
-                // so even if `continuing` is empty we must generate it if a
-                // `break if` exists
-                if !continuing.is_empty() || break_if.is_some() {
-                    writeln!(self.out, "{l2}continuing {{")?;
-                    for sta in continuing.iter() {
-                        self.write_stmt(module, sta, func_ctx, l2.next())?;
-                    }
-
-                    // The `break if` is always the last
-                    // statement of the `continuing` block
-                    if let Some(condition) = break_if {
-                        // The trailing space is important
-                        write!(self.out, "{}break if ", l2.next())?;
-                        self.write_expr(module, condition, func_ctx)?;
-                        // Close the `break if` statement
-                        writeln!(self.out, ";")?;
-                    }
-
-                    writeln!(self.out, "{l2}}}")?;
+                if !continuing.is_empty() {
+                    return Err(Error::Unimplemented("continuing".into()));
+                }
+                if break_if.is_some() {
+                    return Err(Error::Unimplemented("break_if".into()));
                 }
 
                 writeln!(self.out, "{level}}}")?

@@ -43,6 +43,30 @@ fn translate_without_header(config: Config, wgsl_source_text: &str) -> String {
     }
 }
 
+#[track_caller]
+fn expect_unimplemented(wgsl_source_text: &str) {
+    let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text).unwrap();
+    let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .subgroup_stages(naga::valid::ShaderStages::all())
+    .subgroup_operations(naga::valid::SubgroupOperationSet::all())
+    .validate(&module)
+    .unwrap();
+
+    match naga_rust_back::write_string(&module, &module_info, Config::default()) {
+        Err(naga_rust_back::Error::Unimplemented(_)) => {}
+        Ok(_) => panic!("expectted Error::Unimplemented, but got success"),
+        Err(e) => panic!(
+            "expectted Error::Unimplemented, but got a different error:\n{}",
+            ErrorChain(&e)
+        ),
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+
 #[test]
 fn visibility_control() {
     assert_eq!(
@@ -167,6 +191,34 @@ fn array_length() {
 
             "
         }
+    );
+}
+
+#[test]
+fn unimplemented_continuing() {
+    expect_unimplemented(
+        r"fn foo() { 
+            var i = 0;
+            loop {
+                i += 1;
+                continuing { i += 1; }
+            }
+        }",
+    );
+}
+
+#[test]
+fn unimplemented_break_if() {
+    expect_unimplemented(
+        r"fn foo() { 
+            var i = 0;
+            loop {
+                continuing {
+                    i += 1;
+                    break if i > 10;
+                }
+            }
+        }",
     );
 }
 
