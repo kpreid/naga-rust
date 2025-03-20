@@ -1,0 +1,19 @@
+[package]
+name = "render"
+edition = "2024"
+repository.workspace = true
+license.workspace = true
+publish = false
+autobins = false
+
+[[example]]
+name = "render"
+path = "src/main.rs"
+
+[dependencies]
+naga-rust-embed = { path = "../../embed" }
+softbuffer = "0.4.6"
+winit = "0.30.0"
+
+[lints]
+workspace = true

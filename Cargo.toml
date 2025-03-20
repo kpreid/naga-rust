@@ -4,12 +4,14 @@ members = [
     "embed",
     "macros",
     "rt",
+    "examples/render",
 ]
 default-members = [
     "back",
     "embed",
     "macros",
     "rt",
+    "examples/render",
 ]
 resolver = "3"
 
