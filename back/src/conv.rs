@@ -4,6 +4,7 @@ Conversion of Naga/shader vocabulary to Rust.
 
 use core::fmt;
 
+use alloc::format;
 use naga::{MathFunction, Scalar};
 
 /// Local path to the module which is the “standard library” for shader functionality
@@ -214,6 +215,18 @@ impl TryToRust for Scalar {
             _ => return None,
         })
     }
+}
+
+/// Prefix used in type names.
+pub fn atomic_type_name(scalar: Scalar) -> Result<&'static str, crate::Error> {
+    Ok(match scalar {
+        Scalar::I32 => "AtomicI32",
+        Scalar::U32 => "AtomicU32",
+        Scalar::I64 => "AtomicI64",
+        Scalar::U64 => "AtomicU64",
+        Scalar::BOOL => "AtomicBool",
+        _ => return Err(crate::Error::Unimplemented(format!("atomic {scalar:?}"))),
+    })
 }
 
 /// Prefix used in type names.

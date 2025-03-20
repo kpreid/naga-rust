@@ -214,6 +214,35 @@ fn array_length() {
     );
 }
 
+/// Interim test for atomic types while we don't support atomic statements.
+#[test]
+fn atomic_type() {
+    assert_eq!(
+        translate_without_header(
+            Config::new().global_struct("Globals"),
+            r"
+            @group(0) @binding(0)
+            var<storage, read_write> atomic_scalar: atomic<u32>;
+            ",
+        ),
+        indoc::indoc! {
+            "
+            struct Globals {
+                // group(0) binding(0)
+                atomic_scalar: ::core::sync::atomic::AtomicU32,
+            }
+            impl Default for Globals {
+                fn default() -> Self { Self {
+                    atomic_scalar: Default::default(),
+                }}
+            }
+            impl Globals {
+            }
+            "
+        }
+    );
+}
+
 #[test]
 fn unimplemented_continuing() {
     expect_unimplemented(

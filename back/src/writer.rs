@@ -1253,7 +1253,11 @@ impl<W: Write> Writer<W> {
                 write!(self.out, "{}", unwrap_to_rust(scalar))?;
             }
             TypeInner::Atomic(scalar) => {
-                write!(self.out, "atomic<{}>", unwrap_to_rust(scalar))?;
+                write!(
+                    self.out,
+                    "::core::sync::atomic::{}",
+                    conv::atomic_type_name(scalar)?
+                )?;
             }
             TypeInner::Array {
                 base,
