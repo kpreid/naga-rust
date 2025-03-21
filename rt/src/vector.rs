@@ -5,42 +5,6 @@ pub use glam::{
     UVec4, Vec2, Vec3, Vec4,
 };
 
-// // TODO: These should be `mint` types or some other light vector library.
-// pub type Vec2<T> = [T; 2];
-// pub type Vec3<T> = [T; 3];
-// pub type Vec4<T> = [T; 4];
-//
-// impl<T> crate::New for Vec2<T> {
-//     type Args = (T, T);
-//     fn new((x, y): Self::Args) -> Self {
-//         Self::new(x, y)
-//     }
-// }
-//
-// impl<T> crate::New for Vec3<T> {
-//     type Args = (T, T, T);
-//     fn new((x, y, z): Self::Args) -> Self {
-//         Self::new(x, y, z)
-//     }
-// }
-//
-// impl<T> crate::New for Vec4<T> {
-//     type Args = (T, T, T, T);
-//     fn new((x, y, z, w): Self::Args) -> Self {
-//         Self::new(x, y, z, w)
-//     }
-// }
-
-// pub fn vec2<T>(x: T, y: T) -> Vec2<T> {
-//     [x, y]
-// }
-// pub fn vec3<T>(x: T, y: T, z: T) -> Vec3<T> {
-//     [x, y, z]
-// }
-// pub fn vec4<T>(x: T, y: T, z: T, w: T) -> Vec4<T> {
-//     [x, y, z, w]
-// }
-
 /// Helper trait to pick a vector type given a scalar type and component count.
 pub trait Splat<const N: usize> {
     type Vec;

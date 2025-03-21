@@ -1,15 +1,9 @@
 #![no_std]
 
-mod construct;
 mod vector;
 
-pub use construct::New;
 pub use glam::swizzles;
 pub use vector::*;
-
-pub fn new<T: New>(args: T::Args) -> T {
-    T::new(args)
-}
 
 pub const fn select<T: Copy>(f: T, t: T, cond: bool) -> T {
     if cond { t } else { f }
