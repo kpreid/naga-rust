@@ -13,7 +13,6 @@ pub struct Config {
 }
 
 impl Default for Config {
-    #[must_use]
     fn default() -> Self {
         Self::new()
     }
