@@ -117,8 +117,8 @@ fn entry_point() {
             r"
             #[rt::fragment]
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn main(position: rt::Vec4) -> rt::Vec4 {
-                return rt::splat4(1f32);
+            fn main(position: rt::Vec4<f32>) -> rt::Vec4<f32> {
+                return rt::Vec4::splat(1f32);
             }
             "
         }

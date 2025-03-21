@@ -151,8 +151,8 @@ impl Writer {
         write!(
             out,
             "\
-                #[allow(dead_code)]\n\
-                use {runtime_path}::{{self as rt, swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
+                #[allow(dead_code, clippy::unnecessary_self_imports)]\n\
+                use {runtime_path}::{{self as rt}};\n\
             ",
             runtime_path = self.config.runtime_path,
         )?;
@@ -917,7 +917,8 @@ impl Writer {
             }
             Expression::Splat { size, value } => {
                 let size = conv::vector_size_str(size);
-                write!(out, "{SHADER_LIB}::splat{size}(")?;
+                // TODO: emit explicit element type if explicit types requested
+                write!(out, "{SHADER_LIB}::Vec{size}::splat(")?;
                 write_expression(out, value)?;
                 write!(out, ")")?;
             }
@@ -1104,20 +1105,20 @@ impl Writer {
 
                 self.write_expr(out, module, info, expr, func_ctx)?;
                 match (input_type, to_kind, to_width) {
-                    (&Ti::Vector { size, scalar: _ }, to_kind, Some(to_width)) => {
+                    (&Ti::Vector { size: _, scalar: _ }, to_kind, Some(to_width)) => {
                         // Call a glam vector cast method
                         write!(
                             out,
-                            ".as_{prefix}vec{size}()",
-                            prefix = conv::lower_glam_prefix(Scalar {
+                            ".cast_elem_as_{elem_ty}()",
+                            elem_ty = unwrap_to_rust(Scalar {
                                 kind: to_kind,
                                 width: to_width
                             }),
-                            size = size as u8
                         )?;
                     }
                     (&Ti::Scalar(_), to_kind, Some(to_width)) => {
                         // Coerce scalars using Rust 'as'
+                        // TODO: replace Rust scalars with an explicit rt::Scalar type
                         write!(
                             out,
                             " as {}",
@@ -1286,9 +1287,9 @@ impl Writer {
         match *inner {
             TypeInner::Vector { size, scalar } => write!(
                 out,
-                "{SHADER_LIB}::{}Vec{}",
-                conv::upper_glam_prefix(scalar),
+                "{SHADER_LIB}::Vec{}<{}>",
                 conv::vector_size_str(size),
+                unwrap_to_rust(scalar),
             )?,
             TypeInner::Sampler { comparison: false } => {
                 write!(out, "{SHADER_LIB}::Sampler")?;
@@ -1330,27 +1331,8 @@ impl Writer {
                 write!(out, "]")?;
             }
             TypeInner::BindingArray { .. } => {}
-            TypeInner::Matrix {
-                columns,
-                rows,
-                scalar,
-            } => {
-                if columns == rows {
-                    write!(
-                        out,
-                        "{SHADER_LIB}::{}Mat{}",
-                        conv::upper_glam_prefix(scalar),
-                        conv::vector_size_str(columns),
-                    )?;
-                } else {
-                    write!(
-                        out,
-                        "{SHADER_LIB}::{}Mat{}x{}",
-                        conv::upper_glam_prefix(scalar),
-                        conv::vector_size_str(columns),
-                        conv::vector_size_str(rows),
-                    )?;
-                }
+            TypeInner::Matrix { .. } => {
+                return Err(Error::Unimplemented("matrices".into()));
             }
             TypeInner::Pointer { base, space: _ } => {
                 if self.config.flags.contains(WriterFlags::RAW_POINTERS) {

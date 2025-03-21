@@ -15,9 +15,7 @@ doctest = false
 default = []
 
 [dependencies]
-# glam is a temporary measure. Eventually, we will want to replace its vector types with
-# potentially ultra-wide vector types for simultaneous SIMD-and-semantic-vector operations.
-glam.workspace = true
+num-traits.workspace = true
 naga-rust-macros.workspace = true
 
 [lints.clippy]

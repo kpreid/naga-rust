@@ -217,7 +217,7 @@ impl TryToRust for Scalar {
     }
 }
 
-/// Prefix used in type names.
+/// Maps a scalar type to the corresponding `core::sync::atomic` type.
 pub fn atomic_type_name(scalar: Scalar) -> Result<&'static str, crate::Error> {
     Ok(match scalar {
         Scalar::I32 => "AtomicI32",
@@ -227,33 +227,6 @@ pub fn atomic_type_name(scalar: Scalar) -> Result<&'static str, crate::Error> {
         Scalar::BOOL => "AtomicBool",
         _ => return Err(crate::Error::Unimplemented(format!("atomic {scalar:?}"))),
     })
-}
-
-/// Prefix used in type names.
-pub fn upper_glam_prefix(scalar: Scalar) -> &'static str {
-    match scalar {
-        Scalar::F32 => "",
-        Scalar::F64 => "D",
-        Scalar::I32 => "I",
-        Scalar::U32 => "U",
-        Scalar::I64 => "I64",
-        Scalar::U64 => "U64",
-        Scalar::BOOL => "B",
-        _ => unreachable!(),
-    }
-}
-/// Prefix used in function names.
-pub fn lower_glam_prefix(scalar: Scalar) -> &'static str {
-    match scalar {
-        Scalar::F32 => "",
-        Scalar::F64 => "d",
-        Scalar::I32 => "i",
-        Scalar::U32 => "u",
-        Scalar::I64 => "i64",
-        Scalar::U64 => "u64",
-        Scalar::BOOL => "b",
-        _ => unreachable!(),
-    }
 }
 
 impl ToRust for naga::Interpolation {

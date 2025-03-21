@@ -3,7 +3,7 @@
 use exhaust::Exhaust as _;
 
 // TODO: Should there should be an explicit public vector-type API module which is not rt::?
-use naga_rust_embed::rt::{IVec2, Vec2};
+use naga_rust_embed::rt::Vec2;
 use naga_rust_embed::wgsl;
 
 #[test]
@@ -67,7 +67,7 @@ fn vector_cast() {
     );
 
     // Expect truncation
-    assert_eq!(func(Vec2::new(1.5, -1.5)), IVec2::new(1, -1));
+    assert_eq!(func(Vec2::new(1.5, -1.5)), Vec2::new(1, -1));
 }
 #[test]
 fn scalar_pointer() {
@@ -91,9 +91,9 @@ fn vector_pointer() {
         }"
     );
 
-    let mut x = IVec2::new(10, 10);
+    let mut x = Vec2::new(10, 10);
     add_to_ptr(&mut x);
-    assert_eq!(x, IVec2::new(11, 12));
+    assert_eq!(x, Vec2::new(11, 12));
 }
 
 #[test]

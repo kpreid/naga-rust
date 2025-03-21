@@ -54,7 +54,7 @@ fn run_fragment_shader(time: f32, buffer: &mut [u32], size: PhysicalSize<u32>) {
                 let result = Shader { time }.main(fragment_position);
 
                 // In a real application this should be sRGB encoding.
-                let v = (result * 255.0).as_uvec4().map(|c| c.clamp(0, 255));
+                let v = (result * 255.0).cast_elem_as_u32().map(|c| c.clamp(0, 255));
 
                 *pixel = v.z | (v.y << 8) | (v.x << 16);
             }

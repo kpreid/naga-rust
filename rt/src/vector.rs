@@ -1,93 +1,410 @@
-pub use glam::{
-    BVec2, BVec3, BVec4, BVec4A, DMat2, DMat3, DMat4, DVec2, DVec3, DVec4, I8Vec2, I8Vec3, I8Vec4,
-    I16Vec2, I16Vec3, I16Vec4, I64Vec2, I64Vec3, I64Vec4, IVec2, IVec3, IVec4, Mat2, Mat3, Mat4,
-    U8Vec2, U8Vec3, U8Vec4, U16Vec2, U16Vec3, U16Vec4, U64Vec2, U64Vec3, U64Vec4, UVec2, UVec3,
-    UVec4, Vec2, Vec3, Vec4,
-};
+use core::{cmp, ops};
+use num_traits::ConstZero;
 
-/// Helper trait to pick a vector type given a scalar type and component count.
-pub trait Splat<const N: usize> {
-    type Vec;
-    fn splat(self) -> Self::Vec;
+// -------------------------------------------------------------------------------------------------
+// Vector type declarations.
+//
+// Note that these vectors are *not* prepared to become implemented as SIMD vectors.
+// This is because, when SIMD happens, our SIMD story is going to be making the
+// application-level vectors’ *components* into SIMD vectors, like:
+//     Vec2<std::simd::Simd<f32, 4>>
+// This will allow us to have a constant SIMD lane count across the entire execution, even while
+// the shader code works with vectors of all sizes and scalars.
+
+/// This type wraps an underlying Rust-native scalar (or someday SIMD) type
+/// to provide *only* methods and operators which are compatible with shader
+/// function behaviors. That is, they act like `Vec*` even where `T` might not.
+/// This allows the code generator to not worry as much about mismatches
+/// between Rust and shader semantics.
+///
+/// TODO: This isn't actually used yet.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct Scalar<T> {
+    pub x: T,
 }
 
-#[inline(always)]
-pub fn splat2<T: Splat<2>>(value: T) -> T::Vec {
-    Splat::splat(value)
-}
-#[inline(always)]
-pub fn splat3<T: Splat<3>>(value: T) -> T::Vec {
-    Splat::splat(value)
-}
-#[inline(always)]
-pub fn splat4<T: Splat<4>>(value: T) -> T::Vec {
-    Splat::splat(value)
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(C)]
+pub struct Vec2<T> {
+    pub x: T,
+    pub y: T,
 }
 
-macro_rules! impl_splat {
-    ($n:literal $scalar:ty => $vec:ty) => {
-        impl Splat<$n> for $scalar {
-            type Vec = $vec;
-            #[inline(always)]
-            fn splat(self) -> Self::Vec {
-                // calls the inherent method, not this trait method
-                <$vec>::splat(self)
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(C)]
+pub struct Vec3<T> {
+    pub x: T,
+    pub y: T,
+    pub z: T,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(C)]
+pub struct Vec4<T> {
+    pub x: T,
+    pub y: T,
+    pub z: T,
+    pub w: T,
+}
+
+// -------------------------------------------------------------------------------------------------
+// Vector operations
+
+/// Generate arithmetic operators and functions for cases where the element type is a
+/// Rust primitive *integer*. (In these cases we must ask for wrapping operations.)
+macro_rules! impl_vector_integer_arithmetic {
+    ($vec:ident, $int:ty, $( $component:ident )*) => {
+        // Vector-vector operations
+        impl ops::Add for $vec<$int> {
+            type Output = Self;
+            fn add(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_add(rhs.$component), )* }
             }
         }
+        impl ops::Sub for $vec<$int> {
+            type Output = Self;
+            fn sub(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_sub(rhs.$component), )* }
+            }
+        }
+        impl ops::Mul for $vec<$int> {
+            type Output = Self;
+            fn mul(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_mul(rhs.$component), )* }
+            }
+        }
+        impl ops::Div for $vec<$int> {
+            type Output = Self;
+            fn div(self, rhs: Self) -> Self::Output {
+                // wrapping_div() panics on division by zero, which is not what we need
+                $vec { $(
+                    $component:
+                        self.$component.checked_div(rhs.$component)
+                            .unwrap_or(self.$component),
+                )* }
+            }
+        }
+        impl ops::Rem for $vec<$int> {
+            type Output = Self;
+            fn rem(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_rem(rhs.$component), )* }
+            }
+        }
+
+        // Vector-scalar operations
+        impl ops::Add<$int> for $vec<$int> {
+            type Output = Self;
+            fn add(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_add(rhs), )* }
+            }
+        }
+        impl ops::Sub<$int> for $vec<$int> {
+            type Output = Self;
+            fn sub(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_sub(rhs), )* }
+            }
+        }
+        impl ops::Mul<$int> for $vec<$int> {
+            type Output = Self;
+            fn mul(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_mul(rhs), )* }
+            }
+        }
+        impl ops::Div<$int> for $vec<$int> {
+            type Output = Self;
+            fn div(self, rhs: $int) -> Self::Output {
+                // wrapping_div() panics on division by zero, which is not what we need
+                $vec { $(
+                    $component:
+                        self.$component.checked_div(rhs)
+                            .unwrap_or(self.$component),
+                )* }
+            }
+        }
+        impl ops::Rem<$int> for $vec<$int> {
+            type Output = Self;
+            fn rem(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_rem(rhs), )* }
+            }
+        }
+    }
+}
+
+/// Generate arithmetic operators and functions for cases where the element type is a
+/// Rust primitive *float*.
+macro_rules! impl_vector_float_arithmetic {
+    ($vec:ident, $int:ty, $( $component:ident )*) => {
+        // Vector-vector operations
+        impl ops::Add for $vec<$int> {
+            type Output = Self;
+            fn add(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component + rhs.$component, )* }
+            }
+        }
+        impl ops::Sub for $vec<$int> {
+            type Output = Self;
+            fn sub(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component - rhs.$component, )* }
+            }
+        }
+        impl ops::Mul for $vec<$int> {
+            type Output = Self;
+            fn mul(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component * rhs.$component, )* }
+            }
+        }
+        impl ops::Div for $vec<$int> {
+            type Output = Self;
+            fn div(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component / rhs.$component, )* }
+            }
+        }
+        impl ops::Rem for $vec<$int> {
+            type Output = Self;
+            fn rem(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component % rhs.$component, )* }
+            }
+        }
+
+        // Vector-scalar operations
+        impl ops::Add<$int> for $vec<$int> {
+            type Output = Self;
+            fn add(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component + rhs, )* }
+            }
+        }
+        impl ops::Sub<$int> for $vec<$int> {
+            type Output = Self;
+            fn sub(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component - rhs, )* }
+            }
+        }
+        impl ops::Mul<$int> for $vec<$int> {
+            type Output = Self;
+            fn mul(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component * rhs, )* }
+            }
+        }
+        impl ops::Div<$int> for $vec<$int> {
+            type Output = Self;
+            fn div(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component / rhs, )* }
+            }
+        }
+        impl ops::Rem<$int> for $vec<$int> {
+            type Output = Self;
+            fn rem(self, rhs: $int) -> Self::Output {
+                $vec { $( $component: self.$component % rhs, )* }
+            }
+        }
+    }
+}
+
+macro_rules! impl_element_casts {
+    ($ty:ident) => {
+        // TODO: These do not have the right cast semantics, but what *are* the right cast
+        // semantics? Naga IR docs are cryptic for `Expression::As`.
+        pub fn cast_elem_as_u32(self) -> $ty<u32> {
+            self.map(|component| component as u32)
+        }
+        pub fn cast_elem_as_i32(self) -> $ty<i32> {
+            self.map(|component| component as i32)
+        }
+        pub fn cast_elem_as_f32(self) -> $ty<f32> {
+            self.map(|component| component as f32)
+        }
+        pub fn cast_elem_as_f64(self) -> $ty<f64> {
+            self.map(|component| component as f64)
+        }
     };
 }
-impl_splat!(2 f32 => Vec2);
-impl_splat!(3 f32 => Vec3);
-impl_splat!(4 f32 => Vec4);
-impl_splat!(2 f64 => DVec2);
-impl_splat!(3 f64 => DVec3);
-impl_splat!(4 f64 => DVec4);
-impl_splat!(2 i32 => IVec2);
-impl_splat!(3 i32 => IVec3);
-impl_splat!(4 i32 => IVec4);
-impl_splat!(2 u32 => UVec2);
-impl_splat!(3 u32 => UVec3);
-impl_splat!(4 u32 => UVec4);
-impl_splat!(2 i64 => I64Vec2);
-impl_splat!(3 i64 => I64Vec3);
-impl_splat!(4 i64 => I64Vec4);
-impl_splat!(2 u64 => U64Vec2);
-impl_splat!(3 u64 => U64Vec3);
-impl_splat!(4 u64 => U64Vec4);
-impl_splat!(2 i8 => I8Vec2);
-impl_splat!(3 i8 => I8Vec3);
-impl_splat!(4 i8 => I8Vec4);
-impl_splat!(2 u8 => U8Vec2);
-impl_splat!(3 u8 => U8Vec3);
-impl_splat!(4 u8 => U8Vec4);
-impl_splat!(2 i16 => I16Vec2);
-impl_splat!(3 i16 => I16Vec3);
-impl_splat!(4 i16 => I16Vec4);
-impl_splat!(2 u16 => U16Vec2);
-impl_splat!(3 u16 => U16Vec3);
-impl_splat!(4 u16 => U16Vec4);
-impl_splat!(2 bool => BVec2);
-impl_splat!(3 bool => BVec3);
-impl_splat!(4 bool => BVec4);
 
-macro_rules! impl_cmp {
-    ($name:ident 2 $val_vec:ident $op:tt) => {
-        pub fn $name(a: $val_vec, b: $val_vec) -> BVec2 {
-            BVec2::new(a.x $op b.x, a.y $op b.y)
+macro_rules! impl_vector_regular_fns {
+    ( $ty:ident : $( $component:ident )* ) => {
+        impl<T> $ty<T> {
+            pub const fn new($( $component: T, )*) -> Self {
+                Self { $( $component, )* }
+            }
+
+            pub fn splat(value: T) -> Self
+            where
+                T: Copy
+            {
+                Self { $( $component: value, )* }
+            }
+
+            /// Replaces the elements of `self` with the elements of `trues` wherever
+            /// `mask` contains [`true`].
+            pub const fn select(self, trues: Self, mask: $ty<bool>) -> Self
+            where
+                T: Copy
+            {
+                Self {
+                    $(
+                        $component: if mask.$component {
+                            trues.$component
+                        } else {
+                            self.$component
+                        },
+                    )*
+                }
+            }
+
+            pub fn map<U, F>(self, mut f: F) -> $ty<U>
+            where
+                F: FnMut(T) -> U,
+            {
+                $ty {
+                    $(
+                        $component: f(self.$component),
+                    )*
+                }
+            }
         }
-    };
-    ($name:ident 3 $val_vec:ident $op:tt) => {
-        pub fn $name(a: $val_vec, b: $val_vec) -> BVec3 {
-            BVec3::new(a.x $op b.x, a.y $op b.y, a.z $op b.z)
+
+        impl_vector_integer_arithmetic!($ty, i32, $($component)*);
+        impl_vector_integer_arithmetic!($ty, u32, $($component)*);
+        impl_vector_float_arithmetic!($ty, f32, $($component)*);
+        impl_vector_float_arithmetic!($ty, f64, $($component)*);
+
+        impl $ty<i32> {
+            impl_element_casts!($ty);
         }
-    };
-    ($name:ident 4 $val_vec:ident $op:tt) => {
-        pub fn $name(a: $val_vec, b: $val_vec) -> BVec4 {
-            BVec4::new(a.x $op b.x, a.y $op b.y, a.z $op b.z, a.w $op b.w)
+        impl $ty<u32> {
+            impl_element_casts!($ty);
         }
-    };
+        impl $ty<f32> {
+            impl_element_casts!($ty);
+        }
+        impl $ty<f64> {
+            impl_element_casts!($ty);
+        }
+
+        // Zero constant and traits.
+        impl<T: ConstZero> $ty<T> {
+            // inherent so that traits are not needed in scope
+            pub const ZERO: Self = Self { $( $component: T::ZERO, )* };
+        }
+        impl<T: ConstZero> ConstZero for $ty<T>
+        where
+            Self: ops::Add<Output = Self>
+        {
+            const ZERO: Self = Self { $( $component: T::ZERO, )* };
+        }
+        impl<T: ConstZero> num_traits::Zero for $ty<T>
+        where
+            Self: ops::Add<Output = Self>
+        {
+            fn zero() -> Self {
+                Self::ZERO
+            }
+            fn is_zero(&self) -> bool {
+                $(T::is_zero(&self.$component) & )* true
+            }
+        }
+
+        // Elementwise comparison
+        impl<T: PartialOrd> $ty<T> {
+            pub fn elementwise_eq(self, rhs: Self) -> $ty<bool> {
+                self.partial_cmp(rhs).map(|cmp| matches!(cmp, Some(cmp::Ordering::Equal)))
+            }
+            pub fn elementwise_ne(self, rhs: Self) -> $ty<bool> {
+                self.partial_cmp(rhs).map(|cmp| !matches!(cmp, Some(cmp::Ordering::Equal)))
+            }
+            pub fn elementwise_lt(self, rhs: Self) -> $ty<bool> {
+                self.partial_cmp(rhs).map(|cmp| matches!(cmp, Some(cmp::Ordering::Less)))
+            }
+            pub fn elementwise_le(self, rhs: Self) -> $ty<bool> {
+                self.partial_cmp(rhs).map(|cmp| {
+                    matches!(cmp, Some(cmp::Ordering::Less | cmp::Ordering::Equal))
+                })
+            }
+            pub fn elementwise_gt(self, rhs: Self) -> $ty<bool> {
+                self.partial_cmp(rhs).map(|cmp| matches!(cmp, Some(cmp::Ordering::Greater)))
+            }
+            pub fn elementwise_ge(self, rhs: Self) -> $ty<bool> {
+                self.partial_cmp(rhs).map(|cmp| {
+                    matches!(cmp, Some(cmp::Ordering::Greater | cmp::Ordering::Equal))
+                })
+            }
+
+            /// Helper for comparison operations
+            fn partial_cmp(self, rhs: Self) -> $ty<Option<cmp::Ordering>> {
+                $ty {
+                    $(
+                        $component: self.$component.partial_cmp(&rhs.$component),
+                    )*
+                }
+            }
+        }
+    }
 }
 
-impl_cmp!(vec2_eq 2 Vec2 ==);
-impl_cmp!(vec3_eq 3 Vec3 ==);
-impl_cmp!(vec4_eq 4 Vec4 ==);
+impl_vector_regular_fns!(Scalar : x);
+impl_vector_regular_fns!(Vec2 : x y);
+impl_vector_regular_fns!(Vec3 : x y z);
+impl_vector_regular_fns!(Vec4 : x y z w);
+
+// -------------------------------------------------------------------------------------------------
+// Swizzles
+
+macro_rules! swizzle_fn {
+    ($name:ident $output:ident ($($cin:ident)*) ) => {
+        /// Takes the
+        #[doc = stringify!($(self.$cin )*)]
+        /// elements of `self` and returns them in that order.
+        pub fn $name(self) -> $output<T> {
+            $output::new($(self.$cin,)*)
+        }
+    }
+}
+
+impl<T: Copy> Vec2<T> {
+    swizzle_fn!(xy Vec2(x y));
+    swizzle_fn!(yx Vec2(y x));
+}
+impl<T: Copy> Vec3<T> {
+    swizzle_fn!(xy Vec2(x y));
+    swizzle_fn!(yx Vec2(y x));
+    swizzle_fn!(xyz Vec3(x y z));
+    swizzle_fn!(xzy Vec3(x z y));
+    swizzle_fn!(yxz Vec3(y x z));
+    swizzle_fn!(yzx Vec3(y z x));
+    swizzle_fn!(zxy Vec3(z x y));
+    swizzle_fn!(zyx Vec3(z y x));
+}
+impl<T: Copy> Vec4<T> {
+    swizzle_fn!(xy Vec2(x y));
+    swizzle_fn!(yx Vec2(y x));
+    swizzle_fn!(xyz Vec3(x y z));
+    swizzle_fn!(xzy Vec3(x z y));
+    swizzle_fn!(yxz Vec3(y x z));
+    swizzle_fn!(yzx Vec3(y z x));
+    swizzle_fn!(zxy Vec3(z x y));
+    swizzle_fn!(zyx Vec3(z y x));
+    swizzle_fn!(xyzw Vec4(x y z w));
+    swizzle_fn!(xywz Vec4(x y w z));
+    swizzle_fn!(xzwy Vec4(x z w y));
+    swizzle_fn!(xzyw Vec4(x z y w));
+    swizzle_fn!(xwyz Vec4(x w y z));
+    swizzle_fn!(xwzy Vec4(x w z y));
+    swizzle_fn!(yxzw Vec4(y x z w));
+    swizzle_fn!(yxwz Vec4(y x w z));
+    swizzle_fn!(yzxw Vec4(y z x w));
+    swizzle_fn!(yzwx Vec4(y z w x));
+    swizzle_fn!(ywzx Vec4(y w z x));
+    swizzle_fn!(ywxz Vec4(y w x z));
+    swizzle_fn!(zxyw Vec4(z x y w));
+    swizzle_fn!(zxwy Vec4(z x w y));
+    swizzle_fn!(zyxw Vec4(z y x w));
+    swizzle_fn!(zywx Vec4(z y w x));
+    swizzle_fn!(zwxy Vec4(z w x y));
+    swizzle_fn!(zwyx Vec4(z w y x));
+    swizzle_fn!(wxyz Vec4(w x y z));
+    swizzle_fn!(wxzy Vec4(w x z y));
+    swizzle_fn!(wyxz Vec4(w y x z));
+    swizzle_fn!(wyzx Vec4(w y z x));
+    swizzle_fn!(wzxy Vec4(w z x y));
+    swizzle_fn!(wzyx Vec4(w z y x));
+}
