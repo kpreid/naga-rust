@@ -87,6 +87,29 @@ fn visibility_control() {
 }
 
 #[test]
+fn entry_point() {
+    assert_eq!(
+        translate_without_header(
+            Config::new(),
+            r"
+            @fragment
+            fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+                return vec4f(1.0);
+            }"
+        ),
+        indoc::indoc! {
+            r"
+            #[rt::fragment]
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn main(position: rt::Vec4) -> rt::Vec4 {
+                return rt::splat4(1f32);
+            }
+            "
+        }
+    );
+}
+
+#[test]
 fn global_variable_enabled() {
     assert_eq!(
         translate_without_header(
