@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 naga-rust-embed = { path = "../../embed" }
+rayon = "1.10.0"
 softbuffer = "0.4.6"
 winit = "0.30.0"
 

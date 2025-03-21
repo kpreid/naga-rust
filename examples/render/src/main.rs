@@ -5,6 +5,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Instant;
 
+use rayon::iter::IndexedParallelIterator;
+use rayon::{iter::ParallelIterator as _, slice::ParallelSliceMut as _};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
@@ -29,20 +31,34 @@ fn main() {
 // -------------------------------------------------------------------------------------------------
 
 fn run_fragment_shader(time: f32, buffer: &mut [u32], size: PhysicalSize<u32>) {
-    for index in 0..(size.width * size.height) {
-        let y = index / size.width;
-        let x = index % size.width;
-        // TODO: `rt` is not supposed to be in scope here
-        #[allow(clippy::cast_precision_loss)]
-        let fragment_position = rt::Vec4::new(x as f32, y as f32, 0.0, 0.0);
+    // Run in parallel to take advantage of all CPU cores.
+    //
+    // We parallelize rows but run each row serially to ensure that the inner loop has no
+    // overhead from parallelization and can be unrolled or whatever the compiler wants to
+    // do with it, because *each pixel* is trivial but there are a lot of them, so the most
+    // important thing is minimizing overhead.
+    //
+    // The other big thing for efficiency is to arrange for multiple pixels to be computed
+    // in SIMD, but we are not yet doing that, or rather, the compiler may manage to
+    // autovectorize the code but we’re not doing anything to ensure it has an easy job of that.
 
-        let result = Shader { time }.main(fragment_position);
+    buffer
+        .par_chunks_mut(size.width as usize)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for (x, pixel) in row.iter_mut().enumerate() {
+                // TODO: `rt` is not supposed to be in scope here
+                #[allow(clippy::cast_precision_loss)]
+                let fragment_position = rt::Vec4::new(x as f32, y as f32, 0.0, 0.0);
 
-        // In a real application this should be sRGB encoding.
-        let v = (result * 255.0).as_uvec4().map(|c| c.clamp(0, 255));
+                let result = Shader { time }.main(fragment_position);
 
-        buffer[index as usize] = v.z | (v.y << 8) | (v.x << 16);
-    }
+                // In a real application this should be sRGB encoding.
+                let v = (result * 255.0).as_uvec4().map(|c| c.clamp(0, 255));
+
+                *pixel = v.z | (v.y << 8) | (v.x << 16);
+            }
+        });
 }
 
 // -------------------------------------------------------------------------------------------------
