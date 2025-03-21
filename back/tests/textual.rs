@@ -78,11 +78,27 @@ fn expect_unimplemented(wgsl_source_text: &str) {
 fn visibility_control() {
     assert_eq!(
         translate_without_header(Config::new(), "fn foo() {}"),
-        "#[allow(unused, clippy::all)]\nfn foo() {\n    return;\n}\n\n"
+        indoc::indoc! {
+            r"
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn foo() {
+                return;
+            }
+            
+            "
+        }
     );
     assert_eq!(
         translate_without_header(Config::new().public_items(true), "fn foo() {}"),
-        "#[allow(unused, clippy::all)]\npub fn foo() {\n    return;\n}\n\n"
+        indoc::indoc! {
+            r"
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            pub fn foo() {
+                return;
+            }
+            
+            "
+        }
     );
 }
 
@@ -157,7 +173,7 @@ fn switch() {
         ),
         indoc::indoc! {
             "
-            #[allow(unused, clippy::all)]
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn switching(x: i32) -> i32 {
                 match x {
                     0i32 => {
@@ -226,7 +242,7 @@ fn array_length() {
                 }}
             }
             impl Globals {
-            #[allow(unused, clippy::all)]
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn length(&self, ) -> u32 {
                 return (&self.arr).len();
             }
