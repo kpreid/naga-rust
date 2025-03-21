@@ -8,7 +8,7 @@ use naga::{
     Expression, Handle, Module, Scalar, ShaderStage, TypeInner,
     back::{self, INDENT},
     proc::{self, ExpressionKindTracker, NameKey},
-    valid,
+    valid::ModuleInfo,
 };
 
 use crate::config::WriterFlags;
@@ -139,7 +139,7 @@ impl Writer {
         &mut self,
         out: &mut dyn Write,
         module: &Module,
-        info: &valid::ModuleInfo,
+        info: &ModuleInfo,
     ) -> BackendResult {
         if !module.overrides.is_empty() {
             return Err(Error::Unimplemented("pipeline constants".into()));
@@ -174,7 +174,7 @@ impl Writer {
             .filter(|&(_, c)| c.name.is_some())
             .peekable();
         while let Some((handle, _)) = constants.next() {
-            self.write_global_constant(out, module, handle)?;
+            self.write_global_constant(out, module, info, handle)?;
             // Add extra newline for readability on last iteration
             if constants.peek().is_none() {
                 writeln!(out)?;
@@ -196,7 +196,7 @@ impl Writer {
                 {INDENT}fn default() -> Self {{ Self {{"
             )?;
             for (handle, global) in module.global_variables.iter() {
-                self.write_global_variable_as_field_initializer(out, module, global, handle)?;
+                self.write_global_variable_as_field_initializer(out, module, info, global, handle)?;
             }
             writeln!(out, "{INDENT}}}}}\n}}")?;
 
@@ -221,7 +221,7 @@ impl Writer {
             };
 
             // Write the function
-            self.write_function(out, module, function, &func_ctx)?;
+            self.write_function(out, module, info, function, &func_ctx)?;
 
             writeln!(out)?;
         }
@@ -245,7 +245,7 @@ impl Writer {
                 named_expressions: &ep.function.named_expressions,
                 expr_kind_tracker: ExpressionKindTracker::from_arena(&ep.function.expressions),
             };
-            self.write_function(out, module, &ep.function, &func_ctx)?;
+            self.write_function(out, module, info, &ep.function, &func_ctx)?;
 
             if index < module.entry_points.len() - 1 {
                 writeln!(out)?;
@@ -266,6 +266,7 @@ impl Writer {
         &mut self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
     ) -> BackendResult {
@@ -336,7 +337,7 @@ impl Writer {
             // Write the local initializer if needed
             if let Some(init) = local.init {
                 write!(out, " = ")?;
-                self.write_expr(out, module, init, func_ctx)?;
+                self.write_expr(out, module, info, init, func_ctx)?;
             }
 
             // Finish the local with `;` and add a newline (only for readability)
@@ -350,7 +351,7 @@ impl Writer {
         // Write the function body (statement list)
         for sta in func.body.iter() {
             // The indentation should always be 1 when writing the function body
-            self.write_stmt(out, module, sta, func_ctx, back::Level(1))?;
+            self.write_stmt(out, module, info, sta, func_ctx, back::Level(1))?;
         }
 
         writeln!(out, "}}")?;
@@ -451,6 +452,7 @@ impl Writer {
         &mut self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         stmt: &naga::Statement,
         func_ctx: &back::FunctionCtx<'_>,
         level: back::Level,
@@ -460,7 +462,7 @@ impl Writer {
         match *stmt {
             Statement::Emit(ref range) => {
                 for handle in range.clone() {
-                    let info = &func_ctx.info[handle];
+                    let expr_info = &func_ctx.info[handle];
                     let expr_name = if let Some(name) = func_ctx.named_expressions.get(&handle) {
                         // Front end provides names for all variables at the start of writing.
                         // But we write them to step by step. We need to recache them
@@ -477,7 +479,7 @@ impl Writer {
                                 | Expression::ImageQuery { .. }
                                 | Expression::ImageSample { .. }
                         );
-                        if min_ref_count <= info.ref_count || required_baking_expr {
+                        if min_ref_count <= expr_info.ref_count || required_baking_expr {
                             Some(Gensym(handle).to_string())
                         } else {
                             None
@@ -487,7 +489,7 @@ impl Writer {
                     if let Some(name) = expr_name {
                         write!(out, "{level}")?;
                         self.start_named_expr(out, module, handle, func_ctx, &name)?;
-                        self.write_expr(out, module, handle, func_ctx)?;
+                        self.write_expr(out, module, info, handle, func_ctx)?;
                         self.named_expressions.insert(handle, name);
                         writeln!(out, ";")?;
                     }
@@ -501,15 +503,15 @@ impl Writer {
                 let l2 = level.next();
 
                 write!(out, "{level}if ")?;
-                self.write_expr(out, module, condition, func_ctx)?;
+                self.write_expr(out, module, info, condition, func_ctx)?;
                 writeln!(out, " {{")?;
                 for s in accept {
-                    self.write_stmt(out, module, s, func_ctx, l2)?;
+                    self.write_stmt(out, module, info, s, func_ctx, l2)?;
                 }
                 if !reject.is_empty() {
                     writeln!(out, "{level}}} else {{")?;
                     for s in reject {
-                        self.write_stmt(out, module, s, func_ctx, l2)?;
+                        self.write_stmt(out, module, info, s, func_ctx, l2)?;
                     }
                 }
                 writeln!(out, "{level}}}")?
@@ -518,7 +520,7 @@ impl Writer {
                 write!(out, "{level}return")?;
                 if let Some(return_value) = value {
                     write!(out, " ")?;
-                    self.write_expr(out, module, return_value, func_ctx)?;
+                    self.write_expr(out, module, info, return_value, func_ctx)?;
                 }
                 writeln!(out, ";")?;
             }
@@ -539,12 +541,13 @@ impl Writer {
                 self.write_expr_with_indirection(
                     out,
                     module,
+                    info,
                     pointer,
                     func_ctx,
                     Indirection::Place,
                 )?;
                 write!(out, " = ")?;
-                self.write_expr(out, module, value, func_ctx)?;
+                self.write_expr(out, module, info, value, func_ctx)?;
 
                 writeln!(out, ";")?
             }
@@ -565,7 +568,7 @@ impl Writer {
                     if index != 0 {
                         write!(out, ", ")?;
                     }
-                    self.write_expr(out, module, argument, func_ctx)?;
+                    self.write_expr(out, module, info, argument, func_ctx)?;
                 }
                 writeln!(out, ");")?
             }
@@ -589,7 +592,7 @@ impl Writer {
                 write!(out, "{level}")?;
                 writeln!(out, "{{")?;
                 for s in block.iter() {
-                    self.write_stmt(out, module, s, func_ctx, level.next())?;
+                    self.write_stmt(out, module, info, s, func_ctx, level.next())?;
                 }
                 writeln!(out, "{level}}}")?;
             }
@@ -600,7 +603,7 @@ impl Writer {
                 // Beginning of the match expression
                 write!(out, "{level}")?;
                 write!(out, "match ")?;
-                self.write_expr(out, module, selector, func_ctx)?;
+                self.write_expr(out, module, info, selector, func_ctx)?;
                 writeln!(out, " {{")?;
 
                 // Generate each arm, collapsing empty fall-through into a single arm.
@@ -641,7 +644,7 @@ impl Writer {
                     if new_match_arm {
                         writeln!(out, " => {{")?;
                         for sta in case.body.iter() {
-                            self.write_stmt(out, module, sta, func_ctx, l2.next())?;
+                            self.write_stmt(out, module, info, sta, func_ctx, l2.next())?;
                         }
                         writeln!(out, "{l2}}}")?;
                     }
@@ -659,7 +662,7 @@ impl Writer {
 
                 let l2 = level.next();
                 for sta in body.iter() {
-                    self.write_stmt(out, module, sta, func_ctx, l2)?;
+                    self.write_stmt(out, module, info, sta, func_ctx, l2)?;
                 }
 
                 if !continuing.is_empty() {
@@ -782,10 +785,11 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         expr: Handle<Expression>,
         func_ctx: &back::FunctionCtx<'_>,
     ) -> BackendResult {
-        self.write_expr_with_indirection(out, module, expr, func_ctx, Indirection::Ordinary)
+        self.write_expr_with_indirection(out, module, info, expr, func_ctx, Indirection::Ordinary)
     }
 
     /// Write `expr` as a Rust expression with the requested indirection.
@@ -800,6 +804,7 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         expr: Handle<Expression>,
         func_ctx: &back::FunctionCtx<'_>,
         requested: Indirection,
@@ -813,7 +818,7 @@ impl Writer {
             // TODO: We need to choose which borrow operator to use.
             (Indirection::Ordinary, Indirection::Place) => {
                 write!(out, "(&")?;
-                self.write_expr_plain_form(out, module, expr, func_ctx, plain)?;
+                self.write_expr_plain_form(out, module, info, expr, func_ctx, plain)?;
                 write!(out, ")")?;
             }
 
@@ -821,13 +826,13 @@ impl Writer {
             // Insert a dereference operator.
             (Indirection::Place, Indirection::Ordinary) => {
                 write!(out, "(*")?;
-                self.write_expr_plain_form(out, module, expr, func_ctx, plain)?;
+                self.write_expr_plain_form(out, module, info, expr, func_ctx, plain)?;
                 write!(out, ")")?;
             }
             // Matches.
             (Indirection::Place, Indirection::Place)
             | (Indirection::Ordinary, Indirection::Ordinary) => {
-                self.write_expr_plain_form(out, module, expr, func_ctx, plain)?
+                self.write_expr_plain_form(out, module, info, expr, func_ctx, plain)?
             }
         }
 
@@ -838,12 +843,18 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         expr: Handle<Expression>,
-        arena: &naga::Arena<Expression>,
     ) -> BackendResult {
-        self.write_possibly_const_expression(out, module, expr, arena, |out, expr| {
-            self.write_const_expression(out, module, expr, arena)
-        })
+        self.write_possibly_const_expression(
+            out,
+            module,
+            info,
+            expr,
+            &module.global_expressions,
+            |out, expr| self.write_const_expression(out, module, info, expr),
+            |expr| info[expr].inner_with(&module.types),
+        )
     }
 
     /// Writes an expression of the kinds that can appear both in constants and in function bodies.
@@ -853,17 +864,17 @@ impl Writer {
     //
     // Arguably we could do a runtime check for that instead of the `unreachable!()`s
     // on matching the expression enum.
-    fn write_possibly_const_expression<E>(
+    #[allow(clippy::too_many_arguments)]
+    fn write_possibly_const_expression<'a>(
         &self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         expr: Handle<Expression>,
         expressions: &naga::Arena<Expression>,
-        write_expression: E,
-    ) -> BackendResult
-    where
-        E: Copy + Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
-    {
+        write_expression: impl Copy + Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
+        expression_type: impl Copy + Fn(Handle<Expression>) -> &'a TypeInner,
+    ) -> BackendResult {
         match expressions[expr] {
             Expression::Literal(literal) => match literal {
                 naga::Literal::F32(value) => write!(out, "{value}f32")?,
@@ -886,12 +897,7 @@ impl Writer {
                 if constant.name.is_some() {
                     write!(out, "{}", self.names[&NameKey::Constant(handle)])?;
                 } else {
-                    self.write_const_expression(
-                        out,
-                        module,
-                        constant.init,
-                        &module.global_expressions,
-                    )?;
+                    self.write_const_expression(out, module, info, constant.init)?;
                 }
             }
             Expression::ZeroValue(ty) => {
@@ -900,7 +906,14 @@ impl Writer {
                 write!(out, ">()")?;
             }
             Expression::Compose { ty, ref components } => {
-                self.write_constructor_expression(out, module, ty, components, write_expression)?;
+                self.write_constructor_expression(
+                    out,
+                    module,
+                    ty,
+                    components,
+                    write_expression,
+                    expression_type,
+                )?;
             }
             Expression::Splat { size, value } => {
                 let size = conv::vector_size_str(size);
@@ -918,17 +931,15 @@ impl Writer {
     ///
     /// We do not delegate to a library trait for this because the construction
     /// must be const-compatible.
-    fn write_constructor_expression<E>(
+    fn write_constructor_expression<'a>(
         &self,
         out: &mut dyn Write,
         module: &Module,
         ty: Handle<naga::Type>,
         components: &[Handle<Expression>],
-        write_expression: E,
-    ) -> BackendResult
-    where
-        E: Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
-    {
+        write_expression: impl Copy + Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
+        expression_type: impl Copy + Fn(Handle<Expression>) -> &'a TypeInner,
+    ) -> BackendResult {
         write!(out, "<")?;
         self.write_type(out, module, ty)?;
         // TODO: use conventional Rust ctor syntax more often
@@ -960,6 +971,7 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         expr: Handle<Expression>,
         func_ctx: &back::FunctionCtx<'_>,
         indirection: Indirection,
@@ -980,9 +992,11 @@ impl Writer {
                 self.write_possibly_const_expression(
                     out,
                     module,
+                    info,
                     expr,
                     func_ctx.expressions,
-                    |out, expr| self.write_expr(out, module, expr, func_ctx),
+                    |out, expr| self.write_expr(out, module, info, expr, func_ctx),
+                    |expr| func_ctx.resolve_type(expr, &module.types),
                 )?;
             }
             Expression::Override(_) => unreachable!(),
@@ -1003,34 +1017,34 @@ impl Writer {
                     (true, BinOpClassified::ScalarBool(_))
                     | (_, BinOpClassified::Vectorizable(_)) => {
                         write!(out, "(")?;
-                        self.write_expr(out, module, left, func_ctx)?;
+                        self.write_expr(out, module, info, left, func_ctx)?;
                         // TODO: Review whether any Rust operator semantics are incorrect
                         //  for shader code — if so, stop using `binary_operation_str`.
                         write!(out, " {} ", back::binary_operation_str(op))?;
-                        self.write_expr(out, module, right, func_ctx)?;
+                        self.write_expr(out, module, info, right, func_ctx)?;
                         write!(out, ")")?;
                     }
                     (_, BinOpClassified::ScalarBool(bop)) => {
                         // TODO: generated function name is a placeholder
                         write!(out, "{SHADER_LIB}::{}(", bop.to_vector_fn())?;
-                        self.write_expr(out, module, left, func_ctx)?;
+                        self.write_expr(out, module, info, left, func_ctx)?;
                         write!(out, ", ")?;
-                        self.write_expr(out, module, right, func_ctx)?;
+                        self.write_expr(out, module, info, right, func_ctx)?;
                         write!(out, ")")?;
                     }
                 }
             }
             Expression::Access { base, index } => {
-                self.write_expr_with_indirection(out, module, base, func_ctx, indirection)?;
+                self.write_expr_with_indirection(out, module, info, base, func_ctx, indirection)?;
                 write!(out, "[")?;
-                self.write_expr(out, module, index, func_ctx)?;
+                self.write_expr(out, module, info, index, func_ctx)?;
                 write!(out, " as usize]")?
             }
             Expression::AccessIndex { base, index } => {
                 let base_ty_res = &func_ctx.info[base].ty;
                 let mut resolved = base_ty_res.inner_with(&module.types);
 
-                self.write_expr_with_indirection(out, module, base, func_ctx, indirection)?;
+                self.write_expr_with_indirection(out, module, info, base, func_ctx, indirection)?;
 
                 let base_ty_handle = match *resolved {
                     TypeInner::Pointer { base, space: _ } => {
@@ -1088,7 +1102,7 @@ impl Writer {
 
                 let input_type = func_ctx.resolve_type(expr, &module.types);
 
-                self.write_expr(out, module, expr, func_ctx)?;
+                self.write_expr(out, module, info, expr, func_ctx)?;
                 match (input_type, to_kind, to_width) {
                     (&Ti::Vector { size, scalar: _ }, to_kind, Some(to_width)) => {
                         // Call a glam vector cast method
@@ -1126,6 +1140,7 @@ impl Writer {
                 self.write_expr_with_indirection(
                     out,
                     module,
+                    info,
                     pointer,
                     func_ctx,
                     Indirection::Place,
@@ -1135,7 +1150,7 @@ impl Writer {
                 write!(out, "{}", self.names[&func_ctx.name_key(handle)])?
             }
             Expression::ArrayLength(expr) => {
-                self.write_expr(out, module, expr, func_ctx)?;
+                self.write_expr(out, module, info, expr, func_ctx)?;
                 write!(out, ".len()")?;
             }
 
@@ -1147,10 +1162,10 @@ impl Writer {
                 arg3,
             } => {
                 write!(out, "{fun_name}(", fun_name = fun.to_rust())?;
-                self.write_expr(out, module, arg, func_ctx)?;
+                self.write_expr(out, module, info, arg, func_ctx)?;
                 for arg in IntoIterator::into_iter([arg1, arg2, arg3]).flatten() {
                     write!(out, ", ")?;
-                    self.write_expr(out, module, arg, func_ctx)?;
+                    self.write_expr(out, module, info, arg, func_ctx)?;
                 }
                 write!(out, ")")?
             }
@@ -1160,7 +1175,7 @@ impl Writer {
                 vector,
                 pattern,
             } => {
-                self.write_expr(out, module, vector, func_ctx)?;
+                self.write_expr(out, module, info, vector, func_ctx)?;
                 write!(out, ".")?;
                 for &sc in pattern[..size as usize].iter() {
                     out.write_char(back::COMPONENTS[sc as usize])?;
@@ -1175,7 +1190,7 @@ impl Writer {
                 };
 
                 write!(out, "{unary}(")?;
-                self.write_expr(out, module, expr, func_ctx)?;
+                self.write_expr(out, module, info, expr, func_ctx)?;
 
                 write!(out, ")")?
             }
@@ -1194,11 +1209,11 @@ impl Writer {
                     _ => unreachable!("validation should have rejected this"),
                 };
                 write!(out, "{SHADER_LIB}::select{suffix}(")?;
-                self.write_expr(out, module, reject, func_ctx)?;
+                self.write_expr(out, module, info, reject, func_ctx)?;
                 write!(out, ", ")?;
-                self.write_expr(out, module, accept, func_ctx)?;
+                self.write_expr(out, module, info, accept, func_ctx)?;
                 write!(out, ", ")?;
-                self.write_expr(out, module, condition, func_ctx)?;
+                self.write_expr(out, module, info, condition, func_ctx)?;
                 write!(out, ")")?
             }
             Expression::Derivative { axis, ctrl, expr } => {
@@ -1215,7 +1230,7 @@ impl Writer {
                     (Axis::Width, Ctrl::None) => "fwidth",
                 };
                 write!(out, "{SHADER_LIB}::{op}(")?;
-                self.write_expr(out, module, expr, func_ctx)?;
+                self.write_expr(out, module, info, expr, func_ctx)?;
                 write!(out, ")")?
             }
             Expression::Relational { fun, argument } => {
@@ -1228,7 +1243,7 @@ impl Writer {
                     Rf::IsInf => "is_inf",
                 };
                 write!(out, "{SHADER_LIB}::{fun_name}(")?;
-                self.write_expr(out, module, argument, func_ctx)?;
+                self.write_expr(out, module, info, argument, func_ctx)?;
                 write!(out, ")")?
             }
             // Not supported yet
@@ -1409,6 +1424,7 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         global: &naga::GlobalVariable,
         handle: Handle<naga::GlobalVariable>,
     ) -> BackendResult {
@@ -1419,7 +1435,7 @@ impl Writer {
         )?;
 
         if let Some(init) = global.init {
-            self.write_const_expression(out, module, init, &module.global_expressions)?;
+            self.write_const_expression(out, module, info, init)?;
         } else {
             // Default will generally produce zero
             write!(out, "Default::default()")?;
@@ -1436,6 +1452,7 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
+        info: &ModuleInfo,
         handle: Handle<naga::Constant>,
     ) -> BackendResult {
         let name = &self.names[&NameKey::Constant(handle)];
@@ -1448,7 +1465,7 @@ impl Writer {
         )?;
         self.write_type(out, module, module.constants[handle].ty)?;
         write!(out, " = ")?;
-        self.write_const_expression(out, module, init, &module.global_expressions)?;
+        self.write_const_expression(out, module, info, init)?;
         writeln!(out, ";")?;
 
         Ok(())
