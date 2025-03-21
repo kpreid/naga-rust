@@ -100,8 +100,8 @@ pub fn write_string(
     info: &naga::valid::ModuleInfo,
     config: Config,
 ) -> Result<String, Error> {
-    let mut w = Writer::new(String::new(), config);
-    w.write(module, info)?;
-    let output = w.finish();
+    let mut w = Writer::new(config);
+    let mut output = String::new();
+    w.write(&mut output, module, info)?;
     Ok(output)
 }

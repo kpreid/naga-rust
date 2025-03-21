@@ -76,10 +76,10 @@ enum Edition {
 /// [`naga`] backend allowing you to translate shader code in any language supported by Naga
 /// to Rust code.
 ///
-/// Writes Rust code to a [`Write`] implementation of type `W`.
+/// A `Writer` stores a [`Config`] and data structures that can be reused for writing multiple
+/// modules.
 #[allow(missing_debug_implementations, reason = "TODO")]
-pub struct Writer<W> {
-    out: W,
+pub struct Writer {
     config: Config,
     #[allow(dead_code)]
     edition: Edition,
@@ -88,11 +88,11 @@ pub struct Writer<W> {
     named_expressions: naga::FastIndexMap<Handle<Expression>, String>,
 }
 
-impl<W: Write> Writer<W> {
-    /// Creates a new [`Writer`] for writing code to `out`.
-    pub fn new(out: W, config: Config) -> Self {
+impl Writer {
+    /// Creates a new [`Writer`].
+    #[must_use]
+    pub fn new(config: Config) -> Self {
         Writer {
-            out,
             config,
             edition: Edition::Rust2024,
             names: naga::FastHashMap::default(),
@@ -103,7 +103,6 @@ impl<W: Write> Writer<W> {
 
     fn reset(&mut self, module: &Module) {
         let Self {
-            out: _,
             config,
             edition: _,
             names,
@@ -129,12 +128,19 @@ impl<W: Write> Writer<W> {
 
     /// Converts `module` to a string of Rust code.
     ///
+    /// This function’s behavior is independent of prior uses of this [`Writer`].
+    ///
     /// # Errors
     ///
     /// Returns an error if the module cannot be represented as Rust
-    /// or if the contained [`Write`] implementation returns an error.
+    /// or if `out` returns an error.
     #[expect(clippy::missing_panics_doc, reason = "TODO: unfinished")]
-    pub fn write(&mut self, module: &Module, info: &valid::ModuleInfo) -> BackendResult {
+    pub fn write(
+        &mut self,
+        out: &mut dyn Write,
+        module: &Module,
+        info: &valid::ModuleInfo,
+    ) -> BackendResult {
         if !module.overrides.is_empty() {
             return Err(Error::Unimplemented("pipeline constants".into()));
         }
@@ -143,7 +149,7 @@ impl<W: Write> Writer<W> {
 
         // Write top-level attributes
         write!(
-            self.out,
+            out,
             "\
                 #[allow(dead_code)]\n\
                 use {runtime_path}::{{self as rt, New as _, swizzles::{{Vec2Swizzles as _, Vec3Swizzles as _, Vec4Swizzles as _}}}};\n\
@@ -155,8 +161,8 @@ impl<W: Write> Writer<W> {
         for (handle, ty) in module.types.iter() {
             if let TypeInner::Struct { ref members, .. } = ty.inner {
                 {
-                    self.write_struct_definition(module, handle, members)?;
-                    writeln!(self.out)?;
+                    self.write_struct_definition(out, module, handle, members)?;
+                    writeln!(out)?;
                 }
             }
         }
@@ -168,34 +174,34 @@ impl<W: Write> Writer<W> {
             .filter(|&(_, c)| c.name.is_some())
             .peekable();
         while let Some((handle, _)) = constants.next() {
-            self.write_global_constant(module, handle)?;
+            self.write_global_constant(out, module, handle)?;
             // Add extra newline for readability on last iteration
             if constants.peek().is_none() {
-                writeln!(self.out)?;
+                writeln!(out)?;
             }
         }
 
         // If we are using global variables, write the `struct` that contains them.
         if let Some(global_struct) = self.config.global_struct.clone() {
-            writeln!(self.out, "struct {global_struct} {{")?;
+            writeln!(out, "struct {global_struct} {{")?;
             for (handle, global) in module.global_variables.iter() {
-                self.write_global_variable_as_struct_field(module, global, handle)?;
+                self.write_global_variable_as_struct_field(out, module, global, handle)?;
             }
             // TODO: instead of trying to implement Default, make a constructor function
             // for all globals that use bindings rather than initializers
             writeln!(
-                self.out,
+                out,
                 "}}\n\
                 impl Default for {global_struct} {{\n\
                 {INDENT}fn default() -> Self {{ Self {{"
             )?;
             for (handle, global) in module.global_variables.iter() {
-                self.write_global_variable_as_field_initializer(module, global, handle)?;
+                self.write_global_variable_as_field_initializer(out, module, global, handle)?;
             }
-            writeln!(self.out, "{INDENT}}}}}\n}}")?;
+            writeln!(out, "{INDENT}}}}}\n}}")?;
 
             // Start the `impl` block of the functions
-            writeln!(self.out, "impl {global_struct} {{")?;
+            writeln!(out, "impl {global_struct} {{")?;
         } else if let Some((_, example)) = module.global_variables.iter().next() {
             return Err(Error::GlobalVariablesNotEnabled {
                 example: example.name.clone().unwrap_or_default(),
@@ -215,9 +221,9 @@ impl<W: Write> Writer<W> {
             };
 
             // Write the function
-            self.write_function(module, function, &func_ctx)?;
+            self.write_function(out, module, function, &func_ctx)?;
 
-            writeln!(self.out)?;
+            writeln!(out)?;
         }
 
         // Write all entry points
@@ -230,7 +236,7 @@ impl<W: Write> Writer<W> {
                 ],
             };
 
-            self.write_attributes(back::Level(0), &attributes)?;
+            self.write_attributes(out, back::Level(0), &attributes)?;
 
             let func_ctx = back::FunctionCtx {
                 ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
@@ -239,16 +245,16 @@ impl<W: Write> Writer<W> {
                 named_expressions: &ep.function.named_expressions,
                 expr_kind_tracker: ExpressionKindTracker::from_arena(&ep.function.expressions),
             };
-            self.write_function(module, &ep.function, &func_ctx)?;
+            self.write_function(out, module, &ep.function, &func_ctx)?;
 
             if index < module.entry_points.len() - 1 {
-                writeln!(self.out)?;
+                writeln!(out)?;
             }
         }
 
         if self.config.use_global_struct() {
             // End the `impl` block
-            writeln!(self.out, "}}")?;
+            writeln!(out, "}}")?;
         }
 
         Ok(())
@@ -258,11 +264,12 @@ impl<W: Write> Writer<W> {
     /// Ends in a newline
     fn write_function(
         &mut self,
+        out: &mut dyn Write,
         module: &Module,
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
     ) -> BackendResult {
-        self.write_attributes(back::Level(0), &[Attribute::AllowFunctionBody])?;
+        self.write_attributes(out, back::Level(0), &[Attribute::AllowFunctionBody])?;
 
         // Write start of function item
         let func_name = match func_ctx.ty {
@@ -270,11 +277,11 @@ impl<W: Write> Writer<W> {
             back::FunctionType::Function(handle) => &self.names[&NameKey::Function(handle)],
         };
         let visibility = self.visibility();
-        write!(self.out, "{visibility}fn {func_name}(")?;
+        write!(out, "{visibility}fn {func_name}(")?;
 
         if self.config.use_global_struct() {
             // TODO: need to figure out whether &mut is needed
-            write!(self.out, "&self, ")?;
+            write!(out, "&self, ")?;
         } else if func_ctx.info.global_variable_count() > 0 {
             unreachable!(
                 "function has globals but globals are not enabled; \
@@ -291,66 +298,62 @@ impl<W: Write> Writer<W> {
             // Write argument name
             let argument_name = &self.names[&func_ctx.argument_key(index.try_into().unwrap())];
 
-            write!(self.out, "{argument_name}: ")?;
+            write!(out, "{argument_name}: ")?;
             // Write argument type
-            self.write_type(module, arg.ty)?;
+            self.write_type(out, module, arg.ty)?;
             if index < func.arguments.len() - 1 {
                 // Add a separator between args
-                write!(self.out, ", ")?;
+                write!(out, ", ")?;
             }
         }
 
-        write!(self.out, ")")?;
+        write!(out, ")")?;
 
         // Write function return type
         if let Some(ref result) = func.result {
-            write!(self.out, " -> ")?;
+            write!(out, " -> ")?;
             // if let Some(ref binding) = result.binding {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
-            self.write_type(module, result.ty)?;
+            self.write_type(out, module, result.ty)?;
         }
 
-        write!(self.out, " {{")?;
-        writeln!(self.out)?;
+        write!(out, " {{")?;
+        writeln!(out)?;
 
         // Write function local variables
         for (handle, local) in func.local_variables.iter() {
             // Write indentation (only for readability)
-            write!(self.out, "{INDENT}")?;
+            write!(out, "{INDENT}")?;
 
             // Write the local name
             // The leading space is important
-            write!(
-                self.out,
-                "let mut {}: ",
-                self.names[&func_ctx.name_key(handle)]
-            )?;
+            write!(out, "let mut {}: ", self.names[&func_ctx.name_key(handle)])?;
 
             // Write the local type
-            self.write_type(module, local.ty)?;
+            self.write_type(out, module, local.ty)?;
 
             // Write the local initializer if needed
             if let Some(init) = local.init {
-                write!(self.out, " = ")?;
-                self.write_expr(module, init, func_ctx)?;
+                write!(out, " = ")?;
+                self.write_expr(out, module, init, func_ctx)?;
             }
 
             // Finish the local with `;` and add a newline (only for readability)
-            writeln!(self.out, ";")?;
+            writeln!(out, ";")?;
         }
 
         if !func.local_variables.is_empty() {
-            writeln!(self.out)?;
+            writeln!(out)?;
         }
 
         // Write the function body (statement list)
         for sta in func.body.iter() {
             // The indentation should always be 1 when writing the function body
-            self.write_stmt(module, sta, func_ctx, back::Level(1))?;
+            self.write_stmt(out, module, sta, func_ctx, back::Level(1))?;
         }
 
-        writeln!(self.out, "}}")?;
+        writeln!(out, "}}")?;
 
         self.named_expressions.clear();
 
@@ -358,13 +361,18 @@ impl<W: Write> Writer<W> {
     }
 
     /// Writes one or more [`Attribute`]s as outer attributes.
-    fn write_attributes(&mut self, level: back::Level, attributes: &[Attribute]) -> BackendResult {
+    fn write_attributes(
+        &self,
+        out: &mut dyn Write,
+        level: back::Level,
+        attributes: &[Attribute],
+    ) -> BackendResult {
         for attribute in attributes {
-            write!(self.out, "{level}#[")?;
+            write!(out, "{level}#[")?;
             match *attribute {
                 Attribute::AllowFunctionBody => {
                     write!(
-                        self.out,
+                        out,
                         // `clippy::all` refers to all *default* clippy lints, not all clippy lints.
                         // We’re allowing all clippy categories except for restriction, which we
                         // shall assume is on purpose, and cargo, which is irrelvant.
@@ -377,17 +385,17 @@ impl<W: Write> Writer<W> {
                         ShaderStage::Fragment => "fragment",
                         ShaderStage::Compute => "compute",
                     };
-                    write!(self.out, "{SHADER_LIB}::{stage_str}")?;
+                    write!(out, "{SHADER_LIB}::{stage_str}")?;
                 }
                 Attribute::WorkGroupSize(size) => {
                     write!(
-                        self.out,
+                        out,
                         "{SHADER_LIB}::workgroup_size({}, {}, {})",
                         size[0], size[1], size[2]
                     )?;
                 }
             }
-            writeln!(self.out, "]")?;
+            writeln!(out, "]")?;
         }
         Ok(())
     }
@@ -399,7 +407,8 @@ impl<W: Write> Writer<W> {
     /// function is usually called after matching a `TypeInner`, so
     /// the callers already have the members at hand.)
     fn write_struct_definition(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         handle: Handle<naga::Type>,
         members: &[naga::StructMember],
@@ -407,29 +416,29 @@ impl<W: Write> Writer<W> {
         // TODO: we will need to do custom dummy fields to ensure that vec3s have correct alignment.
         let visibility = self.visibility();
         write!(
-            self.out,
+            out,
             "#[repr(C)]\n\
             {visibility}struct {}",
             self.names[&NameKey::Type(handle)]
         )?;
-        write!(self.out, " {{")?;
-        writeln!(self.out)?;
+        write!(out, " {{")?;
+        writeln!(out)?;
         for (index, member) in members.iter().enumerate() {
             // The indentation is only for readability
-            write!(self.out, "{INDENT}")?;
+            write!(out, "{INDENT}")?;
             // if let Some(ref binding) = member.binding {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
             // Write struct member name and type
             let member_name =
                 &self.names[&NameKey::StructMember(handle, index.try_into().unwrap())];
-            write!(self.out, "{visibility}{member_name}: ")?;
-            self.write_type(module, member.ty)?;
-            write!(self.out, ",")?;
-            writeln!(self.out)?;
+            write!(out, "{visibility}{member_name}: ")?;
+            self.write_type(out, module, member.ty)?;
+            write!(out, ",")?;
+            writeln!(out)?;
         }
 
-        writeln!(self.out, "}}")?;
+        writeln!(out, "}}")?;
 
         Ok(())
     }
@@ -440,6 +449,7 @@ impl<W: Write> Writer<W> {
     /// Always adds a newline
     fn write_stmt(
         &mut self,
+        out: &mut dyn Write,
         module: &Module,
         stmt: &naga::Statement,
         func_ctx: &back::FunctionCtx<'_>,
@@ -475,11 +485,11 @@ impl<W: Write> Writer<W> {
                     };
 
                     if let Some(name) = expr_name {
-                        write!(self.out, "{level}")?;
-                        self.start_named_expr(module, handle, func_ctx, &name)?;
-                        self.write_expr(module, handle, func_ctx)?;
+                        write!(out, "{level}")?;
+                        self.start_named_expr(out, module, handle, func_ctx, &name)?;
+                        self.write_expr(out, module, handle, func_ctx)?;
                         self.named_expressions.insert(handle, name);
-                        writeln!(self.out, ";")?;
+                        writeln!(out, ";")?;
                     }
                 }
             }
@@ -490,29 +500,29 @@ impl<W: Write> Writer<W> {
             } => {
                 let l2 = level.next();
 
-                write!(self.out, "{level}if ")?;
-                self.write_expr(module, condition, func_ctx)?;
-                writeln!(self.out, " {{")?;
+                write!(out, "{level}if ")?;
+                self.write_expr(out, module, condition, func_ctx)?;
+                writeln!(out, " {{")?;
                 for s in accept {
-                    self.write_stmt(module, s, func_ctx, l2)?;
+                    self.write_stmt(out, module, s, func_ctx, l2)?;
                 }
                 if !reject.is_empty() {
-                    writeln!(self.out, "{level}}} else {{")?;
+                    writeln!(out, "{level}}} else {{")?;
                     for s in reject {
-                        self.write_stmt(module, s, func_ctx, l2)?;
+                        self.write_stmt(out, module, s, func_ctx, l2)?;
                     }
                 }
-                writeln!(self.out, "{level}}}")?
+                writeln!(out, "{level}}}")?
             }
             Statement::Return { value } => {
-                write!(self.out, "{level}return")?;
+                write!(out, "{level}return")?;
                 if let Some(return_value) = value {
-                    write!(self.out, " ")?;
-                    self.write_expr(module, return_value, func_ctx)?;
+                    write!(out, " ")?;
+                    self.write_expr(out, module, return_value, func_ctx)?;
                 }
-                writeln!(self.out, ";")?;
+                writeln!(out, ";")?;
             }
-            Statement::Kill => write!(self.out, "{level}{SHADER_LIB}::discard();")?,
+            Statement::Kill => write!(out, "{level}{SHADER_LIB}::discard();")?,
             Statement::Store { pointer, value } => {
                 let is_atomic_pointer = func_ctx
                     .resolve_type(pointer, &module.types)
@@ -522,36 +532,42 @@ impl<W: Write> Writer<W> {
                     return Err(Error::Unimplemented("atomic operations".into()));
                 }
 
-                write!(self.out, "{level}")?;
+                write!(out, "{level}")?;
                 // We have a Naga “pointer” but it might actually denote a plain variable.
                 // We ask for `Indirection::Place` to say: please dereference the logical pointer
                 // and give me the dereference op *or* plain variable to assign to.
-                self.write_expr_with_indirection(module, pointer, func_ctx, Indirection::Place)?;
-                write!(self.out, " = ")?;
-                self.write_expr(module, value, func_ctx)?;
+                self.write_expr_with_indirection(
+                    out,
+                    module,
+                    pointer,
+                    func_ctx,
+                    Indirection::Place,
+                )?;
+                write!(out, " = ")?;
+                self.write_expr(out, module, value, func_ctx)?;
 
-                writeln!(self.out, ";")?
+                writeln!(out, ";")?
             }
             Statement::Call {
                 function,
                 ref arguments,
                 result,
             } => {
-                write!(self.out, "{level}")?;
+                write!(out, "{level}")?;
                 if let Some(expr) = result {
                     let name = Gensym(expr).to_string();
-                    self.start_named_expr(module, expr, func_ctx, &name)?;
+                    self.start_named_expr(out, module, expr, func_ctx, &name)?;
                     self.named_expressions.insert(expr, name);
                 }
                 let func_name = &self.names[&NameKey::Function(function)];
-                write!(self.out, "{func_name}(")?;
+                write!(out, "{func_name}(")?;
                 for (index, &argument) in arguments.iter().enumerate() {
                     if index != 0 {
-                        write!(self.out, ", ")?;
+                        write!(out, ", ")?;
                     }
-                    self.write_expr(module, argument, func_ctx)?;
+                    self.write_expr(out, module, argument, func_ctx)?;
                 }
-                writeln!(self.out, ");")?
+                writeln!(out, ");")?
             }
             Statement::Atomic { .. } => {
                 return Err(Error::Unimplemented("atomic operations".into()));
@@ -570,22 +586,22 @@ impl<W: Write> Writer<W> {
                 });
             }
             Statement::Block(ref block) => {
-                write!(self.out, "{level}")?;
-                writeln!(self.out, "{{")?;
+                write!(out, "{level}")?;
+                writeln!(out, "{{")?;
                 for s in block.iter() {
-                    self.write_stmt(module, s, func_ctx, level.next())?;
+                    self.write_stmt(out, module, s, func_ctx, level.next())?;
                 }
-                writeln!(self.out, "{level}}}")?;
+                writeln!(out, "{level}}}")?;
             }
             Statement::Switch {
                 selector,
                 ref cases,
             } => {
                 // Beginning of the match expression
-                write!(self.out, "{level}")?;
-                write!(self.out, "match ")?;
-                self.write_expr(module, selector, func_ctx)?;
-                writeln!(self.out, " {{")?;
+                write!(out, "{level}")?;
+                write!(out, "match ")?;
+                self.write_expr(out, module, selector, func_ctx)?;
+                writeln!(out, " {{")?;
 
                 // Generate each arm, collapsing empty fall-through into a single arm.
                 let l2 = level.next();
@@ -600,21 +616,21 @@ impl<W: Write> Writer<W> {
 
                     if new_match_arm {
                         // Write initial indentation.
-                        write!(self.out, "{l2}")?;
+                        write!(out, "{l2}")?;
                     } else {
                         // Write or-pattern to combine cases.
-                        write!(self.out, " | ")?;
+                        write!(out, " | ")?;
                     }
                     // Write the case's pattern
                     match case.value {
                         naga::SwitchValue::I32(value) => {
-                            write!(self.out, "{value}i32")?;
+                            write!(out, "{value}i32")?;
                         }
                         naga::SwitchValue::U32(value) => {
-                            write!(self.out, "{value}u32")?;
+                            write!(out, "{value}u32")?;
                         }
                         naga::SwitchValue::Default => {
-                            write!(self.out, "_")?;
+                            write!(out, "_")?;
                         }
                     }
 
@@ -623,27 +639,27 @@ impl<W: Write> Writer<W> {
                     // End this pattern and begin the body of this arm,
                     // if it is not fall-through.
                     if new_match_arm {
-                        writeln!(self.out, " => {{")?;
+                        writeln!(out, " => {{")?;
                         for sta in case.body.iter() {
-                            self.write_stmt(module, sta, func_ctx, l2.next())?;
+                            self.write_stmt(out, module, sta, func_ctx, l2.next())?;
                         }
-                        writeln!(self.out, "{l2}}}")?;
+                        writeln!(out, "{l2}}}")?;
                     }
                 }
 
-                writeln!(self.out, "{level}}}")?;
+                writeln!(out, "{level}}}")?;
             }
             Statement::Loop {
                 ref body,
                 ref continuing,
                 break_if,
             } => {
-                write!(self.out, "{level}")?;
-                writeln!(self.out, "loop {{")?;
+                write!(out, "{level}")?;
+                writeln!(out, "loop {{")?;
 
                 let l2 = level.next();
                 for sta in body.iter() {
-                    self.write_stmt(module, sta, func_ctx, l2)?;
+                    self.write_stmt(out, module, sta, func_ctx, l2)?;
                 }
 
                 if !continuing.is_empty() {
@@ -653,10 +669,10 @@ impl<W: Write> Writer<W> {
                     return Err(Error::Unimplemented("break_if".into()));
                 }
 
-                writeln!(self.out, "{level}}}")?;
+                writeln!(out, "{level}}}")?;
             }
-            Statement::Break => writeln!(self.out, "{level}break;")?,
-            Statement::Continue => writeln!(self.out, "{level}continue;")?,
+            Statement::Break => writeln!(out, "{level}break;")?,
+            Statement::Continue => writeln!(out, "{level}continue;")?,
             Statement::Barrier(_) => {
                 return Err(Error::Unimplemented("barriers".into()));
             }
@@ -732,29 +748,30 @@ impl<W: Write> Writer<W> {
     }
 
     fn start_named_expr(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         handle: Handle<Expression>,
         func_ctx: &back::FunctionCtx<'_>,
         name: &str,
     ) -> BackendResult {
         // Write variable name
-        write!(self.out, "let {name}")?;
+        write!(out, "let {name}")?;
         if self.config.flags.contains(WriterFlags::EXPLICIT_TYPES) {
-            write!(self.out, ": ")?;
+            write!(out, ": ")?;
             let ty = &func_ctx.info[handle].ty;
             // Write variable type
             match *ty {
                 proc::TypeResolution::Handle(ty_handle) => {
-                    self.write_type(module, ty_handle)?;
+                    self.write_type(out, module, ty_handle)?;
                 }
                 proc::TypeResolution::Value(ref inner) => {
-                    self.write_type_inner(module, inner)?;
+                    self.write_type_inner(out, module, inner)?;
                 }
             }
         }
 
-        write!(self.out, " = ")?;
+        write!(out, " = ")?;
         Ok(())
     }
 
@@ -762,12 +779,13 @@ impl<W: Write> Writer<W> {
     ///
     /// See `write_expr_with_indirection` for details.
     fn write_expr(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         expr: Handle<Expression>,
         func_ctx: &back::FunctionCtx<'_>,
     ) -> BackendResult {
-        self.write_expr_with_indirection(module, expr, func_ctx, Indirection::Ordinary)
+        self.write_expr_with_indirection(out, module, expr, func_ctx, Indirection::Ordinary)
     }
 
     /// Write `expr` as a Rust expression with the requested indirection.
@@ -779,7 +797,8 @@ impl<W: Write> Writer<W> {
     /// The `requested` argument indicates how the produced Rust expression’s type should relate
     /// to the Naga type of the input expression. See [`Indirection`]’s documentation for details.
     fn write_expr_with_indirection(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         expr: Handle<Expression>,
         func_ctx: &back::FunctionCtx<'_>,
@@ -793,22 +812,22 @@ impl<W: Write> Writer<W> {
             // Convert it to a reference to match the Naga pointer type.
             // TODO: We need to choose which borrow operator to use.
             (Indirection::Ordinary, Indirection::Place) => {
-                write!(self.out, "(&")?;
-                self.write_expr_plain_form(module, expr, func_ctx, plain)?;
-                write!(self.out, ")")?;
+                write!(out, "(&")?;
+                self.write_expr_plain_form(out, module, expr, func_ctx, plain)?;
+                write!(out, ")")?;
             }
 
             // The plain form expression will be a pointer, but the caller wants its pointee.
             // Insert a dereference operator.
             (Indirection::Place, Indirection::Ordinary) => {
-                write!(self.out, "(*")?;
-                self.write_expr_plain_form(module, expr, func_ctx, plain)?;
-                write!(self.out, ")")?;
+                write!(out, "(*")?;
+                self.write_expr_plain_form(out, module, expr, func_ctx, plain)?;
+                write!(out, ")")?;
             }
             // Matches.
             (Indirection::Place, Indirection::Place)
             | (Indirection::Ordinary, Indirection::Ordinary) => {
-                self.write_expr_plain_form(module, expr, func_ctx, plain)?
+                self.write_expr_plain_form(out, module, expr, func_ctx, plain)?
             }
         }
 
@@ -816,13 +835,14 @@ impl<W: Write> Writer<W> {
     }
 
     fn write_const_expression(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         expr: Handle<Expression>,
         arena: &naga::Arena<Expression>,
     ) -> BackendResult {
-        self.write_possibly_const_expression(module, expr, arena, |writer, expr| {
-            writer.write_const_expression(module, expr, arena)
+        self.write_possibly_const_expression(out, module, expr, arena, |out, expr| {
+            self.write_const_expression(out, module, expr, arena)
         })
     }
 
@@ -834,28 +854,29 @@ impl<W: Write> Writer<W> {
     // Arguably we could do a runtime check for that instead of the `unreachable!()`s
     // on matching the expression enum.
     fn write_possibly_const_expression<E>(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         expr: Handle<Expression>,
         expressions: &naga::Arena<Expression>,
         write_expression: E,
     ) -> BackendResult
     where
-        E: Copy + Fn(&mut Self, Handle<Expression>) -> BackendResult,
+        E: Copy + Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
     {
         match expressions[expr] {
             Expression::Literal(literal) => match literal {
-                naga::Literal::F32(value) => write!(self.out, "{value}f32")?,
-                naga::Literal::U32(value) => write!(self.out, "{value}u32")?,
+                naga::Literal::F32(value) => write!(out, "{value}f32")?,
+                naga::Literal::U32(value) => write!(out, "{value}u32")?,
                 naga::Literal::I32(value) => {
-                    write!(self.out, "{value}i32")?;
+                    write!(out, "{value}i32")?;
                 }
-                naga::Literal::Bool(value) => write!(self.out, "{value}")?,
-                naga::Literal::F64(value) => write!(self.out, "{value}f64")?,
+                naga::Literal::Bool(value) => write!(out, "{value}")?,
+                naga::Literal::F64(value) => write!(out, "{value}f64")?,
                 naga::Literal::I64(value) => {
-                    write!(self.out, "{value}i64")?;
+                    write!(out, "{value}i64")?;
                 }
-                naga::Literal::U64(value) => write!(self.out, "{value}u64")?,
+                naga::Literal::U64(value) => write!(out, "{value}u64")?,
                 naga::Literal::AbstractInt(_) | naga::Literal::AbstractFloat(_) => {
                     unreachable!("abstract types should not appear in IR presented to backends");
                 }
@@ -863,24 +884,29 @@ impl<W: Write> Writer<W> {
             Expression::Constant(handle) => {
                 let constant = &module.constants[handle];
                 if constant.name.is_some() {
-                    write!(self.out, "{}", self.names[&NameKey::Constant(handle)])?;
+                    write!(out, "{}", self.names[&NameKey::Constant(handle)])?;
                 } else {
-                    self.write_const_expression(module, constant.init, &module.global_expressions)?;
+                    self.write_const_expression(
+                        out,
+                        module,
+                        constant.init,
+                        &module.global_expressions,
+                    )?;
                 }
             }
             Expression::ZeroValue(ty) => {
-                write!(self.out, "{SHADER_LIB}::zero::<")?;
-                self.write_type(module, ty)?;
-                write!(self.out, ">()")?;
+                write!(out, "{SHADER_LIB}::zero::<")?;
+                self.write_type(out, module, ty)?;
+                write!(out, ">()")?;
             }
             Expression::Compose { ty, ref components } => {
-                self.write_constructor_expression(module, ty, components, write_expression)?;
+                self.write_constructor_expression(out, module, ty, components, write_expression)?;
             }
             Expression::Splat { size, value } => {
                 let size = conv::vector_size_str(size);
-                write!(self.out, "{SHADER_LIB}::splat{size}(")?;
-                write_expression(self, value)?;
-                write!(self.out, ")")?;
+                write!(out, "{SHADER_LIB}::splat{size}(")?;
+                write_expression(out, value)?;
+                write!(out, ")")?;
             }
             _ => unreachable!(),
         }
@@ -893,26 +919,27 @@ impl<W: Write> Writer<W> {
     /// We do not delegate to a library trait for this because the construction
     /// must be const-compatible.
     fn write_constructor_expression<E>(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         ty: Handle<naga::Type>,
         components: &[Handle<Expression>],
         write_expression: E,
     ) -> BackendResult
     where
-        E: Fn(&mut Self, Handle<Expression>) -> BackendResult,
+        E: Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
     {
-        write!(self.out, "<")?;
-        self.write_type(module, ty)?;
+        write!(out, "<")?;
+        self.write_type(out, module, ty)?;
         // TODO: use conventional Rust ctor syntax more often
-        write!(self.out, ">::new(")?;
+        write!(out, ">::new(")?;
         for (index, component) in components.iter().enumerate() {
             if index > 0 {
-                write!(self.out, ", ")?;
+                write!(out, ", ")?;
             }
-            write_expression(self, *component)?;
+            write_expression(out, *component)?;
         }
-        write!(self.out, ")")?;
+        write!(out, ")")?;
 
         Ok(())
     }
@@ -930,14 +957,15 @@ impl<W: Write> Writer<W> {
     ///
     /// TODO: explain the indirection parameter of *this* function.
     fn write_expr_plain_form(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         expr: Handle<Expression>,
         func_ctx: &back::FunctionCtx<'_>,
         indirection: Indirection,
     ) -> BackendResult {
         if let Some(name) = self.named_expressions.get(&expr) {
-            write!(self.out, "{name}")?;
+            write!(out, "{name}")?;
             return Ok(());
         }
 
@@ -950,17 +978,18 @@ impl<W: Write> Writer<W> {
             | Expression::Compose { .. }
             | Expression::Splat { .. } => {
                 self.write_possibly_const_expression(
+                    out,
                     module,
                     expr,
                     func_ctx.expressions,
-                    |writer, expr| writer.write_expr(module, expr, func_ctx),
+                    |out, expr| self.write_expr(out, module, expr, func_ctx),
                 )?;
             }
             Expression::Override(_) => unreachable!(),
             Expression::FunctionArgument(pos) => {
                 let name_key = func_ctx.argument_key(pos);
                 let name = &self.names[&name_key];
-                write!(self.out, "{name}")?;
+                write!(out, "{name}")?;
             }
             Expression::Binary { op, left, right } => {
                 let inputs_are_scalar = matches!(
@@ -973,35 +1002,35 @@ impl<W: Write> Writer<W> {
                 match (inputs_are_scalar, BinOpClassified::from(op)) {
                     (true, BinOpClassified::ScalarBool(_))
                     | (_, BinOpClassified::Vectorizable(_)) => {
-                        write!(self.out, "(")?;
-                        self.write_expr(module, left, func_ctx)?;
+                        write!(out, "(")?;
+                        self.write_expr(out, module, left, func_ctx)?;
                         // TODO: Review whether any Rust operator semantics are incorrect
                         //  for shader code — if so, stop using `binary_operation_str`.
-                        write!(self.out, " {} ", back::binary_operation_str(op))?;
-                        self.write_expr(module, right, func_ctx)?;
-                        write!(self.out, ")")?;
+                        write!(out, " {} ", back::binary_operation_str(op))?;
+                        self.write_expr(out, module, right, func_ctx)?;
+                        write!(out, ")")?;
                     }
                     (_, BinOpClassified::ScalarBool(bop)) => {
                         // TODO: generated function name is a placeholder
-                        write!(self.out, "{SHADER_LIB}::{}(", bop.to_vector_fn())?;
-                        self.write_expr(module, left, func_ctx)?;
-                        write!(self.out, ", ")?;
-                        self.write_expr(module, right, func_ctx)?;
-                        write!(self.out, ")")?;
+                        write!(out, "{SHADER_LIB}::{}(", bop.to_vector_fn())?;
+                        self.write_expr(out, module, left, func_ctx)?;
+                        write!(out, ", ")?;
+                        self.write_expr(out, module, right, func_ctx)?;
+                        write!(out, ")")?;
                     }
                 }
             }
             Expression::Access { base, index } => {
-                self.write_expr_with_indirection(module, base, func_ctx, indirection)?;
-                write!(self.out, "[")?;
-                self.write_expr(module, index, func_ctx)?;
-                write!(self.out, " as usize]")?
+                self.write_expr_with_indirection(out, module, base, func_ctx, indirection)?;
+                write!(out, "[")?;
+                self.write_expr(out, module, index, func_ctx)?;
+                write!(out, " as usize]")?
             }
             Expression::AccessIndex { base, index } => {
                 let base_ty_res = &func_ctx.info[base].ty;
                 let mut resolved = base_ty_res.inner_with(&module.types);
 
-                self.write_expr_with_indirection(module, base, func_ctx, indirection)?;
+                self.write_expr_with_indirection(out, module, base, func_ctx, indirection)?;
 
                 let base_ty_handle = match *resolved {
                     TypeInner::Pointer { base, space: _ } => {
@@ -1014,22 +1043,18 @@ impl<W: Write> Writer<W> {
                 match *resolved {
                     TypeInner::Vector { .. } => {
                         // Write vector access as a swizzle
-                        write!(self.out, ".{}", back::COMPONENTS[index as usize])?
+                        write!(out, ".{}", back::COMPONENTS[index as usize])?
                     }
                     TypeInner::Matrix { .. }
                     | TypeInner::Array { .. }
                     | TypeInner::BindingArray { .. }
-                    | TypeInner::ValuePointer { .. } => write!(self.out, "[{index} as usize]")?,
+                    | TypeInner::ValuePointer { .. } => write!(out, "[{index} as usize]")?,
                     TypeInner::Struct { .. } => {
                         // This will never panic in case the type is a `Struct`, this is not true
                         // for other types so we can only check while inside this match arm
                         let ty = base_ty_handle.unwrap();
 
-                        write!(
-                            self.out,
-                            ".{}",
-                            &self.names[&NameKey::StructMember(ty, index)]
-                        )?
+                        write!(out, ".{}", &self.names[&NameKey::StructMember(ty, index)])?
                     }
                     ref other => unreachable!("cannot index into a {other:?}"),
                 }
@@ -1051,7 +1076,7 @@ impl<W: Write> Writer<W> {
             }
             Expression::GlobalVariable(handle) => {
                 let name = &self.names[&NameKey::GlobalVariable(handle)];
-                write!(self.out, "self.{name}")?;
+                write!(out, "self.{name}")?;
             }
 
             Expression::As {
@@ -1063,12 +1088,12 @@ impl<W: Write> Writer<W> {
 
                 let input_type = func_ctx.resolve_type(expr, &module.types);
 
-                self.write_expr(module, expr, func_ctx)?;
+                self.write_expr(out, module, expr, func_ctx)?;
                 match (input_type, to_kind, to_width) {
                     (&Ti::Vector { size, scalar: _ }, to_kind, Some(to_width)) => {
                         // Call a glam vector cast method
                         write!(
-                            self.out,
+                            out,
                             ".as_{prefix}vec{size}()",
                             prefix = conv::lower_glam_prefix(Scalar {
                                 kind: to_kind,
@@ -1080,7 +1105,7 @@ impl<W: Write> Writer<W> {
                     (&Ti::Scalar(_), to_kind, Some(to_width)) => {
                         // Coerce scalars using Rust 'as'
                         write!(
-                            self.out,
+                            out,
                             " as {}",
                             unwrap_to_rust(Scalar {
                                 kind: to_kind,
@@ -1091,21 +1116,27 @@ impl<W: Write> Writer<W> {
                     _ => {
                         // Unhandled case, produce debugging info
                         write!(
-                            self.out,
+                            out,
                             " as _/* cast {input_type:?} to kind {to_kind:?} width {to_width:?} */"
                         )?;
                     }
                 }
             }
             Expression::Load { pointer } => {
-                self.write_expr_with_indirection(module, pointer, func_ctx, Indirection::Place)?;
+                self.write_expr_with_indirection(
+                    out,
+                    module,
+                    pointer,
+                    func_ctx,
+                    Indirection::Place,
+                )?;
             }
             Expression::LocalVariable(handle) => {
-                write!(self.out, "{}", self.names[&func_ctx.name_key(handle)])?
+                write!(out, "{}", self.names[&func_ctx.name_key(handle)])?
             }
             Expression::ArrayLength(expr) => {
-                self.write_expr(module, expr, func_ctx)?;
-                write!(self.out, ".len()")?;
+                self.write_expr(out, module, expr, func_ctx)?;
+                write!(out, ".len()")?;
             }
 
             Expression::Math {
@@ -1115,13 +1146,13 @@ impl<W: Write> Writer<W> {
                 arg2,
                 arg3,
             } => {
-                write!(self.out, "{fun_name}(", fun_name = fun.to_rust())?;
-                self.write_expr(module, arg, func_ctx)?;
+                write!(out, "{fun_name}(", fun_name = fun.to_rust())?;
+                self.write_expr(out, module, arg, func_ctx)?;
                 for arg in IntoIterator::into_iter([arg1, arg2, arg3]).flatten() {
-                    write!(self.out, ", ")?;
-                    self.write_expr(module, arg, func_ctx)?;
+                    write!(out, ", ")?;
+                    self.write_expr(out, module, arg, func_ctx)?;
                 }
-                write!(self.out, ")")?
+                write!(out, ")")?
             }
 
             Expression::Swizzle {
@@ -1129,12 +1160,12 @@ impl<W: Write> Writer<W> {
                 vector,
                 pattern,
             } => {
-                self.write_expr(module, vector, func_ctx)?;
-                write!(self.out, ".")?;
+                self.write_expr(out, module, vector, func_ctx)?;
+                write!(out, ".")?;
                 for &sc in pattern[..size as usize].iter() {
-                    self.out.write_char(back::COMPONENTS[sc as usize])?;
+                    out.write_char(back::COMPONENTS[sc as usize])?;
                 }
-                write!(self.out, "()")?;
+                write!(out, "()")?;
             }
             Expression::Unary { op, expr } => {
                 let unary = match op {
@@ -1143,10 +1174,10 @@ impl<W: Write> Writer<W> {
                     naga::UnaryOperator::BitwiseNot => "!",
                 };
 
-                write!(self.out, "{unary}(")?;
-                self.write_expr(module, expr, func_ctx)?;
+                write!(out, "{unary}(")?;
+                self.write_expr(out, module, expr, func_ctx)?;
 
-                write!(self.out, ")")?
+                write!(out, ")")?
             }
 
             Expression::Select {
@@ -1162,13 +1193,13 @@ impl<W: Write> Writer<W> {
                     } => conv::vector_size_str(size),
                     _ => unreachable!("validation should have rejected this"),
                 };
-                write!(self.out, "{SHADER_LIB}::select{suffix}(")?;
-                self.write_expr(module, reject, func_ctx)?;
-                write!(self.out, ", ")?;
-                self.write_expr(module, accept, func_ctx)?;
-                write!(self.out, ", ")?;
-                self.write_expr(module, condition, func_ctx)?;
-                write!(self.out, ")")?
+                write!(out, "{SHADER_LIB}::select{suffix}(")?;
+                self.write_expr(out, module, reject, func_ctx)?;
+                write!(out, ", ")?;
+                self.write_expr(out, module, accept, func_ctx)?;
+                write!(out, ", ")?;
+                self.write_expr(out, module, condition, func_ctx)?;
+                write!(out, ")")?
             }
             Expression::Derivative { axis, ctrl, expr } => {
                 use naga::{DerivativeAxis as Axis, DerivativeControl as Ctrl};
@@ -1183,9 +1214,9 @@ impl<W: Write> Writer<W> {
                     (Axis::Width, Ctrl::Fine) => "fwidthFine",
                     (Axis::Width, Ctrl::None) => "fwidth",
                 };
-                write!(self.out, "{SHADER_LIB}::{op}(")?;
-                self.write_expr(module, expr, func_ctx)?;
-                write!(self.out, ")")?
+                write!(out, "{SHADER_LIB}::{op}(")?;
+                self.write_expr(out, module, expr, func_ctx)?;
+                write!(out, ")")?
             }
             Expression::Relational { fun, argument } => {
                 use naga::RelationalFunction as Rf;
@@ -1196,9 +1227,9 @@ impl<W: Write> Writer<W> {
                     Rf::IsNan => "is_nan",
                     Rf::IsInf => "is_inf",
                 };
-                write!(self.out, "{SHADER_LIB}::{fun_name}(")?;
-                self.write_expr(module, argument, func_ctx)?;
-                write!(self.out, ")")?
+                write!(out, "{SHADER_LIB}::{fun_name}(")?;
+                self.write_expr(out, module, argument, func_ctx)?;
+                write!(out, ")")?
             }
             // Not supported yet
             Expression::RayQueryGetIntersection { .. } => unreachable!(),
@@ -1215,44 +1246,50 @@ impl<W: Write> Writer<W> {
     }
 
     pub(super) fn write_type(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         handle: Handle<naga::Type>,
     ) -> BackendResult {
         let ty = &module.types[handle];
         match ty.inner {
-            TypeInner::Struct { .. } => self
-                .out
-                .write_str(self.names[&NameKey::Type(handle)].as_str())?,
-            ref other => self.write_type_inner(module, other)?,
+            TypeInner::Struct { .. } => {
+                out.write_str(self.names[&NameKey::Type(handle)].as_str())?
+            }
+            ref other => self.write_type_inner(out, module, other)?,
         }
 
         Ok(())
     }
 
-    fn write_type_inner(&mut self, module: &Module, inner: &TypeInner) -> BackendResult {
+    fn write_type_inner(
+        &self,
+        out: &mut dyn Write,
+        module: &Module,
+        inner: &TypeInner,
+    ) -> BackendResult {
         match *inner {
             TypeInner::Vector { size, scalar } => write!(
-                self.out,
+                out,
                 "{SHADER_LIB}::{}Vec{}",
                 conv::upper_glam_prefix(scalar),
                 conv::vector_size_str(size),
             )?,
             TypeInner::Sampler { comparison: false } => {
-                write!(self.out, "{SHADER_LIB}::Sampler")?;
+                write!(out, "{SHADER_LIB}::Sampler")?;
             }
             TypeInner::Sampler { comparison: true } => {
-                write!(self.out, "{SHADER_LIB}::SamplerComparison")?;
+                write!(out, "{SHADER_LIB}::SamplerComparison")?;
             }
             TypeInner::Image { .. } => {
-                write!(self.out, "{SHADER_LIB}::Image")?;
+                write!(out, "{SHADER_LIB}::Image")?;
             }
             TypeInner::Scalar(scalar) => {
-                write!(self.out, "{}", unwrap_to_rust(scalar))?;
+                write!(out, "{}", unwrap_to_rust(scalar))?;
             }
             TypeInner::Atomic(scalar) => {
                 write!(
-                    self.out,
+                    out,
                     "::core::sync::atomic::{}",
                     conv::atomic_type_name(scalar)?
                 )?;
@@ -1262,20 +1299,20 @@ impl<W: Write> Writer<W> {
                 size,
                 stride: _,
             } => {
-                write!(self.out, "[")?;
+                write!(out, "[")?;
                 match size {
                     naga::ArraySize::Constant(len) => {
-                        self.write_type(module, base)?;
-                        write!(self.out, "; {len}")?;
+                        self.write_type(out, module, base)?;
+                        write!(out, "; {len}")?;
                     }
                     naga::ArraySize::Pending(..) => {
                         return Err(Error::Unimplemented("override array size".into()));
                     }
                     naga::ArraySize::Dynamic => {
-                        self.write_type(module, base)?;
+                        self.write_type(out, module, base)?;
                     }
                 }
-                write!(self.out, "]")?;
+                write!(out, "]")?;
             }
             TypeInner::BindingArray { .. } => {}
             TypeInner::Matrix {
@@ -1285,14 +1322,14 @@ impl<W: Write> Writer<W> {
             } => {
                 if columns == rows {
                     write!(
-                        self.out,
+                        out,
                         "{SHADER_LIB}::{}Mat{}",
                         conv::upper_glam_prefix(scalar),
                         conv::vector_size_str(columns),
                     )?;
                 } else {
                     write!(
-                        self.out,
+                        out,
                         "{SHADER_LIB}::{}Mat{}x{}",
                         conv::upper_glam_prefix(scalar),
                         conv::vector_size_str(columns),
@@ -1302,11 +1339,11 @@ impl<W: Write> Writer<W> {
             }
             TypeInner::Pointer { base, space: _ } => {
                 if self.config.flags.contains(WriterFlags::RAW_POINTERS) {
-                    write!(self.out, "*mut ")?;
+                    write!(out, "*mut ")?;
                 } else {
-                    write!(self.out, "&mut ")?;
+                    write!(out, "&mut ")?;
                 }
-                self.write_type(module, base)?;
+                self.write_type(out, module, base)?;
             }
             TypeInner::ValuePointer {
                 size: _,
@@ -1314,9 +1351,9 @@ impl<W: Write> Writer<W> {
                 space: _,
             } => {
                 if self.config.flags.contains(WriterFlags::RAW_POINTERS) {
-                    write!(self.out, "*mut ")?;
+                    write!(out, "*mut ")?;
                 } else {
-                    write!(self.out, "&mut ")?;
+                    write!(out, "&mut ")?;
                 }
                 todo!()
             }
@@ -1336,7 +1373,8 @@ impl<W: Write> Writer<W> {
 
     /// Helper method used to write global variables as translated into struct fields
     fn write_global_variable_as_struct_field(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         global: &naga::GlobalVariable,
         handle: Handle<naga::GlobalVariable>,
@@ -1354,47 +1392,49 @@ impl<W: Write> Writer<W> {
         // These are not emitted as attributes because Rust does not allow macro attributes to be
         // placed on struct fields.
         if let Some(naga::ResourceBinding { group, binding }) = global.binding {
-            writeln!(self.out, "{INDENT}// group({group}) binding({binding})")?;
+            writeln!(out, "{INDENT}// group({group}) binding({binding})")?;
         }
 
         write!(
-            self.out,
+            out,
             "{INDENT}{}: ",
             &self.names[&NameKey::GlobalVariable(handle)]
         )?;
-        self.write_type(module, ty)?;
-        writeln!(self.out, ",")?;
+        self.write_type(out, module, ty)?;
+        writeln!(out, ",")?;
 
         Ok(())
     }
     fn write_global_variable_as_field_initializer(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         global: &naga::GlobalVariable,
         handle: Handle<naga::GlobalVariable>,
     ) -> BackendResult {
         write!(
-            self.out,
+            out,
             "{INDENT}{INDENT}{}: ",
             &self.names[&NameKey::GlobalVariable(handle)]
         )?;
 
         if let Some(init) = global.init {
-            self.write_const_expression(module, init, &module.global_expressions)?;
+            self.write_const_expression(out, module, init, &module.global_expressions)?;
         } else {
             // Default will generally produce zero
-            write!(self.out, "Default::default()")?;
+            write!(out, "Default::default()")?;
         }
 
         // End with comma separating from the next field
-        writeln!(self.out, ",")?;
+        writeln!(out, ",")?;
 
         Ok(())
     }
 
     /// Writes a Rust `const` item for a [`naga::Constant`], with trailing newline.
     fn write_global_constant(
-        &mut self,
+        &self,
+        out: &mut dyn Write,
         module: &Module,
         handle: Handle<naga::Constant>,
     ) -> BackendResult {
@@ -1403,13 +1443,13 @@ impl<W: Write> Writer<W> {
         let init = module.constants[handle].init;
 
         write!(
-            self.out,
+            out,
             "#[allow(non_upper_case_globals)]\n{visibility}const {name}: "
         )?;
-        self.write_type(module, module.constants[handle].ty)?;
-        write!(self.out, " = ")?;
-        self.write_const_expression(module, init, &module.global_expressions)?;
-        writeln!(self.out, ";")?;
+        self.write_type(out, module, module.constants[handle].ty)?;
+        write!(out, " = ")?;
+        self.write_const_expression(out, module, init, &module.global_expressions)?;
+        writeln!(out, ";")?;
 
         Ok(())
     }
@@ -1420,10 +1460,5 @@ impl<W: Write> Writer<W> {
         } else {
             ""
         }
-    }
-
-    /// Returns the `W` originally provided, after writing to it.
-    pub fn finish(self) -> W {
-        self.out
     }
 }
