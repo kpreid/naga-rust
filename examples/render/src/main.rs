@@ -66,7 +66,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(Active { window, surface }) = &mut self.active {
-                    let t = self.start_time.elapsed().as_secs_f32();
+                    let time = self.start_time.elapsed().as_secs_f32();
 
                     let (width, height) = {
                         let size = window.inner_size();
@@ -87,8 +87,7 @@ impl ApplicationHandler for App {
                         #[allow(clippy::cast_precision_loss)]
                         let fragment_position = rt::Vec4::new(x as f32, y as f32, 0.0, 0.0);
 
-                        let shader = Shader::default();
-                        let result = shader.main(t, fragment_position);
+                        let result = Shader { time }.main(fragment_position);
 
                         // In a real application this should be sRGB encoding.
                         let v = (result * 255.0).as_uvec4().map(|c| c.clamp(0, 255));

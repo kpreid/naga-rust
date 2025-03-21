@@ -1,7 +1,7 @@
-// TODO: We should be able to work with this being an entry point, but don't yet
-// @fragment
-// fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-fn main(time: f32, position: vec4<f32>) -> vec4<f32> {
+@group(0) @binding(0) var<uniform> time: f32;
+
+@fragment
+fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let pos_int: vec2<u32> = vec2u(position.xy);
 
     let val: f32 = f32(pos_int.x ^ pos_int.y) * 0.01;
