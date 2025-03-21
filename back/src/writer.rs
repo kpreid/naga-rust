@@ -365,7 +365,10 @@ impl<W: Write> Writer<W> {
                 Attribute::AllowFunctionBody => {
                     write!(
                         self.out,
-                        "allow(unused_parens, clippy::all, clippy::pedantic)"
+                        // `clippy::all` refers to all *default* clippy lints, not all clippy lints.
+                        // We’re allowing all clippy categories except for restriction, which we
+                        // shall assume is on purpose, and cargo, which is irrelvant.
+                        "allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)"
                     )?;
                 }
                 Attribute::Stage(shader_stage) => {
