@@ -7,6 +7,20 @@ use naga_rust_embed::rt::{IVec2, Vec2};
 use naga_rust_embed::wgsl;
 
 #[test]
+fn call_entry_point() {
+    wgsl!(
+        r"@fragment
+        fn frag(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+            return position + 1.0;
+        }"
+    );
+    assert_eq!(
+        frag(rt::Vec4::new(1.0, 2.0, 0.0, 0.0)),
+        rt::Vec4::new(2.0, 3.0, 1.0, 1.0)
+    );
+}
+
+#[test]
 fn global_constant() {
     wgsl!("const X: f32 = 1234.0;");
     assert_eq!(X, 1234.0);
