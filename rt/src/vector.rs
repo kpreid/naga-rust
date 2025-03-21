@@ -221,7 +221,7 @@ macro_rules! impl_element_casts {
 }
 
 macro_rules! impl_vector_regular_fns {
-    ( $ty:ident : $( $component:ident )* ) => {
+    ( $ty:ident $component_count:literal : $( $component:ident )* ) => {
         impl<T> $ty<T> {
             pub const fn new($( $component: T, )*) -> Self {
                 Self { $( $component, )* }
@@ -338,13 +338,35 @@ macro_rules! impl_vector_regular_fns {
                 }
             }
         }
+
+        // Conversion in and out
+        impl<T> From<[T; $component_count]> for $ty<T> {
+            fn from(value: [T; $component_count]) -> Self {
+                let [$( $component ),*] = value;
+                Self::new($( $component ),*)
+            }
+        }
+        impl<T> From<$ty<T>> for [T; $component_count] {
+            fn from(value: $ty<T>) -> Self {
+                [$( value.$component ),*]
+            }
+        }
     }
 }
 
-impl_vector_regular_fns!(Scalar : x);
-impl_vector_regular_fns!(Vec2 : x y);
-impl_vector_regular_fns!(Vec3 : x y z);
-impl_vector_regular_fns!(Vec4 : x y z w);
+impl_vector_regular_fns!(Scalar 1 : x);
+impl_vector_regular_fns!(Vec2 2 : x y);
+impl_vector_regular_fns!(Vec3 3 : x y z);
+impl_vector_regular_fns!(Vec4 4 : x y z w);
+
+// -------------------------------------------------------------------------------------------------
+// Irregular functions and impls
+
+impl<T> From<T> for Scalar<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
 
 // -------------------------------------------------------------------------------------------------
 // Swizzles
