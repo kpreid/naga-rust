@@ -15,8 +15,6 @@ naga-rust-macros.workspace = true
 naga-rust-rt.workspace = true
 
 [dev-dependencies]
-# Use WGSL frontend and Rust backend to run tests/textual.rs
-naga = { workspace = true, features = ["wgsl-in"] }
 naga-rust-back = { workspace = true }
 
 exhaust.workspace = true

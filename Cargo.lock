@@ -702,7 +702,6 @@ version = "0.1.0"
 dependencies = [
  "exhaust",
  "indoc",
- "naga",
  "naga-rust-back",
  "naga-rust-macros",
  "naga-rust-rt",

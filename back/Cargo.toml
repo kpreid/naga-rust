@@ -15,7 +15,11 @@ bitflags.workspace = true
 naga.workspace = true
 
 [dev-dependencies]
+# Use WGSL frontend and Rust backend to run tests/textual.rs
+naga = { workspace = true, features = ["wgsl-in"] }
+# String literals with clean indentation for tests
 indoc.workspace = true
+# String diffs for tests
 pretty_assertions.workspace = true
 
 [lints]
