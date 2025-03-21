@@ -25,6 +25,7 @@ naga-rust-embed = { version = "0.1.0", path = "embed" }
 naga-rust-macros = { version = "0.1.0", path = "macros" }
 naga-rust-rt = { version = "0.1.0", path = "rt" }
 
+arrayvec = { version = "0.7.6", default-features = false }
 bitflags = "2.9"
 exhaust = { version = "0.2.0", default-features = false }
 indoc = { version = "2.0.1", default-features = false }
