@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
@@ -23,6 +24,25 @@ fn main() {
             start_time: Instant::now(),
         })
         .unwrap();
+}
+
+// -------------------------------------------------------------------------------------------------
+
+fn run_fragment_shader(time: f32, buffer: &mut [u32], size: PhysicalSize<u32>) {
+    for index in 0..(size.width * size.height) {
+        let y = index / size.width;
+        let x = index % size.width;
+        // TODO: `rt` is not supposed to be in scope here
+        #[allow(clippy::cast_precision_loss)]
+        let fragment_position = rt::Vec4::new(x as f32, y as f32, 0.0, 0.0);
+
+        let result = Shader { time }.main(fragment_position);
+
+        // In a real application this should be sRGB encoding.
+        let v = (result * 255.0).as_uvec4().map(|c| c.clamp(0, 255));
+
+        buffer[index as usize] = v.z | (v.y << 8) | (v.x << 16);
+    }
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -67,33 +87,16 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 if let Some(Active { window, surface }) = &mut self.active {
                     let time = self.start_time.elapsed().as_secs_f32();
-
-                    let (width, height) = {
-                        let size = window.inner_size();
-                        (size.width, size.height)
-                    };
+                    let size = window.inner_size();
                     surface
                         .resize(
-                            NonZeroU32::new(width).unwrap(),
-                            NonZeroU32::new(height).unwrap(),
+                            NonZeroU32::new(size.width).unwrap(),
+                            NonZeroU32::new(size.height).unwrap(),
                         )
                         .unwrap();
 
                     let mut buffer = surface.buffer_mut().unwrap();
-                    for index in 0..(width * height) {
-                        let y = index / width;
-                        let x = index % width;
-                        // TODO: `rt` is not supposed to be in scope here
-                        #[allow(clippy::cast_precision_loss)]
-                        let fragment_position = rt::Vec4::new(x as f32, y as f32, 0.0, 0.0);
-
-                        let result = Shader { time }.main(fragment_position);
-
-                        // In a real application this should be sRGB encoding.
-                        let v = (result * 255.0).as_uvec4().map(|c| c.clamp(0, 255));
-
-                        buffer[index as usize] = v.z | (v.y << 8) | (v.x << 16);
-                    }
+                    run_fragment_shader(time, &mut buffer, size);
 
                     buffer.present().unwrap();
 
