@@ -3,7 +3,7 @@
 use exhaust::Exhaust as _;
 
 // TODO: Should there should be an explicit public vector-type API module which is not rt::?
-use naga_rust_embed::rt::Vec2;
+use naga_rust_embed::rt::{Vec2, Vec4};
 use naga_rust_embed::wgsl;
 
 #[test]
@@ -15,8 +15,8 @@ fn call_entry_point() {
         }"
     );
     assert_eq!(
-        frag(rt::Vec4::new(1.0, 2.0, 0.0, 0.0)),
-        rt::Vec4::new(2.0, 3.0, 1.0, 1.0)
+        frag(Vec4::new(1.0, 2.0, 0.0, 0.0)),
+        Vec4::new(2.0, 3.0, 1.0, 1.0)
     );
 }
 
@@ -66,7 +66,7 @@ fn vector_mixed_construction() {
         }"
     );
 
-    assert_eq!(foo(), rt::Vec4::new(1.0, 2.0, 3.0, 4.0));
+    assert_eq!(foo(), Vec4::new(1.0, 2.0, 3.0, 4.0));
 }
 
 #[test]
@@ -130,16 +130,53 @@ fn declare_and_modify_struct() {
 }
 
 #[test]
-fn logical_ops() {
+fn bool_ops() {
     wgsl!(
-        r"fn logic(a: bool, b: bool, c: bool) -> bool {
+        r"
+        fn short_circuit(a: bool, b: bool, c: bool) -> bool {
             return a && b || c;
-        }"
+        }
+        fn non_short_circuit(a: bool, b: bool, c: bool) -> bool {
+            return a & b | c;
+        }
+        "
     );
 
     for [a, b, c] in <[bool; 3]>::exhaust() {
-        assert_eq!(logic(a, b, c), a && b || c);
+        assert_eq!(short_circuit(a, b, c), a && b || c);
+        assert_eq!(non_short_circuit(a, b, c), a && b || c);
     }
+}
+
+#[test]
+fn comparison_of_scalars() {
+    wgsl!(
+        r"
+        fn le(a: f32, b: f32) -> bool {
+            return a <= b;
+        }
+        "
+    );
+
+    assert_eq!(le(1.0, 2.0), true);
+    assert_eq!(le(2.0, 2.0), true);
+    assert_eq!(le(3.0, 2.0), false);
+}
+
+#[test]
+fn comparison_of_vectors() {
+    wgsl!(
+        r"
+        fn le(a: vec4f, b: vec4f) -> vec4<bool> {
+            return a <= b;
+        }
+        "
+    );
+
+    assert_eq!(
+        le(Vec4::new(1.0, 2.0, 3.0, 4.0), Vec4::splat(2.0)),
+        Vec4::new(true, true, false, false),
+    )
 }
 
 // TODO: implement atomics

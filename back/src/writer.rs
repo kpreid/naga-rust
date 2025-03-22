@@ -1067,10 +1067,8 @@ impl Writer {
                         write!(out, ")")?;
                     }
                     (_, BinOpClassified::ScalarBool(bop)) => {
-                        // TODO: generated function name is a placeholder
-                        write!(out, "{SHADER_LIB}::{}(", bop.to_vector_fn())?;
                         self.write_expr(out, module, info, left, func_ctx)?;
-                        write!(out, ", ")?;
+                        write!(out, ".{}(", bop.to_vector_fn())?;
                         self.write_expr(out, module, info, right, func_ctx)?;
                         write!(out, ")")?;
                     }

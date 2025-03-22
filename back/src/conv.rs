@@ -326,14 +326,14 @@ impl BinOpBool {
     pub fn to_vector_fn(self) -> &'static str {
         use BinOpBool as Bo;
         match self {
-            Bo::Equal => "v_eq",
-            Bo::NotEqual => "v_ne",
-            Bo::Less => "v_lt",
-            Bo::LessEqual => "v_le",
-            Bo::Greater => "v_gt",
-            Bo::GreaterEqual => "v_ge",
-            Bo::LogicalAnd => "v_land",
-            Bo::LogicalOr => "v_lor",
+            Bo::Equal => "elementwise_eq",
+            Bo::NotEqual => "elementwise_ne",
+            Bo::Less => "elementwise_lt",
+            Bo::LessEqual => "elementwise_le",
+            Bo::Greater => "elementwise_gt",
+            Bo::GreaterEqual => "elementwise_ge",
+            Bo::LogicalAnd => "elementwise_land",
+            Bo::LogicalOr => "elementwise_lor",
         }
     }
 }
