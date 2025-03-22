@@ -1,8 +1,8 @@
-//! Translates WGSL shader code to Rust you can embed in your Rust code.
+//! Translates WGSL shader code to Rust embedded in your crate via macros.
 //!
 //! This does not necessarily mean you can run your compute or render pipelines in Rust
 //! on your CPU unchanged; this is *not* a full “software renderer”. Rather, the primary goal
-//! of the project is to allow you to share simple functions between CPU and GPU code, so
+//! of the library is to allow you to share simple functions between CPU and GPU code, so
 //! that the two parts of your code can agree on definitions.
 //!
 //! If you need additional control over the translation or to use a different source language,
