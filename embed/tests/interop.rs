@@ -149,6 +149,24 @@ fn bool_ops() {
 }
 
 #[test]
+fn bool_vector_ops() {
+    wgsl!(
+        r"fn bool_vector_func(a: vec4<bool>, b: vec4<bool>, c: vec4<bool>) -> vec4<bool> {
+            return a & b | c;
+        }"
+    );
+
+    for [a, b, c] in <[[bool; 4]; 3]>::exhaust() {
+        for (i, element) in <[bool; 4]>::from(bool_vector_func(a.into(), b.into(), c.into()))
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(element, a[i] && b[i] || c[i]);
+        }
+    }
+}
+
+#[test]
 fn comparison_of_scalars() {
     wgsl!(
         r"

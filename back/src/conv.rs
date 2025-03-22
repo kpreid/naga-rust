@@ -283,6 +283,7 @@ pub(crate) enum BinOpVec {
 }
 
 /// Part of [`BinOpClassified`].
+/// The operators that in Rust cannot be overloaded to return vectors.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum BinOpBool {
     Equal,
@@ -291,8 +292,6 @@ pub(crate) enum BinOpBool {
     LessEqual,
     Greater,
     GreaterEqual,
-    LogicalAnd,
-    LogicalOr,
 }
 
 impl From<naga::BinaryOperator> for BinOpClassified {
@@ -314,8 +313,8 @@ impl From<naga::BinaryOperator> for BinOpClassified {
             Bo::LessEqual => C::ScalarBool(BinOpBool::LessEqual),
             Bo::Greater => C::ScalarBool(BinOpBool::Greater),
             Bo::GreaterEqual => C::ScalarBool(BinOpBool::GreaterEqual),
-            Bo::LogicalAnd => C::ScalarBool(BinOpBool::LogicalAnd),
-            Bo::LogicalOr => C::ScalarBool(BinOpBool::LogicalOr),
+            Bo::LogicalAnd => C::Vectorizable(BinOpVec::And),
+            Bo::LogicalOr => C::Vectorizable(BinOpVec::InclusiveOr),
             Bo::ShiftLeft => C::Vectorizable(BinOpVec::ShiftLeft),
             Bo::ShiftRight => C::Vectorizable(BinOpVec::ShiftRight),
         }
@@ -332,8 +331,6 @@ impl BinOpBool {
             Bo::LessEqual => "elementwise_le",
             Bo::Greater => "elementwise_gt",
             Bo::GreaterEqual => "elementwise_ge",
-            Bo::LogicalAnd => "elementwise_land",
-            Bo::LogicalOr => "elementwise_lor",
         }
     }
 }

@@ -201,6 +201,36 @@ macro_rules! impl_vector_float_arithmetic {
     }
 }
 
+macro_rules! impl_vector_bitwise {
+    ($vec:ident, $int:ty, $( $component:ident )*) => {
+        impl ops::BitAnd for $vec<$int> {
+            type Output = Self;
+            fn bitand(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component & rhs.$component, )* }
+            }
+        }
+        impl ops::BitOr for $vec<$int> {
+            type Output = Self;
+            fn bitor(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component | rhs.$component, )* }
+            }
+        }
+        impl ops::BitXor for $vec<$int> {
+            type Output = Self;
+            fn bitxor(self, rhs: Self) -> Self::Output {
+                $vec { $( $component: self.$component ^ rhs.$component, )* }
+            }
+        }
+        impl ops::Not for $vec<$int> {
+            type Output = Self;
+            fn not(self) -> Self::Output {
+                $vec { $( $component: !self.$component, )* }
+            }
+        }
+
+    }
+}
+
 macro_rules! impl_element_casts {
     ($ty:ident) => {
         // TODO: These do not have the right cast semantics, but what *are* the right cast
@@ -267,6 +297,10 @@ macro_rules! impl_vector_regular_fns {
         impl_vector_integer_arithmetic!($ty, u32, $($component)*);
         impl_vector_float_arithmetic!($ty, f32, $($component)*);
         impl_vector_float_arithmetic!($ty, f64, $($component)*);
+
+        impl_vector_bitwise!($ty, bool, $($component)*);
+        impl_vector_bitwise!($ty, i32, $($component)*);
+        impl_vector_bitwise!($ty, u32, $($component)*);
 
         impl $ty<i32> {
             impl_element_casts!($ty);
