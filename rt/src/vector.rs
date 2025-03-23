@@ -60,11 +60,13 @@ pub struct Vec4<T> {
 
 macro_rules! delegate_unary_method_elementwise {
     (const $name:ident ($($component:ident)*)) => {
+        #[inline]
         pub const fn $name(self) -> Self {
             Self { $( $component: self.$component.$name() ),* }
         }
     };
     ($name:ident ($($component:ident)*)) => {
+        #[inline]
         pub fn $name(self) -> Self {
             Self { $( $component: self.$component.$name() ),* }
         }
@@ -80,6 +82,30 @@ macro_rules! delegate_unary_methods_elementwise {
     };
 }
 
+macro_rules! delegate_binary_method_elementwise {
+    (const $name:ident ($($component:ident)*)) => {
+        #[inline]
+        pub const fn $name(self, rhs: Self) -> Self {
+            Self { $( $component: self.$component.$name(rhs.$component) ),* }
+        }
+    };
+    ($name:ident ($($component:ident)*)) => {
+        #[inline]
+        pub fn $name(self, rhs: Self) -> Self {
+            Self { $( $component: self.$component.$name(rhs.$component) ),* }
+        }
+    };
+}
+
+macro_rules! delegate_binary_methods_elementwise {
+    (const { $($name:ident),* } $components:tt) => {
+        $( delegate_binary_method_elementwise!(const $name $components ); )*
+    };
+    ({ $($name:ident),* } $components:tt) => {
+        $( delegate_binary_method_elementwise!($name $components ); )*
+    };
+}
+
 // -------------------------------------------------------------------------------------------------
 // Vector operations
 
@@ -90,24 +116,28 @@ macro_rules! impl_vector_integer_arithmetic {
         // Vector-vector operations
         impl ops::Add for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn add(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_add(rhs.$component), )* }
             }
         }
         impl ops::Sub for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn sub(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_sub(rhs.$component), )* }
             }
         }
         impl ops::Mul for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn mul(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_mul(rhs.$component), )* }
             }
         }
         impl ops::Div for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn div(self, rhs: Self) -> Self::Output {
                 // wrapping_div() panics on division by zero, which is not what we need
                 $vec { $(
@@ -119,6 +149,7 @@ macro_rules! impl_vector_integer_arithmetic {
         }
         impl ops::Rem for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn rem(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_rem(rhs.$component), )* }
             }
@@ -127,24 +158,28 @@ macro_rules! impl_vector_integer_arithmetic {
         // Vector-scalar operations
         impl ops::Add<$int> for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn add(self, rhs: $int) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_add(rhs), )* }
             }
         }
         impl ops::Sub<$int> for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn sub(self, rhs: $int) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_sub(rhs), )* }
             }
         }
         impl ops::Mul<$int> for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn mul(self, rhs: $int) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_mul(rhs), )* }
             }
         }
         impl ops::Div<$int> for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn div(self, rhs: $int) -> Self::Output {
                 // wrapping_div() panics on division by zero, which is not what we need
                 $vec { $(
@@ -156,9 +191,16 @@ macro_rules! impl_vector_integer_arithmetic {
         }
         impl ops::Rem<$int> for $vec<$int> {
             type Output = Self;
+            #[inline]
             fn rem(self, rhs: $int) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_rem(rhs), )* }
             }
+        }
+
+        impl $vec<$int> {
+            delegate_binary_methods_elementwise!({
+                max, min
+            } ($($component)*));
         }
     }
 }
@@ -170,30 +212,35 @@ macro_rules! impl_vector_float_arithmetic {
         // Vector-vector operations
         impl ops::Add for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn add(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component + rhs.$component, )* }
             }
         }
         impl ops::Sub for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn sub(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component - rhs.$component, )* }
             }
         }
         impl ops::Mul for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn mul(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component * rhs.$component, )* }
             }
         }
         impl ops::Div for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn div(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component / rhs.$component, )* }
             }
         }
         impl ops::Rem for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn rem(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component % rhs.$component, )* }
             }
@@ -202,30 +249,35 @@ macro_rules! impl_vector_float_arithmetic {
         // Vector-scalar operations
         impl ops::Add<$float> for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn add(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component + rhs, )* }
             }
         }
         impl ops::Sub<$float> for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn sub(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component - rhs, )* }
             }
         }
         impl ops::Mul<$float> for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn mul(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component * rhs, )* }
             }
         }
         impl ops::Div<$float> for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn div(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component / rhs, )* }
             }
         }
         impl ops::Rem<$float> for $vec<$float> {
             type Output = Self;
+            #[inline]
             fn rem(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component % rhs, )* }
             }
@@ -233,15 +285,75 @@ macro_rules! impl_vector_float_arithmetic {
 
         // Float math functions (mostly elementwise, but not exclusively)
         impl $vec<$float> {
+            #[inline]
+            pub const fn clamp(self, low: Self, high: Self) -> Self {
+                // TODO: std clamp() panics if low > high, which isn’t conformant
+                // (but maybe a better debugging tool? )
+                $vec { $( $component: self.$component.clamp(low.$component, high.$component) ),*  }
+            }
+            #[inline]
+            pub fn distance(self, rhs: Self) -> $float {
+                (self - rhs).length()
+            }
+            #[inline]
+            pub const fn dot(self, rhs: Self) -> $float {
+                $( self.$component * rhs.$component + )* 0.0
+            }
+            #[inline]
+            pub fn face_forward(self, e2: Self, e3: Self) -> Self {
+                // note this is Rust's definition of signum
+                self * -e2.dot(e3).signum()
+            }
+            #[inline]
+            pub fn length(self) -> $float {
+                self.dot(self).sqrt()
+            }
+            #[inline]
             pub const fn mix(self, rhs: Self, blend: $float) -> Self {
-                $vec { $( $component: self.$component * (1.0 - blend) + rhs.$component * blend, )*  }
+                $vec { $( $component: self.$component * (1.0 - blend) + rhs.$component * blend ),*  }
+            }
+            #[inline]
+            pub fn mul_add(self, b: Self, c: Self) -> Self {
+                $vec { $( $component: self.$component.mul_add(b.$component, c.$component) ),*  }
+            }
+            #[inline]
+            pub fn normalize(self) -> Self {
+                self * self.length().recip()
+            }
+            #[inline]
+            pub fn reflect(self, rhs: Self) -> Self {
+                self - rhs * (2.0 * rhs.dot(self))
+            }
+            #[inline]
+            pub const fn saturate(self) -> Self {
+                $vec { $( $component: self.$component.clamp(0.0, 1.0) ),* }
+            }
+            #[inline]
+            pub const fn sign(self) -> Self {
+                $vec { $(
+                    // TODO: branchless form of this?
+                    $component: if self.$component == 0.0 {
+                        0.0
+                    } else {
+                        self.$component.signum()
+                    }
+                ),* }
             }
 
+            // TODO: some more of these can be const
+            delegate_unary_methods_elementwise!(const {
+                abs
+            } ($($component)*));
             delegate_unary_methods_elementwise!({
-                abs, acos, asin, atan, ceil, cos, cosh, exp, exp2, floor, fract, log2, round,
+                acos, acosh, asin, asinh, atan, atanh, ceil, cos, cosh, exp, exp2, floor, fract, log2, round,
                 sin, sinh, tan, tanh, trunc, to_degrees, to_radians
             } ($($component)*));
-            // TODO: atan2 and other >unary functions
+            delegate_binary_methods_elementwise!({
+                atan2, max, min, powf
+            } ($($component)*));
+
+            // TODO: modf, frexp, ldexp, cross, refract, step, smoothstep, inverse_sqrt,
+            // quantizeToF16, pack*,
         }
     }
 }
@@ -429,6 +541,15 @@ macro_rules! impl_vector_regular_fns {
             fn from(value: $ty<T>) -> Self {
                 [$( value.$component ),*]
             }
+        }
+
+        // Irregular integer math: `$vec<u32>.abs()` exists even though it is the identity,
+        // but Rust doesn't have it.
+        impl $ty<i32> {
+            delegate_unary_methods_elementwise!(const { abs } ($($component)*));
+        }
+        impl $ty<u32> {
+            pub fn abs(self) -> Self { self }
         }
     }
 }
