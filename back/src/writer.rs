@@ -1216,8 +1216,8 @@ impl Writer {
                     method = conv::math_function_to_method(fun)
                 )?;
                 for arg in [arg1, arg2, arg3].into_iter().flatten() {
-                    write!(out, ", ")?;
                     self.write_expr(out, module, info, arg, func_ctx)?;
+                    write!(out, ", ")?;
                 }
                 write!(out, ")")?
             }
