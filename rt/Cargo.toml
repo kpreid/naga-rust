@@ -13,9 +13,11 @@ doctest = false
 
 [features]
 default = []
+# If enabled, use `std`’s math functions instead of `libm`’s
+std = []
 
 [dependencies]
-num-traits.workspace = true
+num-traits = { workspace = true, default-features = false, features = ["libm"] }
 naga-rust-macros.workspace = true
 
 [lints.clippy]

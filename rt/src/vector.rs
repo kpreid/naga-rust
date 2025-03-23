@@ -1,6 +1,13 @@
 use core::{cmp, ops};
 use num_traits::ConstZero;
 
+// Provides float math functions without std.
+// TODO: Be more rigorous and explicitly call libm depending on the feature flag
+// instead of using the trait.
+#[cfg(not(feature = "std"))]
+#[cfg_attr(test, allow(unused_imports))]
+use num_traits::float::Float as _;
+
 // -------------------------------------------------------------------------------------------------
 // Vector type declarations.
 //
@@ -46,6 +53,31 @@ pub struct Vec4<T> {
     pub y: T,
     pub z: T,
     pub w: T,
+}
+
+// -------------------------------------------------------------------------------------------------
+// Most teneral helper macros
+
+macro_rules! delegate_unary_method_elementwise {
+    (const $name:ident ($($component:ident)*)) => {
+        pub const fn $name(self) -> Self {
+            Self { $( $component: self.$component.$name() ),* }
+        }
+    };
+    ($name:ident ($($component:ident)*)) => {
+        pub fn $name(self) -> Self {
+            Self { $( $component: self.$component.$name() ),* }
+        }
+    };
+}
+
+macro_rules! delegate_unary_methods_elementwise {
+    (const { $($name:ident),* } $components:tt) => {
+        $( delegate_unary_method_elementwise!(const $name $components ); )*
+    };
+    ({ $($name:ident),* } $components:tt) => {
+        $( delegate_unary_method_elementwise!($name $components ); )*
+    };
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -197,6 +229,19 @@ macro_rules! impl_vector_float_arithmetic {
             fn rem(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component % rhs, )* }
             }
+        }
+
+        // Float math functions (mostly elementwise, but not exclusively)
+        impl $vec<$float> {
+            pub const fn mix(self, rhs: Self, blend: $float) -> Self {
+                $vec { $( $component: self.$component * (1.0 - blend) + rhs.$component * blend, )*  }
+            }
+
+            delegate_unary_methods_elementwise!({
+                abs, acos, asin, atan, ceil, cos, cosh, exp, exp2, floor, fract, log2, round,
+                sin, sinh, tan, tanh, trunc, to_degrees, to_radians
+            } ($($component)*));
+            // TODO: atan2 and other >unary functions
         }
     }
 }

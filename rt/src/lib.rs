@@ -7,6 +7,9 @@
 
 #![no_std]
 
+#[cfg(feature = "std")]
+extern crate std;
+
 mod vector;
 
 pub use vector::*;
@@ -14,10 +17,6 @@ pub use vector::*;
 // TODO: should probably be num_traits::Zero or something custom
 pub fn zero<T: Default>() -> T {
     T::default()
-}
-
-pub fn mix<T>(_v1: T, _v2: T, _a: f32) -> T {
-    todo!()
 }
 
 pub fn discard() {
