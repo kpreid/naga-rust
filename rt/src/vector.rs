@@ -134,33 +134,33 @@ macro_rules! impl_vector_integer_arithmetic {
 /// Generate arithmetic operators and functions for cases where the element type is a
 /// Rust primitive *float*.
 macro_rules! impl_vector_float_arithmetic {
-    ($vec:ident, $int:ty, $( $component:ident )*) => {
+    ($vec:ident, $float:ty, $( $component:ident )*) => {
         // Vector-vector operations
-        impl ops::Add for $vec<$int> {
+        impl ops::Add for $vec<$float> {
             type Output = Self;
             fn add(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component + rhs.$component, )* }
             }
         }
-        impl ops::Sub for $vec<$int> {
+        impl ops::Sub for $vec<$float> {
             type Output = Self;
             fn sub(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component - rhs.$component, )* }
             }
         }
-        impl ops::Mul for $vec<$int> {
+        impl ops::Mul for $vec<$float> {
             type Output = Self;
             fn mul(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component * rhs.$component, )* }
             }
         }
-        impl ops::Div for $vec<$int> {
+        impl ops::Div for $vec<$float> {
             type Output = Self;
             fn div(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component / rhs.$component, )* }
             }
         }
-        impl ops::Rem for $vec<$int> {
+        impl ops::Rem for $vec<$float> {
             type Output = Self;
             fn rem(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component % rhs.$component, )* }
@@ -168,33 +168,33 @@ macro_rules! impl_vector_float_arithmetic {
         }
 
         // Vector-scalar operations
-        impl ops::Add<$int> for $vec<$int> {
+        impl ops::Add<$float> for $vec<$float> {
             type Output = Self;
-            fn add(self, rhs: $int) -> Self::Output {
+            fn add(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component + rhs, )* }
             }
         }
-        impl ops::Sub<$int> for $vec<$int> {
+        impl ops::Sub<$float> for $vec<$float> {
             type Output = Self;
-            fn sub(self, rhs: $int) -> Self::Output {
+            fn sub(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component - rhs, )* }
             }
         }
-        impl ops::Mul<$int> for $vec<$int> {
+        impl ops::Mul<$float> for $vec<$float> {
             type Output = Self;
-            fn mul(self, rhs: $int) -> Self::Output {
+            fn mul(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component * rhs, )* }
             }
         }
-        impl ops::Div<$int> for $vec<$int> {
+        impl ops::Div<$float> for $vec<$float> {
             type Output = Self;
-            fn div(self, rhs: $int) -> Self::Output {
+            fn div(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component / rhs, )* }
             }
         }
-        impl ops::Rem<$int> for $vec<$int> {
+        impl ops::Rem<$float> for $vec<$float> {
             type Output = Self;
-            fn rem(self, rhs: $int) -> Self::Output {
+            fn rem(self, rhs: $float) -> Self::Output {
                 $vec { $( $component: self.$component % rhs, )* }
             }
         }
