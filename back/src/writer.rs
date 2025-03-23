@@ -13,7 +13,7 @@ use naga::{
 };
 
 use crate::config::WriterFlags;
-use crate::conv::{self, BinOpClassified, KEYWORDS_2024, SHADER_LIB, ToRust, unwrap_to_rust};
+use crate::conv::{self, BinOpClassified, KEYWORDS_2024, SHADER_LIB, unwrap_to_rust};
 use crate::util::{Gensym, LevelNext};
 use crate::{Config, Error};
 
@@ -1076,7 +1076,7 @@ impl Writer {
                     }
                     (_, BinOpClassified::ScalarBool(bop)) => {
                         self.write_expr(out, module, info, left, func_ctx)?;
-                        write!(out, ".{}(", bop.to_vector_fn())?;
+                        write!(out, ".{}(", bop.to_vector_method())?;
                         self.write_expr(out, module, info, right, func_ctx)?;
                         write!(out, ")")?;
                     }
@@ -1209,9 +1209,13 @@ impl Writer {
                 arg2,
                 arg3,
             } => {
-                write!(out, "{fun_name}(", fun_name = fun.to_rust())?;
                 self.write_expr(out, module, info, arg, func_ctx)?;
-                for arg in IntoIterator::into_iter([arg1, arg2, arg3]).flatten() {
+                write!(
+                    out,
+                    ".{method}(",
+                    method = conv::math_function_to_method(fun)
+                )?;
+                for arg in [arg1, arg2, arg3].into_iter().flatten() {
                     write!(out, ", ")?;
                     self.write_expr(out, module, info, arg, func_ctx)?;
                 }
