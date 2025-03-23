@@ -558,11 +558,19 @@ impl Writer {
                 result,
             } => {
                 write!(out, "{level}")?;
+
+                // If the result is used, give it a name (`let _e10 = `).
                 if let Some(expr) = result {
                     let name = Gensym(expr).to_string();
                     self.start_named_expr(out, module, expr, func_ctx, &name)?;
                     self.named_expressions.insert(expr, name);
                 }
+
+                // If we are using a global struct, then functions are methods of that struct.
+                if self.config.use_global_struct() {
+                    write!(out, "self.")?;
+                }
+
                 let func_name = &self.names[&NameKey::Function(function)];
                 write!(out, "{func_name}(")?;
                 for (index, &argument) in arguments.iter().enumerate() {

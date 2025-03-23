@@ -290,6 +290,26 @@ fn function_call() {
     assert_eq!(funcs(), 7016);
 }
 
+/// When `global_struct` is in use, calls to other functions in the shader must use
+/// `self` syntax.
+#[test]
+fn function_call_with_self() {
+    wgsl!(
+        global_struct = Globals,
+        r"
+        var<private> foo: i32 = 1234;
+        fn inner() -> i32 {
+            return foo;
+        }
+        fn outer() -> i32 {
+            return inner();
+        }
+        "
+    );
+
+    assert_eq!(Globals::default().outer(), 1234);
+}
+
 #[test]
 fn global_uniform_binding() {
     wgsl!(
