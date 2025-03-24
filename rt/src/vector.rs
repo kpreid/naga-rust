@@ -26,8 +26,6 @@ pub use core::convert::Into;
 /// function behaviors. That is, they act like `Vec*` even where `T` might not.
 /// This allows the code generator to not worry as much about mismatches
 /// between Rust and shader semantics.
-///
-/// TODO: This isn't actually used yet.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct Scalar<T>(pub T);
@@ -112,6 +110,9 @@ macro_rules! delegate_binary_methods_elementwise {
 
 /// Generate arithmetic operators and functions for cases where the element type is a
 /// Rust primitive *integer*. (In these cases we must ask for wrapping operations.)
+///
+/// Note that this macro provides binary operation impls for `vec op vec` and `scalar op scalar`
+/// (considering a scalar as a 1-element vector) but not `scalar op vec` or `vec op scalar`.
 macro_rules! impl_vector_integer_arithmetic {
     ($vec:ident, $int:ty, $( $component:tt )*) => {
         impl ops::Add for $vec<$int> {
@@ -128,6 +129,13 @@ macro_rules! impl_vector_integer_arithmetic {
             #[inline]
             fn sub(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_sub(rhs.$component), )* }
+            }
+        }
+        impl ops::Neg for $vec<$int> {
+            type Output = Self;
+            #[inline]
+            fn neg(self) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_neg(), )* }
             }
         }
         impl ops::Mul for $vec<$int> {
@@ -160,37 +168,56 @@ macro_rules! impl_vector_integer_arithmetic {
             }
         }
 
-        // Vector-scalar operations
-        impl ops::Add<$int> for $vec<$int> {
+        impl $vec<$int> {
+            delegate_binary_methods_elementwise!({
+                max, min
+            } ($($component)*));
+        }
+    }
+}
+
+/// As impl_vector_integer_arithmetic! but for vector-scalar ops (not vector-vector or
+/// scalar-scalar).
+macro_rules! impl_vector_scalar_integer_arithmetic {
+    ($vec:ident, $int:ty, $( $component:tt )*) => {
+        impl ops::Add<Scalar<$int>> for $vec<$int> {
             type Output = Self;
             /// Wrapping addition.
             #[inline]
-            fn add(self, rhs: $int) -> Self::Output {
+            fn add(self, Scalar(rhs): Scalar<$int>) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_add(rhs), )* }
             }
         }
-        impl ops::Sub<$int> for $vec<$int> {
+        impl ops::Sub<Scalar<$int>> for $vec<$int> {
             type Output = Self;
             /// Wrapping subtraction.
             #[inline]
-            fn sub(self, rhs: $int) -> Self::Output {
+            fn sub(self, Scalar(rhs): Scalar<$int>) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_sub(rhs), )* }
             }
         }
-        impl ops::Mul<$int> for $vec<$int> {
+        // Subtraction is non-commutative so we need a dedicated scalar-vector impl
+        impl ops::Sub<$vec<$int>> for Scalar<$int> {
+            type Output = $vec<$int>;
+            #[inline]
+            fn sub(self, rhs: $vec<$int>) -> Self::Output {
+                $vec { $( $component: self.0.wrapping_sub(rhs.$component), )* }
+            }
+        }
+        impl ops::Mul<Scalar<$int>> for $vec<$int> {
             type Output = Self;
             /// Wrapping multiplication.
             #[inline]
-            fn mul(self, rhs: $int) -> Self::Output {
+            fn mul(self, Scalar(rhs): Scalar<$int>) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_mul(rhs), )* }
             }
         }
-        impl ops::Div<$int> for $vec<$int> {
+        impl ops::Div<Scalar<$int>> for $vec<$int> {
             type Output = Self;
             #[inline]
             /// On division by zero or overflow, returns `self`,
             /// per [WGSL](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#arithmetic-expr).
-            fn div(self, rhs: $int) -> Self::Output {
+            fn div(self, Scalar(rhs): Scalar<$int>) -> Self::Output {
                 // wrapping_div() panics on division by zero, which is not what we need
                 $vec { $(
                     $component:
@@ -199,18 +226,24 @@ macro_rules! impl_vector_integer_arithmetic {
                 )* }
             }
         }
-        impl ops::Rem<$int> for $vec<$int> {
-            type Output = Self;
+        impl ops::Div<$vec<$int>> for Scalar<$int> {
+            type Output = $vec<$int>;
             #[inline]
-            fn rem(self, rhs: $int) -> Self::Output {
-                $vec { $( $component: self.$component.wrapping_rem(rhs), )* }
+            fn div(self, rhs: $vec<$int>) -> Self::Output {
+                // wrapping_div() panics on division by zero, which is not what we need
+                $vec { $(
+                    $component:
+                        self.0.checked_div(rhs.$component)
+                            .unwrap_or(self.0),
+                )* }
             }
         }
-
-        impl $vec<$int> {
-            delegate_binary_methods_elementwise!({
-                max, min
-            } ($($component)*));
+        impl ops::Rem<Scalar<$int>> for $vec<$int> {
+            type Output = Self;
+            #[inline]
+            fn rem(self, Scalar(rhs): Scalar<$int>) -> Self::Output {
+                $vec { $( $component: self.$component.wrapping_rem(rhs), )* }
+            }
         }
     }
 }
@@ -232,6 +265,13 @@ macro_rules! impl_vector_float_arithmetic {
             #[inline]
             fn sub(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component - rhs.$component, )* }
+            }
+        }
+        impl ops::Neg for $vec<$float> {
+            type Output = Self;
+            #[inline]
+            fn neg(self) -> Self::Output {
+                $vec { $( $component: -self.$component, )* }
             }
         }
         impl ops::Mul for $vec<$float> {
@@ -256,43 +296,6 @@ macro_rules! impl_vector_float_arithmetic {
             }
         }
 
-        // Vector-scalar operations
-        impl ops::Add<$float> for $vec<$float> {
-            type Output = Self;
-            #[inline]
-            fn add(self, rhs: $float) -> Self::Output {
-                $vec { $( $component: self.$component + rhs, )* }
-            }
-        }
-        impl ops::Sub<$float> for $vec<$float> {
-            type Output = Self;
-            #[inline]
-            fn sub(self, rhs: $float) -> Self::Output {
-                $vec { $( $component: self.$component - rhs, )* }
-            }
-        }
-        impl ops::Mul<$float> for $vec<$float> {
-            type Output = Self;
-            #[inline]
-            fn mul(self, rhs: $float) -> Self::Output {
-                $vec { $( $component: self.$component * rhs, )* }
-            }
-        }
-        impl ops::Div<$float> for $vec<$float> {
-            type Output = Self;
-            #[inline]
-            fn div(self, rhs: $float) -> Self::Output {
-                $vec { $( $component: self.$component / rhs, )* }
-            }
-        }
-        impl ops::Rem<$float> for $vec<$float> {
-            type Output = Self;
-            #[inline]
-            fn rem(self, rhs: $float) -> Self::Output {
-                $vec { $( $component: self.$component % rhs, )* }
-            }
-        }
-
         // Float math functions (mostly elementwise, but not exclusively)
         impl $vec<$float> {
             /// As per WGSL [`clamp()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#clamp).
@@ -304,29 +307,29 @@ macro_rules! impl_vector_float_arithmetic {
             }
             /// As per WGSL [`distance()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#distance-builtin).
             #[inline]
-            pub fn distance(self, rhs: Self) -> $float {
+            pub fn distance(self, rhs: Self) -> Scalar<$float> {
                 (self - rhs).length()
             }
             /// As per WGSL [`dot()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#dot-builtin).
             #[inline]
-            pub const fn dot(self, rhs: Self) -> $float {
-                $( self.$component * rhs.$component + )* 0.0
+            pub const fn dot(self, rhs: Self) -> Scalar<$float> {
+                Scalar($( self.$component * rhs.$component + )* 0.0)
             }
             /// As per WGSL [`faceForward()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#faceForward-builtin).
             #[inline]
             pub fn face_forward(self, e2: Self, e3: Self) -> Self {
-                // note this is Rust's definition of signum
-                self * -e2.dot(e3).signum()
+                // note this is Rust's definition of signum which has no zero
+                self * Scalar((-e2.dot(e3)).0.signum())
             }
             /// As per WGSL [`length()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#length-builtin).
             #[inline]
-            pub fn length(self) -> $float {
-                self.dot(self).sqrt()
+            pub fn length(self) -> Scalar<$float> {
+                Scalar(self.dot(self).0.sqrt())
             }
             /// As per WGSL [`mix()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#mix-builtin).
             #[inline]
-            pub const fn mix(self, rhs: Self, blend: $float) -> Self {
-                $vec { $( $component: self.$component * (1.0 - blend) + rhs.$component * blend ),*  }
+            pub const fn mix(self, rhs: Self, blend: Scalar<$float>) -> Self {
+                $vec { $( $component: self.$component * (1.0 - blend.0) + rhs.$component * blend.0 ),*  }
             }
             /// As per WGSL [`fma()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#fma-builtin).
             #[inline]
@@ -336,12 +339,12 @@ macro_rules! impl_vector_float_arithmetic {
             /// As per WGSL [`normalize()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#normalize-builtin).
             #[inline]
             pub fn normalize(self) -> Self {
-                self * self.length().recip()
+                self / self.length()
             }
             /// As per WGSL [`reflect()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#reflect-builtin).
             #[inline]
             pub fn reflect(self, rhs: Self) -> Self {
-                self - rhs * (2.0 * rhs.dot(self))
+                self - rhs * (Scalar(2.0) * rhs.dot(self))
             }
             /// As per WGSL [`saturate()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#saturate-float-builtin).
             #[inline]
@@ -375,6 +378,62 @@ macro_rules! impl_vector_float_arithmetic {
 
             // TODO: modf, frexp, ldexp, cross, refract, step, smoothstep, inverse_sqrt,
             // quantizeToF16, pack*,
+        }
+    }
+}
+
+/// As impl_vector_float_arithmetic! but for vector-scalar ops (not vector-vector or
+/// scalar-scalar).
+macro_rules! impl_vector_scalar_float_arithmetic {
+    ($vec:ident, $float:ty, $( $component:tt )*) => {
+        impl ops::Add<Scalar<$float>> for $vec<$float> {
+            type Output = $vec<$float>;
+            #[inline]
+            fn add(self, rhs: Scalar<$float>) -> Self::Output {
+                $vec { $( $component: self.$component + rhs.0, )* }
+            }
+        }
+        impl ops::Sub<Scalar<$float>> for $vec<$float> {
+            type Output = $vec<$float>;
+            #[inline]
+            fn sub(self, rhs: Scalar<$float>) -> Self::Output {
+                $vec { $( $component: self.$component - rhs.0, )* }
+            }
+        }
+        impl ops::Sub<$vec<$float>> for Scalar<$float> {
+            type Output = $vec<$float>;
+            #[inline]
+            fn sub(self, rhs: $vec<$float>) -> Self::Output {
+                $vec { $( $component: self.0 - rhs.$component, )* }
+            }
+        }
+        impl ops::Mul<Scalar<$float>> for $vec<$float> {
+            type Output = $vec<$float>;
+            #[inline]
+            fn mul(self, rhs: Scalar<$float>) -> Self::Output {
+                $vec { $( $component: self.$component * rhs.0, )* }
+            }
+        }
+        impl ops::Div<Scalar<$float>> for $vec<$float> {
+            type Output = $vec<$float>;
+            #[inline]
+            fn div(self, rhs: Scalar<$float>) -> Self::Output {
+                $vec { $( $component: self.$component / rhs.0, )* }
+            }
+        }
+        impl ops::Div<$vec<$float>> for Scalar<$float> {
+            type Output = $vec<$float>;
+            #[inline]
+            fn div(self, rhs: $vec<$float>) -> Self::Output {
+                $vec { $( $component: self.0 / rhs.$component, )* }
+            }
+        }
+        impl ops::Rem<Scalar<$float>> for $vec<$float> {
+            type Output = $vec<$float>;
+            #[inline]
+            fn rem(self, rhs: Scalar<$float>) -> Self::Output {
+                $vec { $( $component: self.$component % rhs.0, )* }
+            }
         }
     }
 }
@@ -474,8 +533,8 @@ macro_rules! impl_vector_regular_fns {
 
             paste::paste! {
                 $(
-                    pub fn [< set_ $component >](&mut self, value: T) {
-                        self.$component = value;
+                    pub fn [< set_ $component >](&mut self, value: Scalar<T>) {
+                        self.$component = value.0;
                     }
                 )*
             }
@@ -611,6 +670,11 @@ macro_rules! impl_vector_not_scalar_fns {
             }
         }
 
+        impl_vector_scalar_integer_arithmetic!($ty, i32, $($component)*);
+        impl_vector_scalar_integer_arithmetic!($ty, u32, $($component)*);
+        impl_vector_scalar_float_arithmetic!($ty, f32, $($component)*);
+        impl_vector_scalar_float_arithmetic!($ty, f64, $($component)*);
+
         // Commutative scalar-vector operators are derived from vector-scalar operators
         impl<T> ops::Add<$ty<T>> for Scalar<T>
         where
@@ -668,6 +732,13 @@ impl_from_scalar_to_inner!(f64);
 // -------------------------------------------------------------------------------------------------
 // Irregular functions and impls
 
+impl<T> Scalar<T> {
+    /// Currently equivalent to `self.0` but can be used as a more strongly typed operation.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
 impl<T> From<T> for Scalar<T> {
     fn from(value: T) -> Self {
         Self(value)
@@ -691,20 +762,39 @@ macro_rules! impl_flattening_ctor {
 }
 // Note: Copy bound is solely due to otherwise needing `feature(const_precise_live_drops)`.
 impl<T: Copy> Vec3<T> {
-    impl_flattening_ctor!(fn new_12(x: T, yz: Vec2<T>) => (x, yz.x, yz.y));
-    impl_flattening_ctor!(fn new_21(xy: Vec2<T>, z: T) => (xy.x, xy.y, z));
+    impl_flattening_ctor!(fn new_12(x: Scalar<T>, yz: Vec2<T>) => (x.0, yz.x, yz.y));
+    impl_flattening_ctor!(fn new_21(xy: Vec2<T>, z: Scalar<T>) => (xy.x, xy.y, z.0));
 }
 impl<T: Copy> Vec4<T> {
-    impl_flattening_ctor!(fn new_112(x: T, y: T, zw: Vec2<T>) => (x, y, zw.x, zw.y));
-    impl_flattening_ctor!(fn new_121(x: T, yz: Vec2<T>, w: T) => (x, yz.x, yz.y, w));
-    impl_flattening_ctor!(fn new_211(xy: Vec2<T>, z: T, w: T) => (xy.x, xy.y, z, w));
+    impl_flattening_ctor!(fn new_112(x: Scalar<T>, y: Scalar<T>, zw: Vec2<T>) => (x.0, y.0, zw.x, zw.y));
+    impl_flattening_ctor!(fn new_121(x: Scalar<T>, yz: Vec2<T>, w: Scalar<T>) => (x.0, yz.x, yz.y, w.0));
+    impl_flattening_ctor!(fn new_211(xy: Vec2<T>, z: Scalar<T>, w: Scalar<T>) => (xy.x, xy.y, z.0, w.0));
     impl_flattening_ctor!(fn new_22(xy: Vec2<T>, zw: Vec2<T>) => (xy.x, xy.y, zw.x, zw.y));
-    impl_flattening_ctor!(fn new_13(x: T, yzw: Vec3<T>) => (x, yzw.x, yzw.y, yzw.z));
-    impl_flattening_ctor!(fn new_31(xyz: Vec3<T>, w: T) => (xyz.x, xyz.y, xyz.z, w));
+    impl_flattening_ctor!(fn new_13(x: Scalar<T>, yzw: Vec3<T>) => (x.0, yzw.x, yzw.y, yzw.z));
+    impl_flattening_ctor!(fn new_31(xyz: Vec3<T>, w: Scalar<T>) => (xyz.x, xyz.y, xyz.z, w.0));
 }
 
 // -------------------------------------------------------------------------------------------------
-// Swizzles
+// Swizzles and element accessors
+
+macro_rules! scalar_accessors {
+    ($get:ident $get_mut:ident $component:ident ) => {
+        /// Returns the
+        #[doc = stringify!($component)]
+        /// component of `self` as a [`Scalar`].
+        pub fn $get(self) -> Scalar<T> {
+            Scalar(self.$component)
+        }
+
+        /// Returns a reference to the
+        #[doc = stringify!($component)]
+        /// component of `self` as a [`Scalar`].
+        pub fn $get_mut(&mut self) -> &mut Scalar<T> {
+            // SAFETY: `Scalar` is `repr(transparent)`
+            unsafe { &mut *(&raw mut self.$component).cast::<Scalar<T>>() }
+        }
+    };
+}
 
 macro_rules! swizzle_fn {
     ($name:ident $output:ident ($($cin:ident)*) ) => {
@@ -718,10 +808,15 @@ macro_rules! swizzle_fn {
 }
 
 impl<T: Copy> Vec2<T> {
+    scalar_accessors!(x x_mut x);
+    scalar_accessors!(y y_mut y);
     swizzle_fn!(xy Vec2(x y));
     swizzle_fn!(yx Vec2(y x));
 }
 impl<T: Copy> Vec3<T> {
+    scalar_accessors!(x x_mut x);
+    scalar_accessors!(y y_mut y);
+    scalar_accessors!(z z_mut z);
     swizzle_fn!(xy Vec2(x y));
     swizzle_fn!(yx Vec2(y x));
     swizzle_fn!(xyz Vec3(x y z));
@@ -732,6 +827,10 @@ impl<T: Copy> Vec3<T> {
     swizzle_fn!(zyx Vec3(z y x));
 }
 impl<T: Copy> Vec4<T> {
+    scalar_accessors!(x x_mut x);
+    scalar_accessors!(y y_mut y);
+    scalar_accessors!(z z_mut z);
+    scalar_accessors!(w w_mut w);
     swizzle_fn!(xy Vec2(x y));
     swizzle_fn!(yx Vec2(y x));
     swizzle_fn!(xyz Vec3(x y z));

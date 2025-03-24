@@ -1,4 +1,5 @@
 use naga_rust_embed::wgsl;
+use naga_rust_rt::Scalar;
 
 #[test]
 pub(crate) fn array_ctor() {
@@ -22,7 +23,9 @@ pub(crate) fn array_access_fixed() {
         "
     );
 
-    let mut a = [10, 100];
+    // TODO: The type expected ought to be [u32; 2] instead, but it will require further work
+    // to make that actually true.
+    let mut a = [Scalar(10), Scalar(100)];
     modify_array(&mut a);
-    assert_eq!(a, [11, 102]);
+    assert_eq!(a, [Scalar(11), Scalar(102)]);
 }

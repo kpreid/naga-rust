@@ -1,7 +1,7 @@
 use exhaust::Exhaust as _;
 
+use naga_rust_embed::rt::{Scalar, Vec2, Vec4};
 use naga_rust_embed::wgsl;
-use naga_rust_rt::{Vec2, Vec4};
 
 #[test]
 pub(crate) fn scalar_arithmetic() {
@@ -33,9 +33,9 @@ pub(crate) fn scalar_pointer() {
         }"
     );
 
-    let mut x = 10;
+    let mut x = Scalar(10);
     add_one_ptr(&mut x);
-    assert_eq!(x, 11);
+    assert_eq!(x, Scalar(11));
 }
 
 #[test]

@@ -72,7 +72,7 @@ fn visibility_control() {
         indoc::indoc! {
             r"
             fn foo() {
-                v_foo()
+                v_foo().into()
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_foo() {
@@ -87,7 +87,7 @@ fn visibility_control() {
         indoc::indoc! {
             r"
             pub fn foo() {
-                v_foo()
+                v_foo().into()
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_foo() {
@@ -114,11 +114,11 @@ fn entry_point() {
             r"
             #[::naga_rust_rt::fragment]
             fn main(position: impl ::naga_rust_rt::Into<::naga_rust_rt::Vec4<f32>>) -> ::naga_rust_rt::Vec4<f32> {
-                v_main(position.into())
+                v_main(position.into()).into()
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_main(position: ::naga_rust_rt::Vec4<f32>) -> ::naga_rust_rt::Vec4<f32> {
-                return ::naga_rust_rt::Vec4::splat(1f32);
+                return ::naga_rust_rt::Vec4::splat_from_scalar(::naga_rust_rt::Scalar(1f32));
             }
             "
         }
@@ -135,11 +135,11 @@ fn global_variable_enabled() {
         indoc::indoc! {
             "
             struct Globals {
-                foo: i32,
+                foo: ::naga_rust_rt::Scalar<i32>,
             }
             impl Default for Globals {
                 fn default() -> Self { Self {
-                    foo: 1i32,
+                    foo: ::naga_rust_rt::Scalar(1i32),
                 }}
             }
             impl Globals {
@@ -173,20 +173,20 @@ fn switch() {
         ),
         indoc::indoc! {
             "
-            fn switching(x: impl ::naga_rust_rt::Into<i32>) -> i32 {
-                v_switching(x.into())
+            fn switching(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
+                v_switching(x.into()).into()
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_switching(x: i32) -> i32 {
-                match x {
+            fn v_switching(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
+                match ::naga_rust_rt::Scalar::into_inner(x) {
                     0i32 => {
-                        return 0i32;
+                        return ::naga_rust_rt::Scalar(0i32);
                     }
                     1i32 | 2i32 => {
-                        return 1i32;
+                        return ::naga_rust_rt::Scalar(1i32);
                     }
                     _ => {
-                        return 2i32;
+                        return ::naga_rust_rt::Scalar(2i32);
                     }
                 }
             }
@@ -233,11 +233,12 @@ fn array_length() {
         // TODO: we don't yet fully support bindings properly so lots of this code is nonsense.
         // This test is only intending to check the translation of arrayLength(), which is
         // hard to test separately since it must take a `ptr<storage, array<..>>`.
+        //
         indoc::indoc! {
             "
             struct Globals {
                 // group(0) binding(1)
-                arr: [u32],
+                arr: [::naga_rust_rt::Scalar<u32>],
             }
             impl Default for Globals {
                 fn default() -> Self { Self {
@@ -246,10 +247,10 @@ fn array_length() {
             }
             impl Globals {
             fn length(&self, ) -> u32 {
-                self.v_length()
+                self.v_length().into()
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_length(&self, ) -> u32 {
+            fn v_length(&self, ) -> ::naga_rust_rt::Scalar<u32> {
                 return (&self.arr).len();
             }
 
@@ -301,11 +302,11 @@ fn precedence_of_prefix_and_postfix() {
         ),
         indoc::indoc! {
             "
-            fn f(p: &mut [i32; 4]) -> i32 {
-                v_f(p)
+            fn f(p: &mut [::naga_rust_rt::Scalar<i32>; 4]) -> i32 {
+                v_f(p).into()
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_f(p: &mut [i32; 4]) -> i32 {
+            fn v_f(p: &mut [::naga_rust_rt::Scalar<i32>; 4]) -> ::naga_rust_rt::Scalar<i32> {
                 let _e2 = (*p)[2 as usize];
                 return (!_e2);
             }
