@@ -11,15 +11,14 @@ that they can agree on definitions that might be executed in either place.
 
 [Naga]: https://crates.io/crates/naga
 
-Packages in the system
-----------------------
+Packages in the workspace
+-------------------------
 
 * `naga-rust-back` is the Rust backend (code generator) itself.
 * `naga-rust-rt` is the runtime support library, which provides data types and functions
   used by the generated code.
 * `naga-rust-embed` provides macros for translating WGSL and embedding the Rust output
   in your Rust code.
-  
 
 License
 -------
