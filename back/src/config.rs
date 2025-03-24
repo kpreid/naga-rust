@@ -10,6 +10,8 @@ pub struct Config {
     pub(crate) flags: WriterFlags,
     pub(crate) runtime_path: Cow<'static, str>,
     pub(crate) global_struct: Option<String>,
+    #[allow(dead_code, reason = "reminding ourselves of the future")]
+    pub(crate) edition: Edition,
 }
 
 impl Default for Config {
@@ -26,6 +28,7 @@ impl Config {
             flags: WriterFlags::empty(),
             runtime_path: Cow::Borrowed("::naga_rust_rt"),
             global_struct: None,
+            edition: Edition::Rust2024,
         }
     }
 
@@ -107,4 +110,13 @@ bitflags::bitflags! {
         /// Generate items with `pub` visibility instead of private.
         const PUBLIC = 0x3;
     }
+}
+
+/// Edition of Rust code to generate.
+///
+/// We currently only support one edition, but this exists anyway to prepare to document
+/// any edition dependencies in the code generator.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Edition {
+    Rust2024,
 }

@@ -65,15 +65,6 @@ enum Indirection {
     Ordinary,
 }
 
-/// Edition of Rust code to generate.
-///
-/// We currently only support one edition, but this exists anyway to prepare to document
-/// any edition dependencies in the code generator.
-#[derive(Clone, Copy, Debug)]
-enum Edition {
-    Rust2024,
-}
-
 /// [`naga`] backend allowing you to translate shader code in any language supported by Naga
 /// to Rust code.
 ///
@@ -82,8 +73,6 @@ enum Edition {
 #[allow(missing_debug_implementations, reason = "TODO")]
 pub struct Writer {
     config: Config,
-    #[allow(dead_code)]
-    edition: Edition,
     names: naga::FastHashMap<NameKey, String>,
     namer: proc::Namer,
     named_expressions: naga::FastIndexMap<Handle<Expression>, String>,
@@ -95,7 +84,6 @@ impl Writer {
     pub fn new(config: Config) -> Self {
         Writer {
             config,
-            edition: Edition::Rust2024,
             names: naga::FastHashMap::default(),
             namer: proc::Namer::default(),
             named_expressions: naga::FastIndexMap::default(),
@@ -105,7 +93,6 @@ impl Writer {
     fn reset(&mut self, module: &Module) {
         let Self {
             config,
-            edition: _,
             names,
             namer,
             named_expressions,
