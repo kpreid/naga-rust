@@ -986,6 +986,26 @@ impl Writer {
                 }
             }
 
+            TypeInner::Array {
+                base: _,
+                size,
+                stride: _,
+            } => {
+                assert!(matches!(size, naga::ArraySize::Constant(_)));
+
+                // Write array syntax instead of a function call.
+                write!(out, "[")?;
+                for (index, component) in components.iter().enumerate() {
+                    if index > 0 {
+                        write!(out, ", ")?;
+                    }
+                    write_expression(out, *component)?;
+                }
+                write!(out, "]")?;
+
+                return Ok(());
+            }
+
             // Fallback: Assume that a suitable `T::new()` associated function
             // exists.
             _ => "new",
@@ -1241,7 +1261,10 @@ impl Writer {
                     naga::UnaryOperator::BitwiseNot => "!",
                 };
 
-                write!(out, "{unary}(")?;
+                // The parentheses go on the outside because `write_expr` promises to
+                // produce an unambiguous expression, so we have to wrap our expression,
+                // and we don't need to wrap our own call to `write_expr`.
+                write!(out, "({unary}")?;
                 self.write_expr(out, module, info, expr, func_ctx)?;
 
                 write!(out, ")")?

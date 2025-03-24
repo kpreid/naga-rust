@@ -1,6 +1,17 @@
 use naga_rust_embed::wgsl;
 
 #[test]
+pub(crate) fn array_ctor() {
+    wgsl!(
+        r"fn f() -> i32 {
+            var a: array<i32, 4> = array(10i, 20, 30, 40);
+            return a[2];
+        }"
+    );
+    assert_eq!(f(), 30);
+}
+
+#[test]
 pub(crate) fn array_access_fixed() {
     wgsl!(
         r"

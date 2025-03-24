@@ -282,6 +282,30 @@ fn atomic_type() {
     );
 }
 
+/// Verify that the output is not ignorant of parentheses needed for precedence
+/// by combining prefix and postfix operators.
+#[test]
+fn precedence_of_prefix_and_postfix() {
+    assert_eq!(
+        translate_without_header(
+            Config::new(),
+            r"fn f(p: ptr<private, array<i32, 4>>) -> i32 {
+                return ~(*p)[2];
+            }"
+        ),
+        indoc::indoc! {
+            "
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn f(p: &mut [i32; 4]) -> i32 {
+                let _e2 = (*p)[2 as usize];
+                return (!_e2);
+            }
+
+            "
+        }
+    );
+}
+
 #[test]
 fn unimplemented_continuing() {
     expect_unimplemented(
