@@ -13,7 +13,7 @@ use naga::{
 };
 
 use crate::config::WriterFlags;
-use crate::conv::{self, BinOpClassified, KEYWORDS_2024, SHADER_LIB, unwrap_to_rust};
+use crate::conv::{self, BinOpClassified, KEYWORDS_2024, unwrap_to_rust};
 use crate::util::{Gensym, LevelNext};
 use crate::{Config, Error};
 
@@ -111,14 +111,7 @@ impl Writer {
             named_expressions,
         } = self;
         names.clear();
-        namer.reset(
-            module,
-            KEYWORDS_2024,
-            &[SHADER_LIB],
-            &[],
-            &[],
-            &mut self.names,
-        );
+        namer.reset(module, KEYWORDS_2024, &[], &[], &[], &mut self.names);
         if let Some(g) = &config.global_struct {
             // TODO: We actually want to say “treat this as reserved but do not rename it”,
             // but Namer doesn’t have that option
@@ -147,16 +140,6 @@ impl Writer {
         }
 
         self.reset(module);
-
-        // Write top-level attributes
-        write!(
-            out,
-            "\
-                #[allow(dead_code, clippy::unnecessary_self_imports)]\n\
-                use {runtime_path}::{{self as rt}};\n\
-            ",
-            runtime_path = self.config.runtime_path,
-        )?;
 
         // Write all structs
         for (handle, ty) in module.types.iter() {
@@ -369,6 +352,7 @@ impl Writer {
         level: back::Level,
         attributes: &[Attribute],
     ) -> BackendResult {
+        let runtime_path = &self.config.runtime_path;
         for attribute in attributes {
             write!(out, "{level}#[")?;
             match *attribute {
@@ -387,12 +371,12 @@ impl Writer {
                         ShaderStage::Fragment => "fragment",
                         ShaderStage::Compute => "compute",
                     };
-                    write!(out, "{SHADER_LIB}::{stage_str}")?;
+                    write!(out, "{runtime_path}::{stage_str}")?;
                 }
                 Attribute::WorkGroupSize(size) => {
                     write!(
                         out,
-                        "{SHADER_LIB}::workgroup_size({}, {}, {})",
+                        "{runtime_path}::workgroup_size({}, {}, {})",
                         size[0], size[1], size[2]
                     )?;
                 }
@@ -459,6 +443,7 @@ impl Writer {
         level: back::Level,
     ) -> BackendResult {
         use naga::{Expression, Statement};
+        let runtime_path = &self.config.runtime_path;
 
         match *stmt {
             Statement::Emit(ref range) => {
@@ -525,7 +510,7 @@ impl Writer {
                 }
                 writeln!(out, ";")?;
             }
-            Statement::Kill => write!(out, "{level}{SHADER_LIB}::discard();")?,
+            Statement::Kill => write!(out, "{level}{runtime_path}::discard();")?,
             Statement::Store { pointer, value } => {
                 let is_atomic_pointer = func_ctx
                     .resolve_type(pointer, &module.types)
@@ -884,6 +869,8 @@ impl Writer {
         write_expression: impl Copy + Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
         expression_type: impl Copy + Fn(Handle<Expression>) -> &'a TypeInner,
     ) -> BackendResult {
+        let runtime_path = &self.config.runtime_path;
+
         match expressions[expr] {
             Expression::Literal(literal) => match literal {
                 naga::Literal::F32(value) => write!(out, "{value}f32")?,
@@ -910,7 +897,7 @@ impl Writer {
                 }
             }
             Expression::ZeroValue(ty) => {
-                write!(out, "{SHADER_LIB}::zero::<")?;
+                write!(out, "{runtime_path}::zero::<")?;
                 self.write_type(out, module, ty)?;
                 write!(out, ">()")?;
             }
@@ -927,7 +914,7 @@ impl Writer {
             Expression::Splat { size, value } => {
                 let size = conv::vector_size_str(size);
                 // TODO: emit explicit element type if explicit types requested
-                write!(out, "{SHADER_LIB}::Vec{size}::splat(")?;
+                write!(out, "{runtime_path}::Vec{size}::splat(")?;
                 write_expression(out, value)?;
                 write!(out, ")")?;
             }
@@ -1052,6 +1039,7 @@ impl Writer {
         }
 
         let expression = &func_ctx.expressions[expr];
+        let runtime_path = &self.config.runtime_path;
 
         match *expression {
             Expression::Literal(_)
@@ -1283,7 +1271,7 @@ impl Writer {
                     } => conv::vector_size_str(size),
                     _ => unreachable!("validation should have rejected this"),
                 };
-                write!(out, "{SHADER_LIB}::select{suffix}(")?;
+                write!(out, "{runtime_path}::select{suffix}(")?;
                 self.write_expr(out, module, info, reject, func_ctx)?;
                 write!(out, ", ")?;
                 self.write_expr(out, module, info, accept, func_ctx)?;
@@ -1306,7 +1294,7 @@ impl Writer {
                 //     (Axis::Width, Ctrl::Fine) => "fwidthFine",
                 //     (Axis::Width, Ctrl::None) => "fwidth",
                 // };
-                // write!(out, "{SHADER_LIB}::{op}(")?;
+                // write!(out, "{runtime_path}::{op}(")?;
                 // self.write_expr(out, module, info, expr, func_ctx)?;
                 // write!(out, ")")?
             }
@@ -1319,7 +1307,7 @@ impl Writer {
                     Rf::IsNan => "is_nan",
                     Rf::IsInf => "is_inf",
                 };
-                write!(out, "{SHADER_LIB}::{fun_name}(")?;
+                write!(out, "{runtime_path}::{fun_name}(")?;
                 self.write_expr(out, module, info, argument, func_ctx)?;
                 write!(out, ")")?
             }
@@ -1360,21 +1348,22 @@ impl Writer {
         module: &Module,
         inner: &TypeInner,
     ) -> BackendResult {
+        let runtime_path = &self.config.runtime_path;
         match *inner {
             TypeInner::Vector { size, scalar } => write!(
                 out,
-                "{SHADER_LIB}::Vec{}<{}>",
+                "{runtime_path}::Vec{}<{}>",
                 conv::vector_size_str(size),
                 unwrap_to_rust(scalar),
             )?,
             TypeInner::Sampler { comparison: false } => {
-                write!(out, "{SHADER_LIB}::Sampler")?;
+                write!(out, "{runtime_path}::Sampler")?;
             }
             TypeInner::Sampler { comparison: true } => {
-                write!(out, "{SHADER_LIB}::SamplerComparison")?;
+                write!(out, "{runtime_path}::SamplerComparison")?;
             }
             TypeInner::Image { .. } => {
-                write!(out, "{SHADER_LIB}::Image")?;
+                write!(out, "{runtime_path}::Image")?;
             }
             TypeInner::Scalar(scalar) => {
                 write!(out, "{}", unwrap_to_rust(scalar))?;

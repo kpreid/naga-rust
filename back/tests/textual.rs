@@ -10,7 +10,7 @@ use pretty_assertions::assert_eq;
 
 use naga_rust_back::Config;
 
-fn translate_without_header(config: Config, wgsl_source_text: &str) -> String {
+fn translate(config: Config, wgsl_source_text: &str) -> String {
     fn inner(config: Config, wgsl_source_text: &str) -> Result<String, Box<dyn ErrorTrait>> {
         let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text)?;
 
@@ -22,17 +22,8 @@ fn translate_without_header(config: Config, wgsl_source_text: &str) -> String {
         .subgroup_operations(naga::valid::SubgroupOperationSet::all())
         .validate(&module)?;
 
-        let mut translated_source: String =
+        let translated_source: String =
             naga_rust_back::write_string(&module, &module_info, config)?;
-
-        // Kludge: Strip off the first boilerplate lines without caring what they are exactly.
-        let header_end = translated_source
-            .char_indices()
-            .filter(|&(_, ch)| ch == '\n')
-            .map(|(i, _)| i)
-            .nth(1)
-            .ok_or("header not found")?;
-        translated_source.replace_range(0..=header_end, "");
 
         Ok(translated_source)
     }
@@ -77,7 +68,7 @@ fn expect_unimplemented(wgsl_source_text: &str) {
 #[test]
 fn visibility_control() {
     assert_eq!(
-        translate_without_header(Config::new(), "fn foo() {}"),
+        translate(Config::new(), "fn foo() {}"),
         indoc::indoc! {
             r"
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
@@ -89,7 +80,7 @@ fn visibility_control() {
         }
     );
     assert_eq!(
-        translate_without_header(Config::new().public_items(true), "fn foo() {}"),
+        translate(Config::new().public_items(true), "fn foo() {}"),
         indoc::indoc! {
             r"
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
@@ -105,7 +96,7 @@ fn visibility_control() {
 #[test]
 fn entry_point() {
     assert_eq!(
-        translate_without_header(
+        translate(
             Config::new(),
             r"
             @fragment
@@ -115,10 +106,10 @@ fn entry_point() {
         ),
         indoc::indoc! {
             r"
-            #[rt::fragment]
+            #[::naga_rust_rt::fragment]
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn main(position: rt::Vec4<f32>) -> rt::Vec4<f32> {
-                return rt::Vec4::splat(1f32);
+            fn main(position: ::naga_rust_rt::Vec4<f32>) -> ::naga_rust_rt::Vec4<f32> {
+                return ::naga_rust_rt::Vec4::splat(1f32);
             }
             "
         }
@@ -128,7 +119,7 @@ fn entry_point() {
 #[test]
 fn global_variable_enabled() {
     assert_eq!(
-        translate_without_header(
+        translate(
             Config::new().global_struct("Globals"),
             r"var<private> foo: i32 = 1;"
         ),
@@ -159,7 +150,7 @@ fn global_variable_disabled() {
 #[test]
 fn switch() {
     assert_eq!(
-        translate_without_header(
+        translate(
             Config::new(),
             r"
             fn switching(x: i32) -> i32 {
@@ -196,7 +187,7 @@ fn switch() {
 #[test]
 fn array_type_sizes() {
     assert_eq!(
-        translate_without_header(
+        translate(
             Config::new(),
             r"struct Foo {
                 x: array<i32, 10>,
@@ -218,7 +209,7 @@ fn array_type_sizes() {
 #[test]
 fn array_length() {
     assert_eq!(
-        translate_without_header(
+        translate(
             Config::new().global_struct("Globals"),
             r"
             @group(0) @binding(1) var<storage> arr: array<u32>;
@@ -257,7 +248,7 @@ fn array_length() {
 #[test]
 fn atomic_type() {
     assert_eq!(
-        translate_without_header(
+        translate(
             Config::new().global_struct("Globals"),
             r"
             @group(0) @binding(0)
@@ -287,7 +278,7 @@ fn atomic_type() {
 #[test]
 fn precedence_of_prefix_and_postfix() {
     assert_eq!(
-        translate_without_header(
+        translate(
             Config::new(),
             r"fn f(p: ptr<private, array<i32, 4>>) -> i32 {
                 return ~(*p)[2];

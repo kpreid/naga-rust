@@ -13,6 +13,8 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
+use naga_rust_embed::rt;
+
 naga_rust_embed::include_wgsl_mr!(global_struct = Shader, "src/shader.wgsl");
 
 // -------------------------------------------------------------------------------------------------

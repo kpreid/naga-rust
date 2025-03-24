@@ -7,13 +7,6 @@ use core::fmt;
 
 use naga::Scalar;
 
-/// Local path to the module which is the “standard library” for shader functionality
-/// that doesn't map directly to Rust `core`.
-///
-/// To keep the output concise, this is not the crate name,
-/// but is guaranteed to be provided via a `use` in the same scope.
-pub(crate) const SHADER_LIB: &str = "rt";
-
 /// Types that may be able to return the Rust source representation
 /// for their values as a `'static` string.
 ///
