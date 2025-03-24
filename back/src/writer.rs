@@ -467,7 +467,9 @@ impl Writer {
                     write!(out, ", ")?;
                 }
             }
-            writeln!(out, ")")?;
+            // The final into() converts from the internal `TypeTranslation::Simd`
+            // type to the public `TypeTranslation::RustScalar` type.
+            writeln!(out, ").into()")?;
         } else {
             // Write function local variables
             for (handle, local) in func.local_variables.iter() {
@@ -666,9 +668,9 @@ impl Writer {
             } => {
                 let l2 = level.next();
 
-                write!(out, "{level}if ")?;
+                write!(out, "{level}if {runtime_path}::Scalar::into_inner(")?;
                 self.write_expr(out, condition, expr_ctx)?;
-                writeln!(out, " {{")?;
+                writeln!(out, ") {{")?;
                 for s in accept {
                     self.write_stmt(out, module, s, func_ctx, l2)?;
                 }
@@ -751,9 +753,9 @@ impl Writer {
             } => {
                 // Beginning of the match expression
                 write!(out, "{level}")?;
-                write!(out, "match ")?;
+                write!(out, "match {runtime_path}::Scalar::into_inner(")?;
                 self.write_expr(out, selector, expr_ctx)?;
-                writeln!(out, " {{")?;
+                writeln!(out, ") {{")?;
 
                 // Generate each arm, collapsing empty fall-through into a single arm.
                 let l2 = level.next();
@@ -854,6 +856,7 @@ impl Writer {
         pointer: Handle<Expression>,
         value_expr: Handle<Expression>,
     ) -> Result<(), Error> {
+        let runtime_path = &self.config.runtime_path;
         let pointer_type: &TypeInner = expr_ctx.resolve_type(pointer);
         let pointer_base_type = pointer_type
             .pointer_base_type()
@@ -895,7 +898,23 @@ impl Writer {
         write!(out, "{level}")?;
         self.write_expr_with_indirection(out, pointer, expr_ctx, Indirection::Place)?;
         write!(out, " = ")?;
-        self.write_expr(out, value_expr, expr_ctx)?;
+
+        // The fields of aggregates are (currently) translated as `TypeTranslation::RustScalar`.
+        // Therefore, if we are storing to a member of a struct, we need to insert a conversion.
+        // TODO: this should be factored out into a general function for converting
+        // between TypeTranslations.
+        match TypeTranslation::from(pointer_type.pointer_space().unwrap()) {
+            TypeTranslation::RustScalar => {
+                write!(out, "{runtime_path}::Scalar::into_inner(")?;
+                self.write_expr(out, value_expr, expr_ctx)?;
+                write!(out, ")")?;
+            }
+            TypeTranslation::ShaderScalar | TypeTranslation::Simd => {
+                // No unwrapping
+                self.write_expr(out, value_expr, expr_ctx)?;
+            }
+        }
+
         writeln!(out, ";")?;
 
         Ok(())
@@ -1078,18 +1097,18 @@ impl Writer {
             Expression::Literal(literal) => match literal {
                 // TODO: Should we use the `half` library for f16 support
                 // instead of only allowing it as a Rust unstable feature?
-                naga::Literal::F16(value) => write!(out, "{value}f16")?,
-                naga::Literal::F32(value) => write!(out, "{value}f32")?,
-                naga::Literal::U32(value) => write!(out, "{value}u32")?,
+                naga::Literal::F16(value) => write!(out, "{runtime_path}::Scalar({value}f16)")?,
+                naga::Literal::F32(value) => write!(out, "{runtime_path}::Scalar({value}f32)")?,
+                naga::Literal::U32(value) => write!(out, "{runtime_path}::Scalar({value}u32)")?,
                 naga::Literal::I32(value) => {
-                    write!(out, "{value}i32")?;
+                    write!(out, "{runtime_path}::Scalar({value}i32)")?;
                 }
-                naga::Literal::Bool(value) => write!(out, "{value}")?,
-                naga::Literal::F64(value) => write!(out, "{value}f64")?,
+                naga::Literal::Bool(value) => write!(out, "{runtime_path}::Scalar({value})")?,
+                naga::Literal::F64(value) => write!(out, "{runtime_path}::Scalar({value}f64)")?,
                 naga::Literal::I64(value) => {
-                    write!(out, "{value}i64")?;
+                    write!(out, "{runtime_path}::Scalar({value}i64)")?;
                 }
-                naga::Literal::U64(value) => write!(out, "{value}u64")?,
+                naga::Literal::U64(value) => write!(out, "{runtime_path}::Scalar({value}u64)")?,
                 naga::Literal::AbstractInt(_) | naga::Literal::AbstractFloat(_) => {
                     unreachable!("abstract types should not appear in IR presented to backends");
                 }
@@ -1113,7 +1132,7 @@ impl Writer {
             Expression::Splat { size, value } => {
                 let size = conv::vector_size_str(size);
                 // TODO: emit explicit element type if explicit types requested
-                write!(out, "{runtime_path}::Vec{size}::splat(")?;
+                write!(out, "{runtime_path}::Vec{size}::splat_from_scalar(")?;
                 self.write_expr(out, value, expr_ctx)?;
                 write!(out, ")")?;
             }
@@ -1123,36 +1142,30 @@ impl Writer {
                 let name = &self.names[&name_key];
                 write!(out, "{name}")?;
             }
-            Expression::Binary { op, left, right } => {
-                let inputs_are_scalar =
-                    matches!(*expr_ctx.resolve_type(left), TypeInner::Scalar(_))
-                        && matches!(*expr_ctx.resolve_type(right), TypeInner::Scalar(_));
-                match (inputs_are_scalar, BinOpClassified::from(op)) {
-                    (true, BinOpClassified::ScalarBool(_))
-                    | (_, BinOpClassified::Vectorizable(_)) => {
-                        write!(out, "(")?;
-                        self.write_expr(out, left, expr_ctx)?;
-                        // TODO: Review whether any Rust operator semantics are incorrect
-                        //  for shader code — if so, stop using `binary_operation_str`.
-                        write!(out, " {} ", back::binary_operation_str(op))?;
-                        self.write_expr(out, right, expr_ctx)?;
-                        write!(out, ")")?;
-                    }
-                    (_, BinOpClassified::ScalarBool(bop)) => {
-                        self.write_expr(out, left, expr_ctx)?;
-                        write!(out, ".{}(", bop.to_vector_method())?;
-                        self.write_expr(out, right, expr_ctx)?;
-                        write!(out, ")")?;
-                    }
-                    (_, BinOpClassified::ShortCircuit(bop)) => {
-                        write!(out, "(")?;
-                        self.write_expr(out, left, expr_ctx)?;
-                        write!(out, " {} ", bop.to_binary_operator())?;
-                        self.write_expr(out, right, expr_ctx)?;
-                        write!(out, ")")?;
-                    }
+            Expression::Binary { op, left, right } => match BinOpClassified::from(op) {
+                BinOpClassified::Vectorizable(_) => {
+                    write!(out, "(")?;
+                    self.write_expr(out, left, expr_ctx)?;
+                    write!(out, " {} ", back::binary_operation_str(op))?;
+                    self.write_expr(out, right, expr_ctx)?;
+                    write!(out, ")")?;
                 }
-            }
+                BinOpClassified::ScalarBool(bop) => {
+                    self.write_expr(out, left, expr_ctx)?;
+                    write!(out, ".{}(", bop.to_vector_method())?;
+                    self.write_expr(out, right, expr_ctx)?;
+                    write!(out, ")")?;
+                }
+                BinOpClassified::ShortCircuit(bop) => {
+                    // The ".0"s are for unwrapping the input `Scalar`s
+                    // TODO: when we support SIMD this will need to change completely
+                    write!(out, "{runtime_path}::Scalar(")?;
+                    self.write_expr(out, left, expr_ctx)?;
+                    write!(out, ".0 {} ", bop.to_binary_operator())?;
+                    self.write_expr(out, right, expr_ctx)?;
+                    write!(out, ".0)")?;
+                }
+            },
             Expression::Access { base, index } => {
                 self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
                 write!(out, "[")?;
@@ -1160,33 +1173,50 @@ impl Writer {
                 write!(out, " as usize]")?
             }
             Expression::AccessIndex { base, index } => {
+                let result_ty = expr_ctx.resolve_type(expr);
+
                 let base_ty_res = &expr_ctx.expect_func_ctx().info[base].ty;
-                let mut resolved = base_ty_res.inner_with(&module.types);
+                let mut base_ty_resolved = base_ty_res.inner_with(&module.types);
 
-                self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-
-                let base_ty_handle = match *resolved {
+                let base_ty_handle = match *base_ty_resolved {
                     TypeInner::Pointer { base, space: _ } => {
-                        resolved = &module.types[base].inner;
+                        base_ty_resolved = &module.types[base].inner;
                         Some(base)
                     }
                     _ => base_ty_res.handle(),
                 };
 
-                match *resolved {
+                match *base_ty_resolved {
                     TypeInner::Vector { .. } => {
-                        // Write vector access as a swizzle
-                        write!(out, ".{}", back::COMPONENTS[index as usize])?
+                        self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
+                        write!(out, ".{}()", back::COMPONENTS[index as usize])?
                     }
                     TypeInner::Matrix { .. }
                     | TypeInner::Array { .. }
                     | TypeInner::BindingArray { .. }
-                    | TypeInner::ValuePointer { .. } => write!(out, "[{index} as usize]")?,
+                    | TypeInner::ValuePointer { .. } => {
+                        self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
+                        write!(out, "[{index} as usize]")?
+                    }
+
+                    // TODO: This is a horrible "make the tests pass" kludge which should be
+                    // replaced with more general implementation of conversion between different
+                    // `TypeTranslation`s.
+                    TypeInner::Struct { .. } if matches!(result_ty.pointer_base_type(), Some(res) if matches!(res.inner_with(&module.types), TypeInner::Scalar(_))) =>
+                    {
+                        let ty = base_ty_handle.unwrap();
+
+                        write!(out, "{runtime_path}::Scalar(")?;
+                        self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
+                        write!(out, ".{})", &self.names[&NameKey::StructMember(ty, index)])?
+                    }
+
                     TypeInner::Struct { .. } => {
                         // This will never panic in case the type is a `Struct`, this is not true
                         // for other types so we can only check while inside this match arm
                         let ty = base_ty_handle.unwrap();
 
+                        self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
                         write!(out, ".{}", &self.names[&NameKey::StructMember(ty, index)])?
                     }
                     ref other => unreachable!("cannot index into a {other:?}"),
@@ -1223,8 +1253,11 @@ impl Writer {
 
                 self.write_expr(out, expr, expr_ctx)?;
                 match (input_type, to_kind, to_width) {
-                    (&Ti::Vector { size: _, scalar: _ }, to_kind, Some(to_width)) => {
-                        // Call a glam vector cast method
+                    (
+                        Ti::Vector { size: _, scalar: _ } | Ti::Scalar(_),
+                        to_kind,
+                        Some(to_width),
+                    ) => {
                         write!(
                             out,
                             ".cast_elem_as_{elem_ty}()",
@@ -1234,25 +1267,9 @@ impl Writer {
                             }),
                         )?;
                     }
-                    (&Ti::Scalar(_), to_kind, Some(to_width)) => {
-                        // Coerce scalars using Rust 'as'
-                        // TODO: replace Rust scalars with an explicit rt::Scalar type
-                        write!(
-                            out,
-                            " as {}",
-                            unwrap_to_rust(Scalar {
-                                kind: to_kind,
-                                width: to_width,
-                            })
-                        )?;
-                    }
-                    _ => {
-                        // Unhandled case, produce debugging info
-                        write!(
-                            out,
-                            " as _/* cast {input_type:?} to kind {to_kind:?} width {to_width:?} */"
-                        )?;
-                    }
+                    _ => panic!(
+                        "unimplemented cast {input_type:?} to kind {to_kind:?} width {to_width:?}"
+                    ),
                 }
             }
             Expression::Load { pointer } => {
@@ -1415,12 +1432,12 @@ impl Writer {
                     .collect();
 
                 match (size, &*arg_sizes) {
-                    (Bi, [1, 1]) => "new",
+                    (Bi, [1, 1]) => "from_scalars",
                     (Bi, [2]) => "from",
-                    (Tri, [1, 1, 1]) => "new",
+                    (Tri, [1, 1, 1]) => "from_scalars",
                     (Tri, [1, 2]) => "new_12",
                     (Tri, [2, 1]) => "new_21",
-                    (Quad, [1, 1, 1, 1]) => "new",
+                    (Quad, [1, 1, 1, 1]) => "from_scalars",
                     (Quad, [1, 1, 2]) => "new_112",
                     (Quad, [1, 2, 1]) => "new_121",
                     (Quad, [2, 1, 1]) => "new_211",
@@ -1507,6 +1524,13 @@ impl Writer {
                 conv::vector_size_str(size),
                 unwrap_to_rust(scalar),
             )?,
+            TypeInner::Scalar(scalar) => match type_translation {
+                TypeTranslation::RustScalar => write!(out, "{}", unwrap_to_rust(scalar))?,
+                TypeTranslation::ShaderScalar | TypeTranslation::Simd => {
+                    write!(out, "{runtime_path}::Scalar<{}>", unwrap_to_rust(scalar))?
+                }
+            },
+
             TypeInner::Sampler { comparison: false } => {
                 write!(out, "{runtime_path}::Sampler")?;
             }
@@ -1515,9 +1539,6 @@ impl Writer {
             }
             TypeInner::Image { .. } => {
                 write!(out, "{runtime_path}::Image")?;
-            }
-            TypeInner::Scalar(scalar) => {
-                write!(out, "{}", unwrap_to_rust(scalar))?;
             }
             TypeInner::Atomic(scalar) => {
                 write!(

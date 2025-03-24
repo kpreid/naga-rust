@@ -83,7 +83,7 @@ pub use naga_rust_macros::include_wgsl_mr;
 ///     "var<private> foo: i32 = 10;",
 /// );
 ///
-/// assert_eq!(Globals::default().foo, 10);
+/// assert_eq!(Globals::default().foo, naga_rust_embed::rt::Scalar(10));
 /// ```
 ///
 #[doc = include_str!("configuration_syntax.md")]
