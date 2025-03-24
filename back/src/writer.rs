@@ -1268,22 +1268,24 @@ impl Writer {
                 self.write_expr(out, module, info, condition, func_ctx)?;
                 write!(out, ")")?
             }
-            Expression::Derivative { axis, ctrl, expr } => {
-                use naga::{DerivativeAxis as Axis, DerivativeControl as Ctrl};
-                let op = match (axis, ctrl) {
-                    (Axis::X, Ctrl::Coarse) => "dpdxCoarse",
-                    (Axis::X, Ctrl::Fine) => "dpdxFine",
-                    (Axis::X, Ctrl::None) => "dpdx",
-                    (Axis::Y, Ctrl::Coarse) => "dpdyCoarse",
-                    (Axis::Y, Ctrl::Fine) => "dpdyFine",
-                    (Axis::Y, Ctrl::None) => "dpdy",
-                    (Axis::Width, Ctrl::Coarse) => "fwidthCoarse",
-                    (Axis::Width, Ctrl::Fine) => "fwidthFine",
-                    (Axis::Width, Ctrl::None) => "fwidth",
-                };
-                write!(out, "{SHADER_LIB}::{op}(")?;
-                self.write_expr(out, module, info, expr, func_ctx)?;
-                write!(out, ")")?
+            Expression::Derivative { .. } => {
+                return Err(Error::Unimplemented("derivatives".into()));
+
+                // use naga::{DerivativeAxis as Axis, DerivativeControl as Ctrl};
+                // let op = match (axis, ctrl) {
+                //     (Axis::X, Ctrl::Coarse) => "dpdxCoarse",
+                //     (Axis::X, Ctrl::Fine) => "dpdxFine",
+                //     (Axis::X, Ctrl::None) => "dpdx",
+                //     (Axis::Y, Ctrl::Coarse) => "dpdyCoarse",
+                //     (Axis::Y, Ctrl::Fine) => "dpdyFine",
+                //     (Axis::Y, Ctrl::None) => "dpdy",
+                //     (Axis::Width, Ctrl::Coarse) => "fwidthCoarse",
+                //     (Axis::Width, Ctrl::Fine) => "fwidthFine",
+                //     (Axis::Width, Ctrl::None) => "fwidth",
+                // };
+                // write!(out, "{SHADER_LIB}::{op}(")?;
+                // self.write_expr(out, module, info, expr, func_ctx)?;
+                // write!(out, ")")?
             }
             Expression::Relational { fun, argument } => {
                 use naga::RelationalFunction as Rf;
