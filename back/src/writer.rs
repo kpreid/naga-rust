@@ -874,25 +874,6 @@ impl Writer {
         Ok(())
     }
 
-    fn write_const_expression(
-        &self,
-        out: &mut dyn Write,
-        module: &Module,
-        info: &ModuleInfo,
-        expr: Handle<Expression>,
-    ) -> BackendResult {
-        self.write_expr(
-            out,
-            module,
-            expr,
-            &ExpressionCtx::Global {
-                expressions: &module.global_expressions,
-                module,
-                module_info: info,
-            },
-        )
-    }
-
     /// Examine the type to write an appropriate constructor or literal expression for it.
     ///
     /// We do not delegate to a library trait for this because the construction
@@ -1474,7 +1455,16 @@ impl Writer {
         )?;
 
         if let Some(init) = global.init {
-            self.write_const_expression(out, module, info, init)?;
+            self.write_expr(
+                out,
+                module,
+                init,
+                &ExpressionCtx::Global {
+                    expressions: &module.global_expressions,
+                    module,
+                    module_info: info,
+                },
+            )?;
         } else {
             // Default will generally produce zero
             write!(out, "Default::default()")?;
@@ -1504,7 +1494,16 @@ impl Writer {
         )?;
         self.write_type(out, module, module.constants[handle].ty)?;
         write!(out, " = ")?;
-        self.write_const_expression(out, module, info, init)?;
+        self.write_expr(
+            out,
+            module,
+            init,
+            &ExpressionCtx::Global {
+                expressions: &module.global_expressions,
+                module,
+                module_info: info,
+            },
+        )?;
         writeln!(out, ";")?;
 
         Ok(())
