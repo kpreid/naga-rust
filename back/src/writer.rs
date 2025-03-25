@@ -78,6 +78,52 @@ pub struct Writer {
     named_expressions: naga::FastIndexMap<Handle<Expression>, String>,
 }
 
+enum ExpressionCtx<'a> {
+    Global {
+        module: &'a Module,
+        module_info: &'a ModuleInfo,
+        expressions: &'a naga::Arena<Expression>,
+    },
+    Function {
+        //module_info: &'a ModuleInfo,
+        func_ctx: &'a back::FunctionCtx<'a>,
+    },
+}
+
+impl<'a> ExpressionCtx<'a> {
+    #[track_caller]
+    fn expect_func_ctx(&self) -> &'a back::FunctionCtx<'a> {
+        match self {
+            ExpressionCtx::Function { func_ctx, .. } => func_ctx,
+            ExpressionCtx::Global { .. } => {
+                unreachable!("attempting to access the function context outside of a function")
+            }
+        }
+    }
+
+    fn expressions(&self) -> &'a naga::Arena<Expression> {
+        match self {
+            ExpressionCtx::Global { expressions, .. } => expressions,
+            ExpressionCtx::Function { func_ctx, .. } => func_ctx.expressions,
+        }
+    }
+
+    fn resolve_type(
+        &self,
+        handle: Handle<Expression>,
+        types: &'a naga::UniqueArena<naga::Type>,
+    ) -> &'a TypeInner {
+        match self {
+            ExpressionCtx::Global {
+                module_info,
+                module,
+                ..
+            } => module_info[handle].inner_with(&module.types),
+            ExpressionCtx::Function { func_ctx, .. } => func_ctx.resolve_type(handle, types),
+        }
+    }
+}
+
 impl Writer {
     /// Creates a new [`Writer`].
     #[must_use]
@@ -192,7 +238,7 @@ impl Writer {
             };
 
             // Write the function
-            self.write_function(out, module, info, function, &func_ctx)?;
+            self.write_function(out, module, function, &func_ctx)?;
 
             writeln!(out)?;
         }
@@ -216,7 +262,7 @@ impl Writer {
                 named_expressions: &ep.function.named_expressions,
                 expr_kind_tracker: ExpressionKindTracker::from_arena(&ep.function.expressions),
             };
-            self.write_function(out, module, info, &ep.function, &func_ctx)?;
+            self.write_function(out, module, &ep.function, &func_ctx)?;
 
             if index < module.entry_points.len() - 1 {
                 writeln!(out)?;
@@ -237,7 +283,6 @@ impl Writer {
         &mut self,
         out: &mut dyn Write,
         module: &Module,
-        info: &ModuleInfo,
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
     ) -> BackendResult {
@@ -308,7 +353,15 @@ impl Writer {
             // Write the local initializer if needed
             if let Some(init) = local.init {
                 write!(out, " = ")?;
-                self.write_expr(out, module, info, init, func_ctx)?;
+                self.write_expr(
+                    out,
+                    module,
+                    init,
+                    &ExpressionCtx::Function {
+                        func_ctx,
+                        //module_info: info,
+                    },
+                )?;
             }
 
             // Finish the local with `;` and add a newline (only for readability)
@@ -322,7 +375,7 @@ impl Writer {
         // Write the function body (statement list)
         for sta in func.body.iter() {
             // The indentation should always be 1 when writing the function body
-            self.write_stmt(out, module, info, sta, func_ctx, back::Level(1))?;
+            self.write_stmt(out, module, sta, func_ctx, back::Level(1))?;
         }
 
         writeln!(out, "}}")?;
@@ -424,13 +477,17 @@ impl Writer {
         &mut self,
         out: &mut dyn Write,
         module: &Module,
-        info: &ModuleInfo,
         stmt: &naga::Statement,
         func_ctx: &back::FunctionCtx<'_>,
         level: back::Level,
     ) -> BackendResult {
         use naga::{Expression, Statement};
+
         let runtime_path = &self.config.runtime_path;
+        let expr_ctx = &ExpressionCtx::Function {
+            func_ctx,
+            //module_info: info,
+        };
 
         match *stmt {
             Statement::Emit(ref range) => {
@@ -462,7 +519,7 @@ impl Writer {
                     if let Some(name) = expr_name {
                         write!(out, "{level}")?;
                         self.start_named_expr(out, module, handle, func_ctx, &name)?;
-                        self.write_expr(out, module, info, handle, func_ctx)?;
+                        self.write_expr(out, module, handle, expr_ctx)?;
                         self.named_expressions.insert(handle, name);
                         writeln!(out, ";")?;
                     }
@@ -476,15 +533,15 @@ impl Writer {
                 let l2 = level.next();
 
                 write!(out, "{level}if ")?;
-                self.write_expr(out, module, info, condition, func_ctx)?;
+                self.write_expr(out, module, condition, expr_ctx)?;
                 writeln!(out, " {{")?;
                 for s in accept {
-                    self.write_stmt(out, module, info, s, func_ctx, l2)?;
+                    self.write_stmt(out, module, s, func_ctx, l2)?;
                 }
                 if !reject.is_empty() {
                     writeln!(out, "{level}}} else {{")?;
                     for s in reject {
-                        self.write_stmt(out, module, info, s, func_ctx, l2)?;
+                        self.write_stmt(out, module, s, func_ctx, l2)?;
                     }
                 }
                 writeln!(out, "{level}}}")?
@@ -493,7 +550,7 @@ impl Writer {
                 write!(out, "{level}return")?;
                 if let Some(return_value) = value {
                     write!(out, " ")?;
-                    self.write_expr(out, module, info, return_value, func_ctx)?;
+                    self.write_expr(out, module, return_value, expr_ctx)?;
                 }
                 writeln!(out, ";")?;
             }
@@ -514,13 +571,12 @@ impl Writer {
                 self.write_expr_with_indirection(
                     out,
                     module,
-                    info,
                     pointer,
-                    func_ctx,
+                    expr_ctx,
                     Indirection::Place,
                 )?;
                 write!(out, " = ")?;
-                self.write_expr(out, module, info, value, func_ctx)?;
+                self.write_expr(out, module, value, expr_ctx)?;
 
                 writeln!(out, ";")?
             }
@@ -549,7 +605,7 @@ impl Writer {
                     if index != 0 {
                         write!(out, ", ")?;
                     }
-                    self.write_expr(out, module, info, argument, func_ctx)?;
+                    self.write_expr(out, module, argument, expr_ctx)?;
                 }
                 writeln!(out, ");")?
             }
@@ -573,7 +629,7 @@ impl Writer {
                 write!(out, "{level}")?;
                 writeln!(out, "{{")?;
                 for s in block.iter() {
-                    self.write_stmt(out, module, info, s, func_ctx, level.next())?;
+                    self.write_stmt(out, module, s, func_ctx, level.next())?;
                 }
                 writeln!(out, "{level}}}")?;
             }
@@ -584,7 +640,7 @@ impl Writer {
                 // Beginning of the match expression
                 write!(out, "{level}")?;
                 write!(out, "match ")?;
-                self.write_expr(out, module, info, selector, func_ctx)?;
+                self.write_expr(out, module, selector, expr_ctx)?;
                 writeln!(out, " {{")?;
 
                 // Generate each arm, collapsing empty fall-through into a single arm.
@@ -625,7 +681,7 @@ impl Writer {
                     if new_match_arm {
                         writeln!(out, " => {{")?;
                         for sta in case.body.iter() {
-                            self.write_stmt(out, module, info, sta, func_ctx, l2.next())?;
+                            self.write_stmt(out, module, sta, func_ctx, l2.next())?;
                         }
                         writeln!(out, "{l2}}}")?;
                     }
@@ -643,7 +699,7 @@ impl Writer {
 
                 let l2 = level.next();
                 for sta in body.iter() {
-                    self.write_stmt(out, module, info, sta, func_ctx, l2)?;
+                    self.write_stmt(out, module, sta, func_ctx, l2)?;
                 }
 
                 if !continuing.is_empty() {
@@ -687,7 +743,7 @@ impl Writer {
         &self,
         expr: Handle<Expression>,
         module: &Module,
-        func_ctx: &back::FunctionCtx<'_>,
+        expr_ctx: &ExpressionCtx<'_>,
     ) -> Indirection {
         use naga::Expression as Ex;
 
@@ -698,7 +754,7 @@ impl Writer {
             return Indirection::Ordinary;
         }
 
-        match func_ctx.expressions[expr] {
+        match expr_ctx.expressions()[expr] {
             // In Naga, a `LocalVariable(x)` expression produces a pointer,
             // but our plain form is a variable name `x`,
             // which means the caller must reference it if desired.
@@ -719,7 +775,7 @@ impl Writer {
 
             // `Access` and `AccessIndex` pass through the pointer-ness of their `base` value.
             Ex::Access { base, .. } | Ex::AccessIndex { base, .. } => {
-                let base_ty = func_ctx.resolve_type(base, &module.types);
+                let base_ty = expr_ctx.resolve_type(base, &module.types);
                 match *base_ty {
                     TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. } => {
                         Indirection::Place
@@ -766,11 +822,10 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
-        info: &ModuleInfo,
         expr: Handle<Expression>,
-        func_ctx: &back::FunctionCtx<'_>,
+        expr_ctx: &ExpressionCtx<'_>,
     ) -> BackendResult {
-        self.write_expr_with_indirection(out, module, info, expr, func_ctx, Indirection::Ordinary)
+        self.write_expr_with_indirection(out, module, expr, expr_ctx, Indirection::Ordinary)
     }
 
     /// Write `expr` as a Rust expression with the requested indirection.
@@ -785,21 +840,20 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
-        info: &ModuleInfo,
         expr: Handle<Expression>,
-        func_ctx: &back::FunctionCtx<'_>,
+        expr_ctx: &ExpressionCtx<'_>,
         requested: Indirection,
     ) -> BackendResult {
         // If the plain form of the expression is not what we need, emit the
         // operator necessary to correct that.
-        let plain = self.plain_form_indirection(expr, module, func_ctx);
+        let plain = self.plain_form_indirection(expr, module, expr_ctx);
         match (requested, plain) {
             // The plain form expression will be a place.
             // Convert it to a reference to match the Naga pointer type.
             // TODO: We need to choose which borrow operator to use.
             (Indirection::Ordinary, Indirection::Place) => {
                 write!(out, "(&")?;
-                self.write_expr_plain_form(out, module, info, expr, func_ctx, plain)?;
+                self.write_expr_plain_form(out, module, expr, expr_ctx, plain)?;
                 write!(out, ")")?;
             }
 
@@ -807,13 +861,13 @@ impl Writer {
             // Insert a dereference operator.
             (Indirection::Place, Indirection::Ordinary) => {
                 write!(out, "(*")?;
-                self.write_expr_plain_form(out, module, info, expr, func_ctx, plain)?;
+                self.write_expr_plain_form(out, module, expr, expr_ctx, plain)?;
                 write!(out, ")")?;
             }
             // Matches.
             (Indirection::Place, Indirection::Place)
             | (Indirection::Ordinary, Indirection::Ordinary) => {
-                self.write_expr_plain_form(out, module, info, expr, func_ctx, plain)?
+                self.write_expr_plain_form(out, module, expr, expr_ctx, plain)?
             }
         }
 
@@ -827,102 +881,29 @@ impl Writer {
         info: &ModuleInfo,
         expr: Handle<Expression>,
     ) -> BackendResult {
-        self.write_possibly_const_expression(
+        self.write_expr(
             out,
             module,
-            info,
             expr,
-            &module.global_expressions,
-            |out, expr| self.write_const_expression(out, module, info, expr),
-            |expr| info[expr].inner_with(&module.types),
-        )
-    }
-
-    /// Writes an expression of the kinds that can appear both in constants and in function bodies.
-    ///
-    /// The difference between these two cases is that function bodies have access to a
-    /// [`back::FunctionCtx`], but this doesn’t.
-    //
-    // Arguably we could do a runtime check for that instead of the `unreachable!()`s
-    // on matching the expression enum.
-    #[allow(clippy::too_many_arguments)]
-    fn write_possibly_const_expression<'a>(
-        &self,
-        out: &mut dyn Write,
-        module: &Module,
-        info: &ModuleInfo,
-        expr: Handle<Expression>,
-        expressions: &naga::Arena<Expression>,
-        write_expression: impl Copy + Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
-        expression_type: impl Copy + Fn(Handle<Expression>) -> &'a TypeInner,
-    ) -> BackendResult {
-        let runtime_path = &self.config.runtime_path;
-
-        match expressions[expr] {
-            Expression::Literal(literal) => match literal {
-                naga::Literal::F32(value) => write!(out, "{value}f32")?,
-                naga::Literal::U32(value) => write!(out, "{value}u32")?,
-                naga::Literal::I32(value) => {
-                    write!(out, "{value}i32")?;
-                }
-                naga::Literal::Bool(value) => write!(out, "{value}")?,
-                naga::Literal::F64(value) => write!(out, "{value}f64")?,
-                naga::Literal::I64(value) => {
-                    write!(out, "{value}i64")?;
-                }
-                naga::Literal::U64(value) => write!(out, "{value}u64")?,
-                naga::Literal::AbstractInt(_) | naga::Literal::AbstractFloat(_) => {
-                    unreachable!("abstract types should not appear in IR presented to backends");
-                }
+            &ExpressionCtx::Global {
+                expressions: &module.global_expressions,
+                module,
+                module_info: info,
             },
-            Expression::Constant(handle) => {
-                let constant = &module.constants[handle];
-                if constant.name.is_some() {
-                    write!(out, "{}", self.names[&NameKey::Constant(handle)])?;
-                } else {
-                    self.write_const_expression(out, module, info, constant.init)?;
-                }
-            }
-            Expression::ZeroValue(ty) => {
-                write!(out, "{runtime_path}::zero::<")?;
-                self.write_type(out, module, ty)?;
-                write!(out, ">()")?;
-            }
-            Expression::Compose { ty, ref components } => {
-                self.write_constructor_expression(
-                    out,
-                    module,
-                    ty,
-                    components,
-                    write_expression,
-                    expression_type,
-                )?;
-            }
-            Expression::Splat { size, value } => {
-                let size = conv::vector_size_str(size);
-                // TODO: emit explicit element type if explicit types requested
-                write!(out, "{runtime_path}::Vec{size}::splat(")?;
-                write_expression(out, value)?;
-                write!(out, ")")?;
-            }
-            _ => unreachable!(),
-        }
-
-        Ok(())
+        )
     }
 
     /// Examine the type to write an appropriate constructor or literal expression for it.
     ///
     /// We do not delegate to a library trait for this because the construction
     /// must be const-compatible.
-    fn write_constructor_expression<'a>(
+    fn write_constructor_expression(
         &self,
         out: &mut dyn Write,
         module: &Module,
         ty: Handle<naga::Type>,
         components: &[Handle<Expression>],
-        write_expression: impl Copy + Fn(&mut dyn Write, Handle<Expression>) -> BackendResult,
-        expression_type: impl Copy + Fn(Handle<Expression>) -> &'a TypeInner,
+        expr_ctx: &ExpressionCtx<'_>,
     ) -> BackendResult {
         use naga::VectorSize::{Bi, Quad, Tri};
 
@@ -933,7 +914,7 @@ impl Writer {
 
                 let arg_sizes: ArrayVec<u8, 4> = components
                     .iter()
-                    .map(|&component_expr| match *expression_type(component_expr) {
+                    .map(|&component_expr| match *expr_ctx.resolve_type(component_expr, &module.types) {
                         TypeInner::Scalar(_) => 1,
                         TypeInner::Vector { size, .. } => size as u8,
                         ref t => unreachable!(
@@ -973,7 +954,7 @@ impl Writer {
                     if index > 0 {
                         write!(out, ", ")?;
                     }
-                    write_expression(out, *component)?;
+                    self.write_expr(out, module, *component, expr_ctx)?;
                 }
                 write!(out, "]")?;
 
@@ -992,7 +973,7 @@ impl Writer {
             if index > 0 {
                 write!(out, ", ")?;
             }
-            write_expression(out, *component)?;
+            self.write_expr(out, module, *component, expr_ctx)?;
         }
         write!(out, ")")?;
 
@@ -1015,9 +996,8 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
-        info: &ModuleInfo,
         expr: Handle<Expression>,
-        func_ctx: &back::FunctionCtx<'_>,
+        expr_ctx: &ExpressionCtx<'_>,
         indirection: Indirection,
     ) -> BackendResult {
         if let Some(name) = self.named_expressions.get(&expr) {
@@ -1025,69 +1005,93 @@ impl Writer {
             return Ok(());
         }
 
-        let expression = &func_ctx.expressions[expr];
+        let expression = &expr_ctx.expressions()[expr];
         let runtime_path = &self.config.runtime_path;
 
         match *expression {
-            Expression::Literal(_)
-            | Expression::Constant(_)
-            | Expression::ZeroValue(_)
-            | Expression::Compose { .. }
-            | Expression::Splat { .. } => {
-                self.write_possibly_const_expression(
-                    out,
-                    module,
-                    info,
-                    expr,
-                    func_ctx.expressions,
-                    |out, expr| self.write_expr(out, module, info, expr, func_ctx),
-                    |expr| func_ctx.resolve_type(expr, &module.types),
-                )?;
+            Expression::Literal(literal) => match literal {
+                naga::Literal::F32(value) => write!(out, "{value}f32")?,
+                naga::Literal::U32(value) => write!(out, "{value}u32")?,
+                naga::Literal::I32(value) => {
+                    write!(out, "{value}i32")?;
+                }
+                naga::Literal::Bool(value) => write!(out, "{value}")?,
+                naga::Literal::F64(value) => write!(out, "{value}f64")?,
+                naga::Literal::I64(value) => {
+                    write!(out, "{value}i64")?;
+                }
+                naga::Literal::U64(value) => write!(out, "{value}u64")?,
+                naga::Literal::AbstractInt(_) | naga::Literal::AbstractFloat(_) => {
+                    unreachable!("abstract types should not appear in IR presented to backends");
+                }
+            },
+            Expression::Constant(handle) => {
+                let constant = &module.constants[handle];
+                if constant.name.is_some() {
+                    write!(out, "{}", self.names[&NameKey::Constant(handle)])?;
+                } else {
+                    self.write_expr(out, module, constant.init, expr_ctx)?;
+                }
+            }
+            Expression::ZeroValue(ty) => {
+                write!(out, "{runtime_path}::zero::<")?;
+                self.write_type(out, module, ty)?;
+                write!(out, ">()")?;
+            }
+            Expression::Compose { ty, ref components } => {
+                self.write_constructor_expression(out, module, ty, components, expr_ctx)?;
+            }
+            Expression::Splat { size, value } => {
+                let size = conv::vector_size_str(size);
+                // TODO: emit explicit element type if explicit types requested
+                write!(out, "{runtime_path}::Vec{size}::splat(")?;
+                self.write_expr(out, module, value, expr_ctx)?;
+                write!(out, ")")?;
             }
             Expression::Override(_) => unreachable!(),
             Expression::FunctionArgument(pos) => {
-                let name_key = func_ctx.argument_key(pos);
+                let name_key = expr_ctx.expect_func_ctx().argument_key(pos);
                 let name = &self.names[&name_key];
                 write!(out, "{name}")?;
             }
             Expression::Binary { op, left, right } => {
                 let inputs_are_scalar = matches!(
-                    *func_ctx.resolve_type(left, &module.types),
+                    *expr_ctx.resolve_type(left, &module.types),
                     TypeInner::Scalar(_)
                 ) && matches!(
-                    *func_ctx.resolve_type(right, &module.types),
+                    *expr_ctx.resolve_type(right, &module.types),
                     TypeInner::Scalar(_)
                 );
                 match (inputs_are_scalar, BinOpClassified::from(op)) {
                     (true, BinOpClassified::ScalarBool(_))
                     | (_, BinOpClassified::Vectorizable(_)) => {
                         write!(out, "(")?;
-                        self.write_expr(out, module, info, left, func_ctx)?;
+                        self.write_expr(out, module, left, expr_ctx)?;
                         // TODO: Review whether any Rust operator semantics are incorrect
                         //  for shader code — if so, stop using `binary_operation_str`.
                         write!(out, " {} ", back::binary_operation_str(op))?;
-                        self.write_expr(out, module, info, right, func_ctx)?;
+                        self.write_expr(out, module, right, expr_ctx)?;
                         write!(out, ")")?;
                     }
                     (_, BinOpClassified::ScalarBool(bop)) => {
-                        self.write_expr(out, module, info, left, func_ctx)?;
+                        self.write_expr(out, module, left, expr_ctx)?;
                         write!(out, ".{}(", bop.to_vector_method())?;
-                        self.write_expr(out, module, info, right, func_ctx)?;
+                        self.write_expr(out, module, right, expr_ctx)?;
                         write!(out, ")")?;
                     }
                 }
             }
             Expression::Access { base, index } => {
-                self.write_expr_with_indirection(out, module, info, base, func_ctx, indirection)?;
+                self.write_expr_with_indirection(out, module, base, expr_ctx, indirection)?;
                 write!(out, "[")?;
-                self.write_expr(out, module, info, index, func_ctx)?;
+                self.write_expr(out, module, index, expr_ctx)?;
                 write!(out, " as usize]")?
             }
             Expression::AccessIndex { base, index } => {
-                let base_ty_res = &func_ctx.info[base].ty;
+                let base_ty_res = &expr_ctx.expect_func_ctx().info[base].ty;
                 let mut resolved = base_ty_res.inner_with(&module.types);
 
-                self.write_expr_with_indirection(out, module, info, base, func_ctx, indirection)?;
+                self.write_expr_with_indirection(out, module, base, expr_ctx, indirection)?;
 
                 let base_ty_handle = match *resolved {
                     TypeInner::Pointer { base, space: _ } => {
@@ -1143,9 +1147,9 @@ impl Writer {
             } => {
                 use naga::TypeInner as Ti;
 
-                let input_type = func_ctx.resolve_type(expr, &module.types);
+                let input_type = expr_ctx.resolve_type(expr, &module.types);
 
-                self.write_expr(out, module, info, expr, func_ctx)?;
+                self.write_expr(out, module, expr, expr_ctx)?;
                 match (input_type, to_kind, to_width) {
                     (&Ti::Vector { size: _, scalar: _ }, to_kind, Some(to_width)) => {
                         // Call a glam vector cast method
@@ -1183,17 +1187,18 @@ impl Writer {
                 self.write_expr_with_indirection(
                     out,
                     module,
-                    info,
                     pointer,
-                    func_ctx,
+                    expr_ctx,
                     Indirection::Place,
                 )?;
             }
-            Expression::LocalVariable(handle) => {
-                write!(out, "{}", self.names[&func_ctx.name_key(handle)])?
-            }
+            Expression::LocalVariable(handle) => write!(
+                out,
+                "{}",
+                self.names[&expr_ctx.expect_func_ctx().name_key(handle)]
+            )?,
             Expression::ArrayLength(expr) => {
-                self.write_expr(out, module, info, expr, func_ctx)?;
+                self.write_expr(out, module, expr, expr_ctx)?;
                 write!(out, ".len()")?;
             }
 
@@ -1204,14 +1209,14 @@ impl Writer {
                 arg2,
                 arg3,
             } => {
-                self.write_expr(out, module, info, arg, func_ctx)?;
+                self.write_expr(out, module, arg, expr_ctx)?;
                 write!(
                     out,
                     ".{method}(",
                     method = conv::math_function_to_method(fun)
                 )?;
                 for arg in [arg1, arg2, arg3].into_iter().flatten() {
-                    self.write_expr(out, module, info, arg, func_ctx)?;
+                    self.write_expr(out, module, arg, expr_ctx)?;
                     write!(out, ", ")?;
                 }
                 write!(out, ")")?
@@ -1222,7 +1227,7 @@ impl Writer {
                 vector,
                 pattern,
             } => {
-                self.write_expr(out, module, info, vector, func_ctx)?;
+                self.write_expr(out, module, vector, expr_ctx)?;
                 write!(out, ".")?;
                 for &sc in pattern[..size as usize].iter() {
                     out.write_char(back::COMPONENTS[sc as usize])?;
@@ -1240,7 +1245,7 @@ impl Writer {
                 // produce an unambiguous expression, so we have to wrap our expression,
                 // and we don't need to wrap our own call to `write_expr`.
                 write!(out, "({unary}")?;
-                self.write_expr(out, module, info, expr, func_ctx)?;
+                self.write_expr(out, module, expr, expr_ctx)?;
 
                 write!(out, ")")?
             }
@@ -1250,7 +1255,7 @@ impl Writer {
                 accept,
                 reject,
             } => {
-                let suffix = match *func_ctx.resolve_type(condition, &module.types) {
+                let suffix = match *expr_ctx.resolve_type(condition, &module.types) {
                     TypeInner::Scalar(Scalar::BOOL) => "",
                     TypeInner::Vector {
                         size,
@@ -1259,11 +1264,11 @@ impl Writer {
                     _ => unreachable!("validation should have rejected this"),
                 };
                 write!(out, "{runtime_path}::select{suffix}(")?;
-                self.write_expr(out, module, info, reject, func_ctx)?;
+                self.write_expr(out, module, reject, expr_ctx)?;
                 write!(out, ", ")?;
-                self.write_expr(out, module, info, accept, func_ctx)?;
+                self.write_expr(out, module, accept, expr_ctx)?;
                 write!(out, ", ")?;
-                self.write_expr(out, module, info, condition, func_ctx)?;
+                self.write_expr(out, module, condition, expr_ctx)?;
                 write!(out, ")")?
             }
             Expression::Derivative { .. } => {
@@ -1282,7 +1287,7 @@ impl Writer {
                 //     (Axis::Width, Ctrl::None) => "fwidth",
                 // };
                 // write!(out, "{runtime_path}::{op}(")?;
-                // self.write_expr(out, module, info, expr, func_ctx)?;
+                // self.write_expr(out, module, expr, expr_ctx)?;
                 // write!(out, ")")?
             }
             Expression::Relational { fun, argument } => {
@@ -1295,7 +1300,7 @@ impl Writer {
                     Rf::IsInf => "is_inf",
                 };
                 write!(out, "{runtime_path}::{fun_name}(")?;
-                self.write_expr(out, module, info, argument, func_ctx)?;
+                self.write_expr(out, module, argument, expr_ctx)?;
                 write!(out, ")")?
             }
             // Not supported yet
