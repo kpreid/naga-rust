@@ -874,93 +874,6 @@ impl Writer {
         Ok(())
     }
 
-    /// Examine the type to write an appropriate constructor or literal expression for it.
-    ///
-    /// We do not delegate to a library trait for this because the construction
-    /// must be const-compatible.
-    fn write_constructor_expression(
-        &self,
-        out: &mut dyn Write,
-        module: &Module,
-        ty: Handle<naga::Type>,
-        components: &[Handle<Expression>],
-        expr_ctx: &ExpressionCtx<'_>,
-    ) -> BackendResult {
-        use naga::VectorSize::{Bi, Quad, Tri};
-
-        let ctor_name = match module.types[ty].inner {
-            TypeInner::Vector { size, scalar: _ } => {
-                // Vectors may be constructed by a collection of scalars and vectors which in
-                // total have the required component count.
-
-                let arg_sizes: ArrayVec<u8, 4> = components
-                    .iter()
-                    .map(|&component_expr| match *expr_ctx.resolve_type(component_expr, &module.types) {
-                        TypeInner::Scalar(_) => 1,
-                        TypeInner::Vector { size, .. } => size as u8,
-                        ref t => unreachable!(
-                            "vector constructor argument should be a scalar or vector, not {t:?}"
-                        ),
-                    })
-                    .collect();
-
-                match (size, &*arg_sizes) {
-                    (Bi, [1, 1]) => "new",
-                    (Bi, [2]) => "from",
-                    (Tri, [1, 1, 1]) => "new",
-                    (Tri, [1, 2]) => "new_12",
-                    (Tri, [2, 1]) => "new_21",
-                    (Quad, [1, 1, 1, 1]) => "new",
-                    (Quad, [1, 1, 2]) => "new_112",
-                    (Quad, [1, 2, 1]) => "new_121",
-                    (Quad, [2, 1, 1]) => "new_211",
-                    (Quad, [2, 2]) => "new_22",
-                    (Quad, [1, 3]) => "new_13",
-                    (Quad, [3, 1]) => "new_31",
-                    (Quad, [4]) => "from",
-                    _ => unreachable!("vector constructor given too many components {arg_sizes:?}"),
-                }
-            }
-
-            TypeInner::Array {
-                base: _,
-                size,
-                stride: _,
-            } => {
-                assert!(matches!(size, naga::ArraySize::Constant(_)));
-
-                // Write array syntax instead of a function call.
-                write!(out, "[")?;
-                for (index, component) in components.iter().enumerate() {
-                    if index > 0 {
-                        write!(out, ", ")?;
-                    }
-                    self.write_expr(out, module, *component, expr_ctx)?;
-                }
-                write!(out, "]")?;
-
-                return Ok(());
-            }
-
-            // Fallback: Assume that a suitable `T::new()` associated function
-            // exists.
-            _ => "new",
-        };
-
-        write!(out, "<")?;
-        self.write_type(out, module, ty)?;
-        write!(out, ">::{ctor_name}(")?;
-        for (index, component) in components.iter().enumerate() {
-            if index > 0 {
-                write!(out, ", ")?;
-            }
-            self.write_expr(out, module, *component, expr_ctx)?;
-        }
-        write!(out, ")")?;
-
-        Ok(())
-    }
-
     /// Write the 'plain form' of `expr`.
     ///
     /// An expression's 'plain form' is the shortest rendition of that
@@ -1294,6 +1207,93 @@ impl Writer {
             | Expression::SubgroupOperationResult { .. }
             | Expression::WorkGroupUniformLoadResult { .. } => {}
         }
+
+        Ok(())
+    }
+
+    /// Examine the type to write an appropriate constructor or literal expression for it.
+    ///
+    /// We do not delegate to a library trait for this because the construction
+    /// must be const-compatible.
+    fn write_constructor_expression(
+        &self,
+        out: &mut dyn Write,
+        module: &Module,
+        ty: Handle<naga::Type>,
+        components: &[Handle<Expression>],
+        expr_ctx: &ExpressionCtx<'_>,
+    ) -> BackendResult {
+        use naga::VectorSize::{Bi, Quad, Tri};
+
+        let ctor_name = match module.types[ty].inner {
+            TypeInner::Vector { size, scalar: _ } => {
+                // Vectors may be constructed by a collection of scalars and vectors which in
+                // total have the required component count.
+
+                let arg_sizes: ArrayVec<u8, 4> = components
+                    .iter()
+                    .map(|&component_expr| match *expr_ctx.resolve_type(component_expr, &module.types) {
+                        TypeInner::Scalar(_) => 1,
+                        TypeInner::Vector { size, .. } => size as u8,
+                        ref t => unreachable!(
+                            "vector constructor argument should be a scalar or vector, not {t:?}"
+                        ),
+                    })
+                    .collect();
+
+                match (size, &*arg_sizes) {
+                    (Bi, [1, 1]) => "new",
+                    (Bi, [2]) => "from",
+                    (Tri, [1, 1, 1]) => "new",
+                    (Tri, [1, 2]) => "new_12",
+                    (Tri, [2, 1]) => "new_21",
+                    (Quad, [1, 1, 1, 1]) => "new",
+                    (Quad, [1, 1, 2]) => "new_112",
+                    (Quad, [1, 2, 1]) => "new_121",
+                    (Quad, [2, 1, 1]) => "new_211",
+                    (Quad, [2, 2]) => "new_22",
+                    (Quad, [1, 3]) => "new_13",
+                    (Quad, [3, 1]) => "new_31",
+                    (Quad, [4]) => "from",
+                    _ => unreachable!("vector constructor given too many components {arg_sizes:?}"),
+                }
+            }
+
+            TypeInner::Array {
+                base: _,
+                size,
+                stride: _,
+            } => {
+                assert!(matches!(size, naga::ArraySize::Constant(_)));
+
+                // Write array syntax instead of a function call.
+                write!(out, "[")?;
+                for (index, component) in components.iter().enumerate() {
+                    if index > 0 {
+                        write!(out, ", ")?;
+                    }
+                    self.write_expr(out, module, *component, expr_ctx)?;
+                }
+                write!(out, "]")?;
+
+                return Ok(());
+            }
+
+            // Fallback: Assume that a suitable `T::new()` associated function
+            // exists.
+            _ => "new",
+        };
+
+        write!(out, "<")?;
+        self.write_type(out, module, ty)?;
+        write!(out, ">::{ctor_name}(")?;
+        for (index, component) in components.iter().enumerate() {
+            if index > 0 {
+                write!(out, ", ")?;
+            }
+            self.write_expr(out, module, *component, expr_ctx)?;
+        }
+        write!(out, ")")?;
 
         Ok(())
     }
