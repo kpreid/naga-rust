@@ -6,7 +6,7 @@
 //! that the two parts of your code can agree on definitions.
 //!
 //! If you need additional control over the translation or to use a different source language,
-//! use the `naga_rust_back` library directly instead.
+//! use the [`naga_rust_back`] library directly instead.
 //!
 //! # Example
 //!
@@ -25,6 +25,8 @@
 //! Expect compilation failures and to have to tweak your code to fit.
 //! Broadly, simple mathematical functions will work, and bindings, textures, atomics,
 //! derivatives, and workgroup operations will not.
+//!
+//! [`naga_rust_back`]: https://docs.rs/naga-rust-back
 #![no_std]
 
 /// Takes the pathname of a WGSL source file, as a string literal, and embeds its Rust translation.

@@ -1,7 +1,9 @@
 Macro support for `naga-rust-embed`
 ===================================
 
-This package for use by `naga-rust-embed` and is not intended to be usable directly.
+This package for use by [`naga-rust-embed`] and is not intended to be usable directly.
+
+[`naga-rust-embed`]: https://crates.io/crates/naga-rust-embed
 
 License
 -------

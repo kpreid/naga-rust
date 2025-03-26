@@ -1,15 +1,17 @@
 //! [`naga`] backend allowing you to translate shader code in any language supported by Naga
 //! to Rust code.
 //!
-//! The generated code requires the `naga-rust-rt` library.
-//! Alternatively, you can use `naga-rust-embed`, which combines this library with `naga-rust-rt`
-//! and provides convenient macros for embedding translated WGSL in your Rust code.
-// TODO: ^ add crates.io/docs.rs links here once published
+//! The generated code requires the [`naga_rust_rt`] library.
+//! Alternatively, you can use [`naga_rust_embed`], which combines this library with
+//! [`naga_rust_rt`] and provides convenient macros for embedding translated WGSL in your Rust code.
 //!
 //! This library is in an early stage of development and many features do not work yet;
 //! this may be indicated by returned errors or by the generated code failing to compile.
 //! Broadly, simple mathematical functions will work, and bindings, textures, atomics,
 //! derivatives, and workgroup operations will not.
+//!
+//! [`naga_rust_rt`]: https://docs.rs/naga-rust-rt
+//! [`naga_rust_embed`]: https://docs.rs/naga-rust-embed
 
 #![no_std]
 

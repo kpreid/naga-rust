@@ -9,7 +9,7 @@ of the library is to allow you to share simple functions between CPU and GPU cod
 that the two parts of your code can agree on definitions.
 
 If you need additional control over the translation or to use a different source language,
-use the `naga_rust_back` library directly instead.
+use the [`naga-rust-back`] library directly instead.
 
 This library is in an early stage of development and many features do not work yet.
 Expect compilation failures and to have to tweak your code to fit.
@@ -17,6 +17,7 @@ Broadly, simple mathematical functions will work, and bindings, textures, atomic
 derivatives, and workgroup operations will not.
 
 [`naga`]: https://crates.io/crates/naga
+[`naga-rust-back`]: https://crates.io/crates/naga-rust-back
 
 License
 -------

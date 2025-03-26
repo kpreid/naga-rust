@@ -1,6 +1,7 @@
-//! This is a proc-macro helper library. Don't use this library directly; use `naga-rust-embed`
+//! This is a proc-macro helper library. Don't use this library directly; use [`naga_rust_embed`]
 //! instead.
-// TODO: add docs.rs link when published
+//!
+//! [`naga_rust_embed`]: https://docs.rs/naga-rust-embed
 
 #![allow(missing_docs, reason = "not intended to be used directly")]
 
