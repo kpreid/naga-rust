@@ -27,9 +27,7 @@ use num_traits::float::Float as _;
 /// TODO: This isn't actually used yet.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub struct Scalar<T> {
-    pub x: T,
-}
+pub struct Scalar<T>(pub T);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(C)]
@@ -56,16 +54,16 @@ pub struct Vec4<T> {
 }
 
 // -------------------------------------------------------------------------------------------------
-// Most teneral helper macros
+// Most general helper macros
 
 macro_rules! delegate_unary_method_elementwise {
-    (const $name:ident ($($component:ident)*)) => {
+    (const $name:ident ($($component:tt)*)) => {
         #[inline]
         pub const fn $name(self) -> Self {
             Self { $( $component: self.$component.$name() ),* }
         }
     };
-    ($name:ident ($($component:ident)*)) => {
+    ($name:ident ($($component:tt)*)) => {
         #[inline]
         pub fn $name(self) -> Self {
             Self { $( $component: self.$component.$name() ),* }
@@ -83,13 +81,13 @@ macro_rules! delegate_unary_methods_elementwise {
 }
 
 macro_rules! delegate_binary_method_elementwise {
-    (const $name:ident ($($component:ident)*)) => {
+    (const $name:ident ($($component:tt)*)) => {
         #[inline]
         pub const fn $name(self, rhs: Self) -> Self {
             Self { $( $component: self.$component.$name(rhs.$component) ),* }
         }
     };
-    ($name:ident ($($component:ident)*)) => {
+    ($name:ident ($($component:tt)*)) => {
         #[inline]
         pub fn $name(self, rhs: Self) -> Self {
             Self { $( $component: self.$component.$name(rhs.$component) ),* }
@@ -112,8 +110,7 @@ macro_rules! delegate_binary_methods_elementwise {
 /// Generate arithmetic operators and functions for cases where the element type is a
 /// Rust primitive *integer*. (In these cases we must ask for wrapping operations.)
 macro_rules! impl_vector_integer_arithmetic {
-    ($vec:ident, $int:ty, $( $component:ident )*) => {
-        // Vector-vector operations
+    ($vec:ident, $int:ty, $( $component:tt )*) => {
         impl ops::Add for $vec<$int> {
             type Output = Self;
             #[inline]
@@ -208,7 +205,7 @@ macro_rules! impl_vector_integer_arithmetic {
 /// Generate arithmetic operators and functions for cases where the element type is a
 /// Rust primitive *float*.
 macro_rules! impl_vector_float_arithmetic {
-    ($vec:ident, $float:ty, $( $component:ident )*) => {
+    ($vec:ident, $float:ty, $( $component:tt )*) => {
         // Vector-vector operations
         impl ops::Add for $vec<$float> {
             type Output = Self;
@@ -359,7 +356,7 @@ macro_rules! impl_vector_float_arithmetic {
 }
 
 macro_rules! impl_vector_bitwise {
-    ($vec:ident, $int:ty, $( $component:ident )*) => {
+    ($vec:ident, $int:ty, $( $component:tt )*) => {
         impl ops::BitAnd for $vec<$int> {
             type Output = Self;
             fn bitand(self, rhs: Self) -> Self::Output {
@@ -408,17 +405,19 @@ macro_rules! impl_element_casts {
 }
 
 macro_rules! impl_vector_regular_fns {
-    ( $ty:ident $component_count:literal : $( $component:ident )* ) => {
+    ( $ty:ident $component_count:literal : $( $component:tt )* ) => {
         impl<T> $ty<T> {
-            pub const fn new($( $component: T, )*) -> Self {
-                Self { $( $component, )* }
-            }
-
             pub fn splat(value: T) -> Self
             where
                 T: Copy
             {
                 Self { $( $component: value, )* }
+            }
+            pub fn splat_from_scalar(value: Scalar<T>) -> Self
+            where
+                T: Copy
+            {
+                Self { $( $component: value.0, )* }
             }
 
             /// Replaces the elements of `self` with the elements of `trues` wherever
@@ -531,12 +530,6 @@ macro_rules! impl_vector_regular_fns {
         }
 
         // Conversion in and out
-        impl<T> From<[T; $component_count]> for $ty<T> {
-            fn from(value: [T; $component_count]) -> Self {
-                let [$( $component ),*] = value;
-                Self::new($( $component ),*)
-            }
-        }
         impl<T> From<$ty<T>> for [T; $component_count] {
             fn from(value: $ty<T>) -> Self {
                 [$( value.$component ),*]
@@ -554,17 +547,88 @@ macro_rules! impl_vector_regular_fns {
     }
 }
 
-impl_vector_regular_fns!(Scalar 1 : x);
+impl_vector_regular_fns!(Scalar 1 : 0);
 impl_vector_regular_fns!(Vec2 2 : x y);
 impl_vector_regular_fns!(Vec3 3 : x y z);
 impl_vector_regular_fns!(Vec4 4 : x y z w);
+
+// -------------------------------------------------------------------------------------------------
+// Impls that differ between `Vec*` and `Scalar`
+
+/// Applied to every `Vec` type but not `Scalar`
+macro_rules! impl_vector_not_scalar_fns {
+    ( $ty:ident $component_count:literal : $( $component:tt )* ) => {
+        impl<T> $ty<T> {
+            // User-friendly constructor, not used by translated code.
+            pub const fn new($( $component: T, )*) -> Self {
+                Self { $( $component, )* }
+            }
+
+            pub const fn from_scalars($( $component: Scalar<T>, )*) -> Self
+            where
+                T: Copy
+            {
+                Self { $( $component: $component.0, )* }
+            }
+        }
+
+        impl<T> From<[T; $component_count]> for $ty<T> {
+            fn from(value: [T; $component_count]) -> Self {
+                let [$( $component ),*] = value;
+                Self::new($( $component ),*)
+            }
+        }
+
+        // Commutative scalar-vector operators are derived from vector-scalar operators
+        impl<T> ops::Add<$ty<T>> for Scalar<T>
+        where
+            $ty<T>: ops::Add<Scalar<T>>
+        {
+            type Output = <$ty<T> as ops::Add<Scalar<T>>>::Output;
+            fn add(self, rhs: $ty<T>) -> Self::Output {
+                rhs + self
+            }
+        }
+        impl<T> ops::Mul<$ty<T>> for Scalar<T>
+        where
+            $ty<T>: ops::Mul<Scalar<T>>
+        {
+            type Output = <$ty<T> as ops::Mul<Scalar<T>>>::Output;
+            fn mul(self, rhs: $ty<T>) -> Self::Output {
+                rhs * self
+            }
+        }
+
+    }
+}
+
+impl_vector_not_scalar_fns!(Vec2 2 : x y);
+impl_vector_not_scalar_fns!(Vec3 3 : x y z);
+impl_vector_not_scalar_fns!(Vec4 4 : x y z w);
+
+impl<T> Scalar<T> {
+    pub fn new(value: T) -> Self {
+        Self(value)
+    }
+}
+impl<T> From<[T; 1]> for Scalar<T> {
+    fn from([value]: [T; 1]) -> Self {
+        Self(value)
+    }
+}
 
 // -------------------------------------------------------------------------------------------------
 // Irregular functions and impls
 
 impl<T> From<T> for Scalar<T> {
     fn from(value: T) -> Self {
-        Self::new(value)
+        Self(value)
+    }
+}
+
+impl<T: Default> Default for Scalar<T> {
+    fn default() -> Self {
+        Self(Default::default())
     }
 }
 
