@@ -1395,10 +1395,10 @@ impl Writer {
             TypeInner::Struct { .. } => {
                 unreachable!("should only see a struct by name");
             }
-            TypeInner::AccelerationStructure { .. } => {
+            TypeInner::AccelerationStructure => {
                 return Err(Error::Unimplemented("type AccelerationStructure".into()));
             }
-            TypeInner::RayQuery { .. } => {
+            TypeInner::RayQuery => {
                 return Err(Error::Unimplemented("type RayQuery".into()));
             }
         }
