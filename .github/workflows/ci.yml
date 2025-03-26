@@ -68,6 +68,7 @@ jobs:
 
     env:
       RUSTFLAGS: '-Dwarnings'
+      RUSTDOCFLAGS: '-Dbroken_intra_doc_links'
 
     steps:
     - uses: actions/checkout@v4
@@ -86,9 +87,13 @@ jobs:
       run: |
         cargo clippy --all-features --timings
 
-    - name: Document
+    - name: Document (default features)
       run: |
-        cargo rustdoc --all-features -- -Drustdoc::broken_intra_doc_links
+        cargo doc
+  
+    - name: Document (all features)
+      run: |
+        cargo doc --all-features
   
     - name: Save cargo --timings output
       if: ${{ always() }}
