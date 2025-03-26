@@ -661,7 +661,7 @@ impl<T: Copy> Vec4<T> {
 macro_rules! swizzle_fn {
     ($name:ident $output:ident ($($cin:ident)*) ) => {
         /// Takes the
-        #[doc = stringify!($(self.$cin )*)]
+        #[doc = stringify!($($cin),*)]
         /// elements of `self` and returns them in that order.
         pub fn $name(self) -> $output<T> {
             $output::new($(self.$cin,)*)
