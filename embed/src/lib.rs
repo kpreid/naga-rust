@@ -8,6 +8,11 @@
 //! If you need additional control over the translation or to use a different source language,
 //! use the [`naga_rust_back`] library directly instead.
 //!
+//! This library is in an early stage of development and many features do not work yet.
+//! Expect compilation failures and to have to tweak your code to fit.
+//! Broadly, simple mathematical functions will work, and bindings, textures, atomics,
+//! derivatives, and workgroup operations will not.
+//!
 //! # Example
 //!
 // TODO: Make this example more obviously an example of WGSL and not Rust.
@@ -20,11 +25,6 @@
 //!
 //! assert_eq!(add_one(10), 11);
 //! ```
-//!
-//! This library is in an early stage of development and many features do not work yet.
-//! Expect compilation failures and to have to tweak your code to fit.
-//! Broadly, simple mathematical functions will work, and bindings, textures, atomics,
-//! derivatives, and workgroup operations will not.
 //!
 //! [`naga_rust_back`]: https://docs.rs/naga-rust-back
 #![no_std]
