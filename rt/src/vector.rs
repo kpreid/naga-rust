@@ -113,6 +113,7 @@ macro_rules! impl_vector_integer_arithmetic {
     ($vec:ident, $int:ty, $( $component:tt )*) => {
         impl ops::Add for $vec<$int> {
             type Output = Self;
+            /// Wrapping addition.
             #[inline]
             fn add(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_add(rhs.$component), )* }
@@ -120,6 +121,7 @@ macro_rules! impl_vector_integer_arithmetic {
         }
         impl ops::Sub for $vec<$int> {
             type Output = Self;
+            /// Wrapping subtraction.
             #[inline]
             fn sub(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_sub(rhs.$component), )* }
@@ -127,6 +129,7 @@ macro_rules! impl_vector_integer_arithmetic {
         }
         impl ops::Mul for $vec<$int> {
             type Output = Self;
+            /// Wrapping multiplication.
             #[inline]
             fn mul(self, rhs: Self) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_mul(rhs.$component), )* }
@@ -134,6 +137,8 @@ macro_rules! impl_vector_integer_arithmetic {
         }
         impl ops::Div for $vec<$int> {
             type Output = Self;
+            /// On division by zero or overflow, returns the component of `self`,
+            /// per [WGSL](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#arithmetic-expr).
             #[inline]
             fn div(self, rhs: Self) -> Self::Output {
                 // wrapping_div() panics on division by zero, which is not what we need
@@ -155,6 +160,7 @@ macro_rules! impl_vector_integer_arithmetic {
         // Vector-scalar operations
         impl ops::Add<$int> for $vec<$int> {
             type Output = Self;
+            /// Wrapping addition.
             #[inline]
             fn add(self, rhs: $int) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_add(rhs), )* }
@@ -162,6 +168,7 @@ macro_rules! impl_vector_integer_arithmetic {
         }
         impl ops::Sub<$int> for $vec<$int> {
             type Output = Self;
+            /// Wrapping subtraction.
             #[inline]
             fn sub(self, rhs: $int) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_sub(rhs), )* }
@@ -169,6 +176,7 @@ macro_rules! impl_vector_integer_arithmetic {
         }
         impl ops::Mul<$int> for $vec<$int> {
             type Output = Self;
+            /// Wrapping multiplication.
             #[inline]
             fn mul(self, rhs: $int) -> Self::Output {
                 $vec { $( $component: self.$component.wrapping_mul(rhs), )* }
@@ -177,6 +185,8 @@ macro_rules! impl_vector_integer_arithmetic {
         impl ops::Div<$int> for $vec<$int> {
             type Output = Self;
             #[inline]
+            /// On division by zero or overflow, returns `self`,
+            /// per [WGSL](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#arithmetic-expr).
             fn div(self, rhs: $int) -> Self::Output {
                 // wrapping_div() panics on division by zero, which is not what we need
                 $vec { $(
@@ -282,49 +292,60 @@ macro_rules! impl_vector_float_arithmetic {
 
         // Float math functions (mostly elementwise, but not exclusively)
         impl $vec<$float> {
+            /// As per WGSL [`clamp()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#clamp).
             #[inline]
             pub const fn clamp(self, low: Self, high: Self) -> Self {
                 // TODO: std clamp() panics if low > high, which isn’t conformant
                 // (but maybe a better debugging tool? )
                 $vec { $( $component: self.$component.clamp(low.$component, high.$component) ),*  }
             }
+            /// As per WGSL [`distance()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#distance-builtin).
             #[inline]
             pub fn distance(self, rhs: Self) -> $float {
                 (self - rhs).length()
             }
+            /// As per WGSL [`dot()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#dot-builtin).
             #[inline]
             pub const fn dot(self, rhs: Self) -> $float {
                 $( self.$component * rhs.$component + )* 0.0
             }
+            /// As per WGSL [`faceForward()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#faceForward-builtin).
             #[inline]
             pub fn face_forward(self, e2: Self, e3: Self) -> Self {
                 // note this is Rust's definition of signum
                 self * -e2.dot(e3).signum()
             }
+            /// As per WGSL [`length()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#length-builtin).
             #[inline]
             pub fn length(self) -> $float {
                 self.dot(self).sqrt()
             }
+            /// As per WGSL [`mix()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#mix-builtin).
             #[inline]
             pub const fn mix(self, rhs: Self, blend: $float) -> Self {
                 $vec { $( $component: self.$component * (1.0 - blend) + rhs.$component * blend ),*  }
             }
+            /// As per WGSL [`fma()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#fma-builtin).
             #[inline]
             pub fn mul_add(self, b: Self, c: Self) -> Self {
                 $vec { $( $component: self.$component.mul_add(b.$component, c.$component) ),*  }
             }
+            /// As per WGSL [`normalize()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#normalize-builtin).
             #[inline]
             pub fn normalize(self) -> Self {
                 self * self.length().recip()
             }
+            /// As per WGSL [`reflect()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#reflect-builtin).
             #[inline]
             pub fn reflect(self, rhs: Self) -> Self {
                 self - rhs * (2.0 * rhs.dot(self))
             }
+            /// As per WGSL [`saturate()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#saturate-float-builtin).
             #[inline]
             pub const fn saturate(self) -> Self {
                 $vec { $( $component: self.$component.clamp(0.0, 1.0) ),* }
             }
+            /// As per WGSL [`sign()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#sign-builtin).
             #[inline]
             pub const fn sign(self) -> Self {
                 $vec { $(
