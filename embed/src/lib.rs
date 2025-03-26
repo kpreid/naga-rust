@@ -20,7 +20,11 @@
 //!
 //! assert_eq!(add_one(10), 11);
 //! ```
-
+//!
+//! This library is in an early stage of development and many features do not work yet.
+//! Expect compilation failures and to have to tweak your code to fit.
+//! Broadly, simple mathematical functions will work, and bindings, textures, atomics,
+//! derivatives, and workgroup operations will not.
 #![no_std]
 
 /// Takes the pathname of a WGSL source file, as a string literal, and embeds its Rust translation.

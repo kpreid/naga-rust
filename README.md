@@ -20,6 +20,16 @@ Packages in the workspace
 * `naga-rust-embed` provides macros for translating WGSL and embedding the Rust output
   in your Rust code.
 
+Development status
+------------------
+
+These libraries are in an early stage of development and many features do not work yet.
+Expect compilation failures, incorrect behaviors, and to have to tweak your code to fit,
+if you wish to use them.
+Broadly, simple mathematical functions will work, and bindings, textures, atomics,
+derivatives, and workgroup operations will not.
+
+
 License
 -------
 

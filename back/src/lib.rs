@@ -5,6 +5,11 @@
 //! Alternatively, you can use `naga-rust-embed`, which combines this library with `naga-rust-rt`
 //! and provides convenient macros for embedding translated WGSL in your Rust code.
 // TODO: ^ add crates.io/docs.rs links here once published
+//!
+//! This library is in an early stage of development and many features do not work yet;
+//! this may be indicated by returned errors or by the generated code failing to compile.
+//! Broadly, simple mathematical functions will work, and bindings, textures, atomics,
+//! derivatives, and workgroup operations will not.
 
 #![no_std]
 
