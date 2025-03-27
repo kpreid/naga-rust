@@ -8,6 +8,9 @@ use num_traits::ConstZero;
 #[cfg_attr(test, allow(unused_imports))]
 use num_traits::float::Float as _;
 
+// Used for argument conversion shim functions
+pub use core::convert::Into;
+
 // -------------------------------------------------------------------------------------------------
 // Vector type declarations.
 //

@@ -65,6 +65,12 @@ enum Indirection {
     Ordinary,
 }
 
+/// Reserved prefix for the functions that use types chosen for the convenience of
+/// execution of the shader rather than for convenient public API.
+const FN_INTERNAL_TYPES_PREFIX: &str = "v_";
+
+// -------------------------------------------------------------------------------------------------
+
 /// [`naga`] backend allowing you to translate shader code in any language supported by Naga
 /// to Rust code.
 ///
@@ -144,7 +150,14 @@ impl Writer {
             named_expressions,
         } = self;
         names.clear();
-        namer.reset(module, KEYWORDS_2024, &[], &[], &[], &mut self.names);
+        namer.reset(
+            module,
+            KEYWORDS_2024,
+            &[],
+            &[],
+            &[FN_INTERNAL_TYPES_PREFIX],
+            &mut self.names,
+        );
         if let Some(g) = &config.global_struct {
             // TODO: We actually want to say “treat this as reserved but do not rename it”,
             // but Namer doesn’t have that option
@@ -277,8 +290,9 @@ impl Writer {
         Ok(())
     }
 
-    /// # Notes
-    /// Ends in a newline
+    /// Writes a shader function as a pair of Rust functions.
+    /// The shader function may be an entry point or not.
+    /// Depending on the configuration it may be written as a method or a free function.
     fn write_function(
         &mut self,
         out: &mut dyn Write,
@@ -286,15 +300,42 @@ impl Writer {
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
     ) -> BackendResult {
-        self.write_attributes(out, back::Level(0), &[Attribute::AllowFunctionBody])?;
+        self.write_function_inner(out, module, func, func_ctx, true)?;
+        self.write_function_inner(out, module, func, func_ctx, false)?;
+        Ok(())
+    }
+
+    fn write_function_inner(
+        &mut self,
+        out: &mut dyn Write,
+        module: &Module,
+        func: &naga::Function,
+        func_ctx: &back::FunctionCtx<'_>,
+        is_public_shim: bool,
+    ) -> BackendResult {
+        let runtime_path = &self.config.runtime_path;
+
+        if !is_public_shim {
+            // Don’t lint extra parentheses and such that we might emit.
+            self.write_attributes(out, back::Level(0), &[Attribute::AllowFunctionBody])?;
+        }
 
         // Write start of function item
         let func_name = match func_ctx.ty {
             back::FunctionType::EntryPoint(index) => &self.names[&NameKey::EntryPoint(index)],
             back::FunctionType::Function(handle) => &self.names[&NameKey::Function(handle)],
         };
-        let visibility = self.visibility();
-        write!(out, "{visibility}fn {func_name}(")?;
+        let name_prefix = if is_public_shim {
+            ""
+        } else {
+            FN_INTERNAL_TYPES_PREFIX
+        };
+        let visibility = if is_public_shim {
+            self.visibility()
+        } else {
+            "" // private
+        };
+        write!(out, "{visibility}fn {name_prefix}{func_name}(")?;
 
         if self.config.use_global_struct() {
             // TODO: need to figure out whether &mut is needed
@@ -306,18 +347,33 @@ impl Writer {
             );
         }
 
+        let use_into_for_arg = |arg: &naga::FunctionArgument| {
+            matches!(
+                module.types[arg.ty].inner,
+                TypeInner::Scalar { .. } | TypeInner::Vector { .. }
+            )
+        };
+
         // Write function arguments
         for (index, arg) in func.arguments.iter().enumerate() {
             // // Write argument attribute if a binding is present
             // if let Some(ref binding) = arg.binding {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
+
             // Write argument name
             let argument_name = &self.names[&func_ctx.argument_key(index.try_into().unwrap())];
-
             write!(out, "{argument_name}: ")?;
+
             // Write argument type
-            self.write_type(out, module, arg.ty)?;
+            if is_public_shim && use_into_for_arg(arg) {
+                // Allow vectors and scalars to be converted.
+                write!(out, "impl {runtime_path}::Into<")?;
+                self.write_type(out, module, arg.ty)?;
+                write!(out, ">")?;
+            } else {
+                self.write_type(out, module, arg.ty)?;
+            }
             if index < func.arguments.len() - 1 {
                 // Add a separator between args
                 write!(out, ", ")?;
@@ -338,49 +394,69 @@ impl Writer {
         write!(out, " {{")?;
         writeln!(out)?;
 
-        // Write function local variables
-        for (handle, local) in func.local_variables.iter() {
-            // Write indentation (only for readability)
+        if is_public_shim {
+            // Write function call to the inner, internally-typed function.
             write!(out, "{INDENT}")?;
+            if self.config.use_global_struct() {
+                write!(out, "self.")?;
+            }
+            write!(out, "{FN_INTERNAL_TYPES_PREFIX}{func_name}(")?;
+            for (index, arg) in func.arguments.iter().enumerate() {
+                let argument_name = &self.names[&func_ctx.argument_key(index.try_into().unwrap())];
+                write!(out, "{argument_name}")?;
+                if use_into_for_arg(arg) {
+                    write!(out, ".into()")?;
+                }
+                if index < func.arguments.len() - 1 {
+                    // Add a separator between args
+                    write!(out, ", ")?;
+                }
+            }
+            writeln!(out, ")")?;
+        } else {
+            // Write function local variables
+            for (handle, local) in func.local_variables.iter() {
+                // Write indentation (only for readability)
+                write!(out, "{INDENT}")?;
 
-            // Write the local name
-            // The leading space is important
-            write!(out, "let mut {}: ", self.names[&func_ctx.name_key(handle)])?;
+                // Write the local name
+                // The leading space is important
+                write!(out, "let mut {}: ", self.names[&func_ctx.name_key(handle)])?;
 
-            // Write the local type
-            self.write_type(out, module, local.ty)?;
+                // Write the local type
+                self.write_type(out, module, local.ty)?;
 
-            // Write the local initializer if needed
-            if let Some(init) = local.init {
-                write!(out, " = ")?;
-                self.write_expr(
-                    out,
-                    module,
-                    init,
-                    &ExpressionCtx::Function {
-                        func_ctx,
-                        //module_info: info,
-                    },
-                )?;
+                // Write the local initializer if needed
+                if let Some(init) = local.init {
+                    write!(out, " = ")?;
+                    self.write_expr(
+                        out,
+                        module,
+                        init,
+                        &ExpressionCtx::Function {
+                            func_ctx,
+                            //module_info: info,
+                        },
+                    )?;
+                }
+
+                // Finish the local with `;` and add a newline (only for readability)
+                writeln!(out, ";")?;
             }
 
-            // Finish the local with `;` and add a newline (only for readability)
-            writeln!(out, ";")?;
-        }
+            if !func.local_variables.is_empty() {
+                writeln!(out)?;
+            }
 
-        if !func.local_variables.is_empty() {
-            writeln!(out)?;
-        }
+            // Write the function body (statement list)
+            for sta in func.body.iter() {
+                // The indentation should always be 1 when writing the function body
+                self.write_stmt(out, module, sta, func_ctx, back::Level(1))?;
+            }
 
-        // Write the function body (statement list)
-        for sta in func.body.iter() {
-            // The indentation should always be 1 when writing the function body
-            self.write_stmt(out, module, sta, func_ctx, back::Level(1))?;
+            self.named_expressions.clear();
         }
-
         writeln!(out, "}}")?;
-
-        self.named_expressions.clear();
 
         Ok(())
     }
@@ -600,7 +676,7 @@ impl Writer {
                 }
 
                 let func_name = &self.names[&NameKey::Function(function)];
-                write!(out, "{func_name}(")?;
+                write!(out, "{FN_INTERNAL_TYPES_PREFIX}{func_name}(")?;
                 for (index, &argument) in arguments.iter().enumerate() {
                     if index != 0 {
                         write!(out, ", ")?;

@@ -80,7 +80,7 @@ pub(crate) fn bool_vector_ops() {
     );
 
     for [a, b, c] in <[[bool; 4]; 3]>::exhaust() {
-        for (i, element) in <[bool; 4]>::from(bool_vector_func(a.into(), b.into(), c.into()))
+        for (i, element) in <[bool; 4]>::from(bool_vector_func(a, b, c))
             .into_iter()
             .enumerate()
         {
