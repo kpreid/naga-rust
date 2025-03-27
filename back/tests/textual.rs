@@ -71,8 +71,11 @@ fn visibility_control() {
         translate(Config::new(), "fn foo() {}"),
         indoc::indoc! {
             r"
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn foo() {
+                v_foo()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_foo() {
                 return;
             }
             
@@ -83,8 +86,11 @@ fn visibility_control() {
         translate(Config::new().public_items(true), "fn foo() {}"),
         indoc::indoc! {
             r"
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             pub fn foo() {
+                v_foo()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_foo() {
                 return;
             }
             
@@ -107,8 +113,11 @@ fn entry_point() {
         indoc::indoc! {
             r"
             #[::naga_rust_rt::fragment]
+            fn main(position: impl ::naga_rust_rt::Into<::naga_rust_rt::Vec4<f32>>) -> ::naga_rust_rt::Vec4<f32> {
+                v_main(position.into())
+            }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn main(position: ::naga_rust_rt::Vec4<f32>) -> ::naga_rust_rt::Vec4<f32> {
+            fn v_main(position: ::naga_rust_rt::Vec4<f32>) -> ::naga_rust_rt::Vec4<f32> {
                 return ::naga_rust_rt::Vec4::splat(1f32);
             }
             "
@@ -164,8 +173,11 @@ fn switch() {
         ),
         indoc::indoc! {
             "
+            fn switching(x: impl ::naga_rust_rt::Into<i32>) -> i32 {
+                v_switching(x.into())
+            }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn switching(x: i32) -> i32 {
+            fn v_switching(x: i32) -> i32 {
                 match x {
                     0i32 => {
                         return 0i32;
@@ -233,8 +245,11 @@ fn array_length() {
                 }}
             }
             impl Globals {
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn length(&self, ) -> u32 {
+                self.v_length()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_length(&self, ) -> u32 {
                 return (&self.arr).len();
             }
 
@@ -286,8 +301,11 @@ fn precedence_of_prefix_and_postfix() {
         ),
         indoc::indoc! {
             "
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn f(p: &mut [i32; 4]) -> i32 {
+                v_f(p)
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_f(p: &mut [i32; 4]) -> i32 {
                 let _e2 = (*p)[2 as usize];
                 return (!_e2);
             }
