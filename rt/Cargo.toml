@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.0"
 description = "Support library for shaders compiled to Rust via the `naga-rust-back` library."
+categories = [
+    "data-structures", # provides specialized vector types
+    "mathematics",
+]
+keywords = [
+    "naga", # related to Naga
+    "naga-rust", # keyword for this family of crates
+    "shader", # we execute shaders, and Naga itself has this keyword
+]
 repository.workspace = true
 license.workspace = true
 

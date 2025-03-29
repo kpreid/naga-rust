@@ -6,6 +6,16 @@ rust-version = "1.85.0"
 description = "Translates WGSL shader code to Rust embedded in your Rust code."
 repository.workspace = true
 license.workspace = true
+categories = [
+    "compilers", # includes transpilers
+    "rendering", # we help you run shaders
+]
+keywords = [
+    "naga", # related to Naga
+    "naga-rust", # keyword for this family of crates
+    "shader", # we process shaders, and Naga itself has this keyword
+    "wgsl", # our input language
+]
 
 [features]
 default = []

@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.0"
 description = "Backend for the Naga shader translator which generates Rust code."
+categories = [
+    "compilers", # includes transpilers
+    "rendering", # a bit debatable
+]
+keywords = [
+    "naga", # related to Naga
+    "naga-rust", # keyword for this family of crates
+    "shader", # we process shaders, and Naga itself has this keyword
+]
 repository.workspace = true
 license.workspace = true
 
