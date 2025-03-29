@@ -20,7 +20,7 @@ repository = "https://github.com/kpreid/naga-rust/"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-naga-rust-back = { version = "0.1.0", path = "back" }
+naga-rust-back = { version = "0.2.0", path = "back" }
 naga-rust-embed = { version = "0.1.0", path = "embed" }
 naga-rust-macros = { version = "0.1.0", path = "macros" }
 naga-rust-rt = { version = "0.1.0", path = "rt" }

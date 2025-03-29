@@ -707,7 +707,7 @@ dependencies = [
 
 [[package]]
 name = "naga-rust-back"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arrayvec",
  "bitflags 2.9.0",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "naga-rust-embed"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "exhaust",
  "indoc",
