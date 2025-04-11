@@ -2,6 +2,7 @@
 Conversion of Naga/shader vocabulary to Rust.
 */
 
+use alloc::boxed::Box;
 use alloc::format;
 use core::fmt;
 
@@ -38,7 +39,7 @@ pub(crate) fn unwrap_to_rust<T: TryToRust + Copy + fmt::Debug>(value: T) -> &'st
 
 // Contains all keywords, strict or weak, in 2024 and any previous edition, sorted.
 // https://doc.rust-lang.org/reference/keywords.html
-pub const KEYWORDS_2024: &[&str] = &[
+const KEYWORDS_2024_SLICE: &[&str] = &[
     "abstract",
     "as",
     "async",
@@ -96,6 +97,12 @@ pub const KEYWORDS_2024: &[&str] = &[
     "while",
     "yield",
 ];
+
+pub(crate) fn keywords_2024() -> &'static hashbrown::HashSet<&'static str> {
+    use once_cell::race::OnceBox;
+    static KEYWORDS: OnceBox<hashbrown::HashSet<&'static str>> = OnceBox::new();
+    KEYWORDS.get_or_init(|| Box::new(KEYWORDS_2024_SLICE.iter().copied().collect()))
+}
 
 /// Converts a [`MathFunction`] to a Rust method name.
 ///
