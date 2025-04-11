@@ -20,9 +20,11 @@ license.workspace = true
 default = []
 
 [dependencies]
-arrayvec.workspace = true
-bitflags.workspace = true
-naga.workspace = true
+arrayvec = { workspace = true }
+bitflags = { workspace = true }
+hashbrown = { workspace = true }
+naga = { workspace = true }
+once_cell = { workspace = true }
 
 [dev-dependencies]
 # Use WGSL frontend and Rust backend to run tests/textual.rs

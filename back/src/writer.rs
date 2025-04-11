@@ -8,12 +8,12 @@ use core::fmt::Write;
 use naga::{
     Expression, Handle, Module, Scalar, ShaderStage, TypeInner,
     back::{self, INDENT},
-    proc::{self, ExpressionKindTracker, NameKey},
+    proc::{self, NameKey},
     valid::ModuleInfo,
 };
 
 use crate::config::WriterFlags;
-use crate::conv::{self, BinOpClassified, KEYWORDS_2024, unwrap_to_rust};
+use crate::conv::{self, BinOpClassified, unwrap_to_rust};
 use crate::util::{Gensym, LevelNext};
 use crate::{Config, Error};
 
@@ -152,8 +152,7 @@ impl Writer {
         names.clear();
         namer.reset(
             module,
-            KEYWORDS_2024,
-            &[],
+            conv::keywords_2024(),
             &[],
             &[FN_INTERNAL_TYPES_PREFIX],
             &mut self.names,
@@ -247,7 +246,6 @@ impl Writer {
                 info: fun_info,
                 expressions: &function.expressions,
                 named_expressions: &function.named_expressions,
-                expr_kind_tracker: ExpressionKindTracker::from_arena(&function.expressions),
             };
 
             // Write the function
@@ -259,7 +257,10 @@ impl Writer {
         // Write all entry points
         for (index, ep) in module.entry_points.iter().enumerate() {
             let attributes = match ep.stage {
-                ShaderStage::Vertex | ShaderStage::Fragment => vec![Attribute::Stage(ep.stage)],
+                ShaderStage::Vertex
+                | ShaderStage::Fragment
+                | ShaderStage::Task
+                | ShaderStage::Mesh => vec![Attribute::Stage(ep.stage)],
                 ShaderStage::Compute => vec![
                     Attribute::Stage(ShaderStage::Compute),
                     Attribute::WorkGroupSize(ep.workgroup_size),
@@ -273,7 +274,6 @@ impl Writer {
                 info: info.get_entry_point(index),
                 expressions: &ep.function.expressions,
                 named_expressions: &ep.function.named_expressions,
-                expr_kind_tracker: ExpressionKindTracker::from_arena(&ep.function.expressions),
             };
             self.write_function(out, module, &ep.function, &func_ctx)?;
 
@@ -486,6 +486,8 @@ impl Writer {
                         ShaderStage::Vertex => "vertex",
                         ShaderStage::Fragment => "fragment",
                         ShaderStage::Compute => "compute",
+                        ShaderStage::Task => "task",
+                        ShaderStage::Mesh => "mesh",
                     };
                     write!(out, "{runtime_path}::{stage_str}")?;
                 }
@@ -980,6 +982,9 @@ impl Writer {
 
         match *expression {
             Expression::Literal(literal) => match literal {
+                // TODO: Should we use the `half` library for f16 support
+                // instead of only allowing it as a Rust unstable feature?
+                naga::Literal::F16(value) => write!(out, "{value}f16")?,
                 naga::Literal::F32(value) => write!(out, "{value}f32")?,
                 naga::Literal::U32(value) => write!(out, "{value}u32")?,
                 naga::Literal::I32(value) => {
@@ -1274,7 +1279,8 @@ impl Writer {
                 write!(out, ")")?
             }
             // Not supported yet
-            Expression::RayQueryGetIntersection { .. } => unreachable!(),
+            Expression::RayQueryGetIntersection { .. }
+            | Expression::RayQueryVertexPositions { .. } => unreachable!(),
             // Nothing to do here, since call expression already cached
             Expression::CallResult(_)
             | Expression::AtomicResult { .. }
@@ -1471,10 +1477,10 @@ impl Writer {
             TypeInner::Struct { .. } => {
                 unreachable!("should only see a struct by name");
             }
-            TypeInner::AccelerationStructure => {
+            TypeInner::AccelerationStructure { .. } => {
                 return Err(Error::Unimplemented("type AccelerationStructure".into()));
             }
-            TypeInner::RayQuery => {
+            TypeInner::RayQuery { .. } => {
                 return Err(Error::Unimplemented("type RayQuery".into()));
             }
         }
