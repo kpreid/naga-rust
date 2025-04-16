@@ -641,6 +641,22 @@ impl<T> From<[T; 1]> for Scalar<T> {
     }
 }
 
+// These impls must be per-primitive-type to pass trait coherence checking.
+macro_rules! impl_from_scalar_to_inner {
+    ($t:ty) => {
+        impl From<Scalar<$t>> for $t {
+            fn from(value: Scalar<$t>) -> Self {
+                value.0
+            }
+        }
+    };
+}
+impl_from_scalar_to_inner!(bool);
+impl_from_scalar_to_inner!(i32);
+impl_from_scalar_to_inner!(u32);
+impl_from_scalar_to_inner!(f32);
+impl_from_scalar_to_inner!(f64);
+
 // -------------------------------------------------------------------------------------------------
 // Irregular functions and impls
 
