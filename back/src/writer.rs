@@ -690,23 +690,7 @@ impl Writer {
             }
             Statement::Kill => write!(out, "{level}{runtime_path}::discard();")?,
             Statement::Store { pointer, value } => {
-                let is_atomic_pointer = func_ctx
-                    .resolve_type(pointer, &module.types)
-                    .is_atomic_pointer(&module.types);
-
-                if is_atomic_pointer {
-                    return Err(Error::Unimplemented("atomic operations".into()));
-                }
-
-                write!(out, "{level}")?;
-                // We have a Naga “pointer” but it might actually denote a plain variable.
-                // We ask for `Indirection::Place` to say: please dereference the logical pointer
-                // and give me the dereference op *or* plain variable to assign to.
-                self.write_expr_with_indirection(out, pointer, expr_ctx, Indirection::Place)?;
-                write!(out, " = ")?;
-                self.write_expr(out, value, expr_ctx)?;
-
-                writeln!(out, ";")?
+                self.write_store_statement(out, level, expr_ctx, pointer, value)?;
             }
             Statement::Call {
                 function,
@@ -851,6 +835,52 @@ impl Writer {
             | Statement::SubgroupCollectiveOperation { .. }
             | Statement::SubgroupGather { .. } => {
                 return Err(Error::Unimplemented("workgroup operations".into()));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Write a statement which assigns `value_expr` to `*pointer`.
+    ///
+    /// This is a helper for [`Self::write_stmt()`], broken out because not all pointers will
+    /// correspond to single Rust places of the correct type; sometimes we need to use setter
+    /// functions.
+    fn write_store_statement(
+        &mut self,
+        out: &mut dyn Write,
+        level: back::Level,
+        expr_ctx: &ExpressionCtx<'_>,
+        pointer: Handle<Expression>,
+        value_expr: Handle<Expression>,
+    ) -> Result<(), Error> {
+        let pointer_type: &TypeInner = expr_ctx.resolve_type(pointer);
+
+        write!(out, "{level}")?;
+
+        // Note: `pointer_expr` is an expression that *in the Naga IR* has a pointer type,
+        // but does not necessarily translate to a Rust pointer.
+        let pointer_expr = &expr_ctx.expressions()[pointer];
+        #[allow(clippy::single_match_else, reason = "TODO: this will be more complex")]
+        // future lint in Rust 1.87
+        match (
+            pointer_expr,
+            pointer_type
+                .pointer_base_type()
+                .expect("Expression::Pointer's type not a pointer type")
+                .inner_with(expr_ctx.types()),
+        ) {
+            (_, TypeInner::Atomic(_)) => {
+                return Err(Error::Unimplemented("atomic operations".into()));
+            }
+
+            // In all other cases, fall back to a plain Rust assignment.
+            // This will either be the right thing, or fail to compile.
+            (_, _) => {
+                self.write_expr_with_indirection(out, pointer, expr_ctx, Indirection::Place)?;
+                write!(out, " = ")?;
+                self.write_expr(out, value_expr, expr_ctx)?;
+                writeln!(out, ";")?;
             }
         }
 
