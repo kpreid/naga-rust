@@ -65,6 +65,49 @@ enum Indirection {
     Ordinary,
 }
 
+/// Modifier for how scalars in Naga types are translated to Rust based on context.
+///
+/// In order to support translation to SIMD execution (not yet implemented as of this writing),
+/// we need to convert scalars into SIMD vectors.
+/// However, that conversion should apply only to things which are getting vectorized — that is,
+/// function local variables, private global variables, function inputs, and function outputs —
+/// but not to uniforms, struct members, workgroup variables, or the arguments of public function
+/// shims.
+/// This enum captures that distinction, in a way similar to [`naga::AddressSpace`] but more
+/// precisely fitted to our concerns.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TypeTranslation {
+    /// Scalar types are translated to standard Rust types, e.g. `[f32; 10]`.
+    RustScalar,
+
+    /// Scalar types are translated to shader-behavior types, e.g.
+    /// `[rt::Scalar<f32>; 10]`, without SIMD.
+    ///
+    /// This is not yet implemented and currently behaves identically to `RustScalar`.
+    ShaderScalar,
+
+    /// Scalar types are translated to SIMD types which contain values for an entire workgroup.
+    ///
+    /// This is not yet implemented and currently behaves identically to `ShaderScalar`.
+    Simd,
+}
+impl From<naga::AddressSpace> for TypeTranslation {
+    fn from(value: naga::AddressSpace) -> Self {
+        match value {
+            // Everything that is stored separately per invocation gets the Simd form.
+            naga::AddressSpace::Function | naga::AddressSpace::Private => Self::Simd,
+
+            // Everything that is not stored separately, and originates from Naga, gets the
+            // ShaderScalar form.
+            naga::AddressSpace::Uniform
+            | naga::AddressSpace::Handle
+            | naga::AddressSpace::WorkGroup
+            | naga::AddressSpace::PushConstant
+            | naga::AddressSpace::Storage { .. } => Self::ShaderScalar,
+        }
+    }
+}
+
 /// Reserved prefix for the functions that use types chosen for the convenience of
 /// execution of the shader rather than for convenient public API.
 const FN_INTERNAL_TYPES_PREFIX: &str = "v_";
@@ -314,6 +357,11 @@ impl Writer {
         is_public_shim: bool,
     ) -> BackendResult {
         let runtime_path = &self.config.runtime_path;
+        let signature_type_translation = if is_public_shim {
+            TypeTranslation::RustScalar
+        } else {
+            TypeTranslation::Simd
+        };
 
         if !is_public_shim {
             // Don’t lint extra parentheses and such that we might emit.
@@ -366,13 +414,15 @@ impl Writer {
             write!(out, "{argument_name}: ")?;
 
             // Write argument type
+            // TODO: When `TypeTranslation` actually does things, this and the return value
+            // processing will need to be tweaked.
             if is_public_shim && use_into_for_arg(arg) {
                 // Allow vectors and scalars to be converted.
                 write!(out, "impl {runtime_path}::Into<")?;
-                self.write_type(out, module, arg.ty)?;
+                self.write_type(out, module, arg.ty, TypeTranslation::ShaderScalar)?;
                 write!(out, ">")?;
             } else {
-                self.write_type(out, module, arg.ty)?;
+                self.write_type(out, module, arg.ty, signature_type_translation)?;
             }
             if index < func.arguments.len() - 1 {
                 // Add a separator between args
@@ -388,7 +438,7 @@ impl Writer {
             // if let Some(ref binding) = result.binding {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
-            self.write_type(out, module, result.ty)?;
+            self.write_type(out, module, result.ty, signature_type_translation)?;
         }
 
         write!(out, " {{")?;
@@ -424,7 +474,7 @@ impl Writer {
                 write!(out, "let mut {}: ", self.names[&func_ctx.name_key(handle)])?;
 
                 // Write the local type
-                self.write_type(out, module, local.ty)?;
+                self.write_type(out, module, local.ty, TypeTranslation::Simd)?;
 
                 // Write the local initializer if needed
                 if let Some(init) = local.init {
@@ -537,7 +587,7 @@ impl Writer {
             let member_name =
                 &self.names[&NameKey::StructMember(handle, index.try_into().unwrap())];
             write!(out, "{visibility}{member_name}: ")?;
-            self.write_type(out, module, member.ty)?;
+            self.write_type(out, module, member.ty, TypeTranslation::RustScalar)?;
             write!(out, ",")?;
             writeln!(out)?;
         }
@@ -881,10 +931,10 @@ impl Writer {
             // Write variable type
             match *ty {
                 proc::TypeResolution::Handle(ty_handle) => {
-                    self.write_type(out, module, ty_handle)?;
+                    self.write_type(out, module, ty_handle, TypeTranslation::Simd)?;
                 }
                 proc::TypeResolution::Value(ref inner) => {
-                    self.write_type_inner(out, module, inner)?;
+                    self.write_type_inner(out, module, inner, TypeTranslation::Simd)?;
                 }
             }
         }
@@ -963,6 +1013,9 @@ impl Writer {
     /// It is the caller’s responsibility to adapt as needed, usually via
     /// [`Self::write_expr_with_indirection()`].
     ///
+    /// The return type of the written expression always follows [`TypeTranslation::Simd`] form.
+    /// (We will need to refine that later.)
+    ///
     /// TODO: explain the indirection parameter of *this* function.
     fn write_expr_plain_form(
         &self,
@@ -1010,7 +1063,7 @@ impl Writer {
             }
             Expression::ZeroValue(ty) => {
                 write!(out, "{runtime_path}::zero::<")?;
-                self.write_type(out, module, ty)?;
+                self.write_type(out, module, ty, TypeTranslation::Simd)?;
                 write!(out, ">()")?;
             }
             Expression::Compose { ty, ref components } => {
@@ -1293,7 +1346,8 @@ impl Writer {
         Ok(())
     }
 
-    /// Examine the type to write an appropriate constructor or literal expression for it.
+    /// Translates [`Expression::Compose`].
+    /// Examines the type to write an appropriate constructor or literal expression for it.
     ///
     /// We do not delegate to a library trait for this because the construction
     /// must be const-compatible.
@@ -1367,7 +1421,7 @@ impl Writer {
         };
 
         write!(out, "<")?;
-        self.write_type(out, module, ty)?;
+        self.write_type(out, module, ty, TypeTranslation::Simd)?;
         write!(out, ">::{ctor_name}(")?;
         for (index, component) in components.iter().enumerate() {
             if index > 0 {
@@ -1380,18 +1434,22 @@ impl Writer {
         Ok(())
     }
 
+    /// Write the Rust form of the Naga type `type_handle`.
+    ///
+    /// The form a type takes depends on the address space in which the value of that type lives.
     pub(super) fn write_type(
         &self,
         out: &mut dyn Write,
         module: &Module,
-        handle: Handle<naga::Type>,
+        type_handle: Handle<naga::Type>,
+        type_translation: TypeTranslation,
     ) -> BackendResult {
-        let ty = &module.types[handle];
+        let ty = &module.types[type_handle];
         match ty.inner {
             TypeInner::Struct { .. } => {
-                out.write_str(self.names[&NameKey::Type(handle)].as_str())?
+                out.write_str(self.names[&NameKey::Type(type_handle)].as_str())?
             }
-            ref other => self.write_type_inner(out, module, other)?,
+            ref other => self.write_type_inner(out, module, other, type_translation)?,
         }
 
         Ok(())
@@ -1402,6 +1460,7 @@ impl Writer {
         out: &mut dyn Write,
         module: &Module,
         inner: &TypeInner,
+        type_translation: TypeTranslation,
     ) -> BackendResult {
         let runtime_path = &self.config.runtime_path;
         match *inner {
@@ -1436,16 +1495,16 @@ impl Writer {
                 stride: _,
             } => {
                 write!(out, "[")?;
+                self.write_type(out, module, base, type_translation)?;
                 match size {
                     naga::ArraySize::Constant(len) => {
-                        self.write_type(out, module, base)?;
                         write!(out, "; {len}")?;
                     }
                     naga::ArraySize::Pending(..) => {
                         return Err(Error::Unimplemented("override array size".into()));
                     }
                     naga::ArraySize::Dynamic => {
-                        self.write_type(out, module, base)?;
+                        // slice syntax needs no further tokens
                     }
                 }
                 write!(out, "]")?;
@@ -1454,13 +1513,16 @@ impl Writer {
             TypeInner::Matrix { .. } => {
                 return Err(Error::Unimplemented("matrices".into()));
             }
-            TypeInner::Pointer { base, space: _ } => {
+            TypeInner::Pointer {
+                base,
+                space: pointee_space,
+            } => {
                 if self.config.flags.contains(WriterFlags::RAW_POINTERS) {
                     write!(out, "*mut ")?;
                 } else {
                     write!(out, "&mut ")?;
                 }
-                self.write_type(out, module, base)?;
+                self.write_type(out, module, base, TypeTranslation::from(pointee_space))?;
             }
             TypeInner::ValuePointer {
                 size: _,
@@ -1498,8 +1560,8 @@ impl Writer {
     ) -> BackendResult {
         // Write group and binding attributes if present
         let &naga::GlobalVariable {
-            name: _,    // renamed instead
-            space: _,   // no address spaces exist
+            name: _, // renamed instead
+            space,
             binding: _, // don't (yet) expose numeric binding locations
             ty,
             init: _, // TODO: need to put initializes in a newp() fn
@@ -1517,7 +1579,7 @@ impl Writer {
             "{INDENT}{}: ",
             &self.names[&NameKey::GlobalVariable(handle)]
         )?;
-        self.write_type(out, module, ty)?;
+        self.write_type(out, module, ty, TypeTranslation::from(space))?;
         writeln!(out, ",")?;
 
         Ok(())
@@ -1574,7 +1636,12 @@ impl Writer {
             out,
             "#[allow(non_upper_case_globals)]\n{visibility}const {name}: "
         )?;
-        self.write_type(out, module, module.constants[handle].ty)?;
+        self.write_type(
+            out,
+            module,
+            module.constants[handle].ty,
+            TypeTranslation::ShaderScalar,
+        )?;
         write!(out, " = ")?;
         self.write_expr(
             out,
