@@ -136,7 +136,7 @@ jobs:
           git diff origin/${{ github.base_ref }}.. | tee git.diff
       
       - name: Mutants
-        run: cargo mutants --in-diff git.diff -- --all-features
+        run: cargo mutants --in-diff=git.diff --test-workspace=true -- --all-features
 
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
