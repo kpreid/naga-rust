@@ -252,11 +252,13 @@ pub fn atomic_type_name(scalar: Scalar) -> Result<&'static str, crate::Error> {
 /// because it is defined to always return `bool`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum BinOpClassified {
-    /// Can be overloaded to take a vector and return a vector.
+    /// The Rust operator can be overloaded to take a vector and return a vector.
     #[allow(dead_code, reason = "TODO: review whether the field should be read")]
     Vectorizable(BinOpVec),
-    /// Always returns `bool`.
+    /// The Rust operator always returns `bool`, but we want to return vectors instead.
     ScalarBool(BinOpBool),
+    /// The operator is a non-vector operator and affects control flow.
+    ShortCircuit(BinOpSc),
 }
 
 /// Part of [`BinOpClassified`].
@@ -286,6 +288,14 @@ pub(crate) enum BinOpBool {
     GreaterEqual,
 }
 
+/// Part of [`BinOpClassified`].
+/// The operators that apply to scalars and affect control flow.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum BinOpSc {
+    LogicalAnd,
+    LogicalOr,
+}
+
 impl From<naga::BinaryOperator> for BinOpClassified {
     fn from(value: naga::BinaryOperator) -> Self {
         use BinOpClassified as C;
@@ -305,8 +315,8 @@ impl From<naga::BinaryOperator> for BinOpClassified {
             Bo::LessEqual => C::ScalarBool(BinOpBool::LessEqual),
             Bo::Greater => C::ScalarBool(BinOpBool::Greater),
             Bo::GreaterEqual => C::ScalarBool(BinOpBool::GreaterEqual),
-            Bo::LogicalAnd => C::Vectorizable(BinOpVec::And),
-            Bo::LogicalOr => C::Vectorizable(BinOpVec::InclusiveOr),
+            Bo::LogicalAnd => C::ShortCircuit(BinOpSc::LogicalAnd),
+            Bo::LogicalOr => C::ShortCircuit(BinOpSc::LogicalOr),
             Bo::ShiftLeft => C::Vectorizable(BinOpVec::ShiftLeft),
             Bo::ShiftRight => C::Vectorizable(BinOpVec::ShiftRight),
         }
@@ -323,6 +333,15 @@ impl BinOpBool {
             Bo::LessEqual => "elementwise_le",
             Bo::Greater => "elementwise_gt",
             Bo::GreaterEqual => "elementwise_ge",
+        }
+    }
+}
+
+impl BinOpSc {
+    pub fn to_binary_operator(self) -> &'static str {
+        match self {
+            BinOpSc::LogicalAnd => "&&",
+            BinOpSc::LogicalOr => "||",
         }
     }
 }
