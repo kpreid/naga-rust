@@ -1144,6 +1144,13 @@ impl Writer {
                         self.write_expr(out, right, expr_ctx)?;
                         write!(out, ")")?;
                     }
+                    (_, BinOpClassified::ShortCircuit(bop)) => {
+                        write!(out, "(")?;
+                        self.write_expr(out, left, expr_ctx)?;
+                        write!(out, " {} ", bop.to_binary_operator())?;
+                        self.write_expr(out, right, expr_ctx)?;
+                        write!(out, ")")?;
+                    }
                 }
             }
             Expression::Access { base, index } => {
