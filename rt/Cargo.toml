@@ -28,6 +28,7 @@ std = []
 [dependencies]
 num-traits = { workspace = true, default-features = false, features = ["libm"] }
 naga-rust-macros.workspace = true
+paste.workspace = true
 
 [lints.clippy]
 std_instead_of_alloc = "warn"
