@@ -777,6 +777,7 @@ version = "0.1.0"
 dependencies = [
  "naga-rust-macros",
  "num-traits",
+ "paste",
 ]
 
 [[package]]

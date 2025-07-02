@@ -471,6 +471,14 @@ macro_rules! impl_vector_regular_fns {
                     )*
                 }
             }
+
+            paste::paste! {
+                $(
+                    pub fn [< set_ $component >](&mut self, value: T) {
+                        self.$component = value;
+                    }
+                )*
+            }
         }
 
         impl_vector_integer_arithmetic!($ty, i32, $($component)*);

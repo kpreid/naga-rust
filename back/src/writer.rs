@@ -845,7 +845,7 @@ impl Writer {
     ///
     /// This is a helper for [`Self::write_stmt()`], broken out because not all pointers will
     /// correspond to single Rust places of the correct type; sometimes we need to use setter
-    /// functions.
+    /// functions, so this becomes potentially very complex.
     fn write_store_statement(
         &mut self,
         out: &mut dyn Write,
@@ -855,34 +855,48 @@ impl Writer {
         value_expr: Handle<Expression>,
     ) -> Result<(), Error> {
         let pointer_type: &TypeInner = expr_ctx.resolve_type(pointer);
-
-        write!(out, "{level}")?;
+        let pointer_base_type = pointer_type
+            .pointer_base_type()
+            .expect("Store statement’s pointer's type not a pointer type");
 
         // Note: `pointer_expr` is an expression that *in the Naga IR* has a pointer type,
         // but does not necessarily translate to a Rust pointer.
         let pointer_expr = &expr_ctx.expressions()[pointer];
-        #[allow(clippy::single_match_else, reason = "TODO: this will be more complex")]
-        // future lint in Rust 1.87
-        match (
-            pointer_expr,
-            pointer_type
-                .pointer_base_type()
-                .expect("Expression::Pointer's type not a pointer type")
-                .inner_with(expr_ctx.types()),
-        ) {
-            (_, TypeInner::Atomic(_)) => {
-                return Err(Error::Unimplemented("atomic operations".into()));
-            }
 
-            // In all other cases, fall back to a plain Rust assignment.
-            // This will either be the right thing, or fail to compile.
-            (_, _) => {
-                self.write_expr_with_indirection(out, pointer, expr_ctx, Indirection::Place)?;
-                write!(out, " = ")?;
+        if let TypeInner::Atomic(_) = pointer_base_type.inner_with(expr_ctx.types()) {
+            // Atomic operations are currently unsupported.
+            // When they *are* supported, they will be distinct because per Rust mutability rules,
+            // we don’t need to obtain a mutable place, so it will suffice to just evaluate the
+            // pointer expression and call an atomic operation function on it.
+            return Err(Error::Unimplemented("atomic operations".into()));
+        }
+
+        if let Expression::AccessIndex { base, index } = *pointer_expr {
+            let access_base_type = expr_ctx.resolve_type(base);
+            let access_pointer_base_type = access_base_type
+                .pointer_base_type()
+                .expect("Store statement’s access expression's base type not a pointer type");
+
+            // Decide whether to use an accessor function instead of an assignment...
+            if let TypeInner::Vector { .. } = access_pointer_base_type.inner_with(expr_ctx.types())
+            {
+                let component = back::COMPONENTS[index as usize];
+
+                write!(out, "{level}")?;
+                self.write_expr_with_indirection(out, base, expr_ctx, Indirection::Place)?;
+                write!(out, ".set_{component}(")?;
                 self.write_expr(out, value_expr, expr_ctx)?;
-                writeln!(out, ";")?;
+                writeln!(out, ");")?;
+                return Ok(());
             }
         }
+
+        // Fallthrough: Use Rust assignment.
+        write!(out, "{level}")?;
+        self.write_expr_with_indirection(out, pointer, expr_ctx, Indirection::Place)?;
+        write!(out, " = ")?;
+        self.write_expr(out, value_expr, expr_ctx)?;
+        writeln!(out, ";")?;
 
         Ok(())
     }

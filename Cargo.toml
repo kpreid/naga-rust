@@ -34,6 +34,7 @@ indoc = { version = "2.0.1", default-features = false }
 naga = { version = "25.0.1", default-features = false }
 num-traits = { version = "0.2.19", default-features = false }
 once_cell = { version = "1.21.3", default-features = false }
+paste = {version = "1.0.15", default-features = false }
 pretty_assertions = { version = "1.2.0" }
 
 [workspace.lints.rust]
