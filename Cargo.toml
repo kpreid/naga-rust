@@ -31,7 +31,7 @@ exhaust = { version = "0.2.0", default-features = false }
 # must match version used by naga for the sake of proc::Namer :(
 hashbrown = { version = "0.15.2", default-features = false }
 indoc = { version = "2.0.1", default-features = false }
-naga = { version = "25.0.1", default-features = false }
+naga = { version = "26.0.0", default-features = false }
 num-traits = { version = "0.2.19", default-features = false }
 once_cell = { version = "1.21.3", default-features = false }
 paste = {version = "1.0.15", default-features = false }
