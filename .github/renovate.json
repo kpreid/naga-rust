@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "commitMessagePrefix": "Deps: ",
+  "labels": [
+    "dependencies"
+  ],
+  "semanticCommits": "disabled",
+  "packageRules": [
+    {
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchJsonata": [
+        "isBreaking != true"
+      ],
+      "groupName": "compatible",
+      "rangeStrategy": "update-lockfile"
+    },
+    {
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchJsonata": [
+        "isBreaking = true"
+      ],
+      "rangeStrategy": "replace"
+    }
+  ]
+}
