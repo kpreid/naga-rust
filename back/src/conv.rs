@@ -147,6 +147,8 @@ pub(crate) fn math_function_to_method(f: naga::MathFunction) -> &'static str {
         Mf::Log2 => "log2",
         Mf::Pow => "powf",
         Mf::Dot => "dot",
+        Mf::Dot4I8Packed => "dot4I8Packed",
+        Mf::Dot4U8Packed => "dot4U8Packed",
         Mf::Cross => "cross",
         Mf::Distance => "distance",
         Mf::Length => "length",
@@ -163,7 +165,6 @@ pub(crate) fn math_function_to_method(f: naga::MathFunction) -> &'static str {
         Mf::InverseSqrt => "inverse_sqrt",
         Mf::Transpose => "transpose",
         Mf::Determinant => "determinant",
-        // TODO: rename these to Rust style
         Mf::QuantizeToF16 => "quantizeToF16",
         Mf::CountTrailingZeros => "countTrailingZeros",
         Mf::CountLeadingZeros => "countLeadingZeros",
@@ -189,6 +190,8 @@ pub(crate) fn math_function_to_method(f: naga::MathFunction) -> &'static str {
         Mf::Unpack4xU8 => "unpack4xU8",
         Mf::Outer => "outer",
         Mf::Inverse => "inverse",
+        Mf::Pack4xI8Clamp => "pack4xI8Clamp",
+        Mf::Pack4xU8Clamp => "pack4xU8Clamp",
     }
 }
 

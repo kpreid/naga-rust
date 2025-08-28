@@ -827,7 +827,7 @@ impl Writer {
             }
             Statement::Break => writeln!(out, "{level}break;")?,
             Statement::Continue => writeln!(out, "{level}continue;")?,
-            Statement::Barrier(_) => {
+            Statement::ControlBarrier(_) | Statement::MemoryBarrier(_) => {
                 return Err(Error::Unimplemented("barriers".into()));
             }
             Statement::RayQuery { .. } => {
