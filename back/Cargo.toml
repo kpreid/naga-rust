@@ -22,7 +22,6 @@ default = []
 [dependencies]
 arrayvec = { workspace = true }
 bitflags = { workspace = true }
-hashbrown = { workspace = true }
 naga = { workspace = true }
 once_cell = { workspace = true }
 

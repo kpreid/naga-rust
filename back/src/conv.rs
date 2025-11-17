@@ -7,6 +7,7 @@ use alloc::format;
 use core::fmt;
 
 use naga::Scalar;
+use naga::proc::KeywordSet;
 
 /// Types that may be able to return the Rust source representation
 /// for their values as a `'static` string.
@@ -98,9 +99,9 @@ const KEYWORDS_2024_SLICE: &[&str] = &[
     "yield",
 ];
 
-pub(crate) fn keywords_2024() -> &'static hashbrown::HashSet<&'static str> {
+pub(crate) fn keywords_2024() -> &'static KeywordSet {
     use once_cell::race::OnceBox;
-    static KEYWORDS: OnceBox<hashbrown::HashSet<&'static str>> = OnceBox::new();
+    static KEYWORDS: OnceBox<KeywordSet> = OnceBox::new();
     KEYWORDS.get_or_init(|| Box::new(KEYWORDS_2024_SLICE.iter().copied().collect()))
 }
 

@@ -201,7 +201,7 @@ impl Writer {
         namer.reset(
             module,
             conv::keywords_2024(),
-            &[],
+            proc::CaseInsensitiveKeywordSet::empty(),
             &[FN_INTERNAL_TYPES_PREFIX],
             &mut self.names,
         );
