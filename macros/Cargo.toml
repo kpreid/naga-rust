@@ -2,7 +2,7 @@
 name = "naga-rust-macros"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85.0"
+rust-version.workspace = true
 description = "Macros for the `naga-rust-embed` library."
 categories = [] # this is not intended as a separately usable library...
 keywords = [

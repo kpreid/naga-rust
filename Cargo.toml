@@ -16,6 +16,7 @@ default-members = [
 resolver = "3"
 
 [workspace.package]
+rust-version = "1.87.0" # should track Naga's rust-version (don't forget to update CI too)
 repository = "https://github.com/kpreid/naga-rust/"
 license = "MIT OR Apache-2.0"
 

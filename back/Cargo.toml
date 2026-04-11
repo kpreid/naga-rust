@@ -2,7 +2,7 @@
 name = "naga-rust-back"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.85.0"
+rust-version.workspace = true
 description = "Backend for the Naga shader translator which generates Rust code."
 categories = [
     "compilers", # includes transpilers
