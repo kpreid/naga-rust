@@ -102,8 +102,13 @@ impl From<naga::AddressSpace> for TypeTranslation {
             naga::AddressSpace::Uniform
             | naga::AddressSpace::Handle
             | naga::AddressSpace::WorkGroup
-            | naga::AddressSpace::PushConstant
+            | naga::AddressSpace::Immediate
             | naga::AddressSpace::Storage { .. } => Self::ShaderScalar,
+            naga::AddressSpace::TaskPayload
+            | naga::AddressSpace::RayPayload
+            | naga::AddressSpace::IncomingRayPayload => {
+                unimplemented!("mesh and raytracing shaders are not supported")
+            }
         }
     }
 }
@@ -201,6 +206,7 @@ impl Writer {
         namer.reset(
             module,
             conv::keywords_2024(),
+            proc::KeywordSet::empty(),
             proc::CaseInsensitiveKeywordSet::empty(),
             &[FN_INTERNAL_TYPES_PREFIX],
             &mut self.names,
@@ -308,7 +314,11 @@ impl Writer {
                 ShaderStage::Vertex
                 | ShaderStage::Fragment
                 | ShaderStage::Task
-                | ShaderStage::Mesh => vec![Attribute::Stage(ep.stage)],
+                | ShaderStage::Mesh
+                | ShaderStage::RayGeneration
+                | ShaderStage::Miss
+                | ShaderStage::AnyHit
+                | ShaderStage::ClosestHit => vec![Attribute::Stage(ep.stage)],
                 ShaderStage::Compute => vec![
                     Attribute::Stage(ShaderStage::Compute),
                     Attribute::WorkGroupSize(ep.workgroup_size),
@@ -545,6 +555,10 @@ impl Writer {
                         ShaderStage::Compute => "compute",
                         ShaderStage::Task => "task",
                         ShaderStage::Mesh => "mesh",
+                        ShaderStage::RayGeneration => "ray_generation",
+                        ShaderStage::Miss => "miss",
+                        ShaderStage::AnyHit => "any_hit",
+                        ShaderStage::ClosestHit => "closest_hit",
                     };
                     write!(out, "{runtime_path}::{stage_str}")?;
                 }
@@ -830,13 +844,16 @@ impl Writer {
             Statement::ControlBarrier(_) | Statement::MemoryBarrier(_) => {
                 return Err(Error::Unimplemented("barriers".into()));
             }
-            Statement::RayQuery { .. } => {
+            Statement::RayQuery { .. } | Statement::RayPipelineFunction(_) => {
                 return Err(Error::Unimplemented("raytracing".into()));
             }
             Statement::SubgroupBallot { .. }
             | Statement::SubgroupCollectiveOperation { .. }
             | Statement::SubgroupGather { .. } => {
                 return Err(Error::Unimplemented("workgroup operations".into()));
+            }
+            Statement::CooperativeStore { .. } => {
+                return Err(Error::Unimplemented("cooperative store".into()));
             }
         }
 
@@ -1388,7 +1405,9 @@ impl Writer {
             }
             // Not supported yet
             Expression::RayQueryGetIntersection { .. }
-            | Expression::RayQueryVertexPositions { .. } => unreachable!(),
+            | Expression::RayQueryVertexPositions { .. }
+            | Expression::CooperativeLoad { .. }
+            | Expression::CooperativeMultiplyAdd { .. } => unreachable!(),
             // Nothing to do here, since call expression already cached
             Expression::CallResult(_)
             | Expression::AtomicResult { .. }
@@ -1603,6 +1622,9 @@ impl Writer {
             TypeInner::RayQuery { .. } => {
                 return Err(Error::Unimplemented("type RayQuery".into()));
             }
+            TypeInner::CooperativeMatrix { .. } => {
+                return Err(Error::Unimplemented("type CooperativeMatrix".into()));
+            }
         }
 
         Ok(())
@@ -1622,7 +1644,8 @@ impl Writer {
             space,
             binding: _, // don't (yet) expose numeric binding locations
             ty,
-            init: _, // TODO: need to put initializes in a newp() fn
+            init: _,               // TODO: need to put initialize exprs in a new() fn
+            memory_decorations: _, // TODO: probably need to do things with this
         } = global;
 
         // Note bindings.
