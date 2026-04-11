@@ -2,7 +2,7 @@
 name = "naga-rust-embed"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.85.0"
+rust-version.workspace = true
 description = "Translates WGSL shader code to Rust embedded in your Rust code."
 repository.workspace = true
 license.workspace = true
