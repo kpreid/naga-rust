@@ -1185,9 +1185,11 @@ impl Writer {
             },
             Expression::Access { base, index } => {
                 self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-                write!(out, "[")?;
+                // TODO: when we support SIMD, this will need to change to not be a single indexing
+                // expression but a scatter/gather operation which isn’t a Rust place.
+                write!(out, "[{runtime_path}::Scalar::into_array_index(")?;
                 self.write_expr(out, index, expr_ctx)?;
-                write!(out, " as usize]")?
+                write!(out, ")]")?
             }
             Expression::AccessIndex { base, index } => {
                 let result_ty = expr_ctx.resolve_type(expr);
