@@ -8,7 +8,7 @@ This package for use by [`naga-rust-embed`] and is not intended to be usable dir
 License
 -------
 
-Copyright 2025 Kevin Reid and the gfx-rs authors.
+Copyright 2025-2026 Kevin Reid and the gfx-rs authors.
 
 Licensed under either of
 
