@@ -15,7 +15,7 @@ use winit::window::{Window, WindowId};
 
 use naga_rust_embed::rt;
 
-naga_rust_embed::include_wgsl_mr!(global_struct = Shader, "src/shader.wgsl");
+naga_rust_embed::include_wgsl_mr!(resource_struct = Shader, "src/shader.wgsl");
 
 // -------------------------------------------------------------------------------------------------
 
@@ -52,8 +52,6 @@ fn run_fragment_shader(time: f32, buffer: &mut [u32], size: PhysicalSize<u32>) {
                 #[allow(clippy::cast_precision_loss)]
                 let fragment_position = rt::Vec4::new(x as f32, y as f32, 0.0, 0.0);
 
-                // TODO: There should be a nice constructor API for uniforms.
-                // Maybe a separate struct.
                 let result = Shader {
                     time: rt::Scalar(time),
                 }

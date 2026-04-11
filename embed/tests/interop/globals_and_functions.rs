@@ -1,6 +1,6 @@
 //! Tests of `global_struct` or its absence, and of function calls from outside and inside.
 
-use naga_rust_embed::rt::{Vec2, Vec4};
+use naga_rust_embed::rt::{Scalar, Vec2, Vec4};
 use naga_rust_embed::wgsl;
 
 #[test]
@@ -56,13 +56,13 @@ pub(crate) fn function_call_with_self() {
         "
     );
 
-    assert_eq!(Globals::default().outer(), 1234);
+    assert_eq!(Globals::new().outer(), 1234);
 }
 
 #[test]
-pub(crate) fn global_uniform_binding() {
+pub(crate) fn uniform_binding() {
     wgsl!(
-        global_struct = Globals,
+        resource_struct = Resources,
         r"
         struct Uniforms {
             @location(0) x: f32,
@@ -77,15 +77,28 @@ pub(crate) fn global_uniform_binding() {
     "
     );
 
-    // TODO: impl Default is not the proper path for this -- codegen is unconditionally using
-    // Default for all globals. There should instead be a constructor for the Globals struct
-    // (...or, actually, a version of it which contains only bindings and not workgroup or private
-    // variables).
-    impl Default for Uniforms {
-        fn default() -> Self {
-            Uniforms { x: 1.0, y: 2.0 }
+    assert_eq!(
+        Resources {
+            ub: Uniforms { x: 1.0, y: 2.0 }
         }
-    }
+        .main(),
+        Vec2::new(1.0, 2.0)
+    )
+}
 
-    assert_eq!(Globals::default().main(), Vec2::new(1.0, 2.0))
+#[test]
+fn both_globals_and_resources() {
+    wgsl!(
+        global_struct = Globals,
+        resource_struct = Resources,
+        r"
+        @group(0) @binding(0) var<uniform> foo: i32;
+        var<private> bar: i32 = 1;
+        fn combine() -> i32 {
+            return foo + bar;
+        } 
+        "
+    );
+
+    assert_eq!(Globals::new(&Resources { foo: Scalar(100) }).combine(), 101);
 }

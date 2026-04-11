@@ -7,7 +7,7 @@
 //!
 //! This library is in an early stage of development and many features do not work yet;
 //! this may be indicated by returned errors or by the generated code failing to compile.
-//! Broadly, simple mathematical functions will work, and bindings, textures, atomics,
+//! Broadly, simple mathematical functions will work, and matrices, textures, atomics,
 //! derivatives, and workgroup operations will not.
 //!
 //! [`naga_rust_rt`]: https://docs.rs/naga-rust-rt
@@ -66,10 +66,17 @@ pub enum Error {
         found: &'static str,
     },
 
-    /// To use a shader with global variables, [`Config::global_struct()`] must be set.
+    /// To use a shader with private global variables, [`Config::global_struct()`] must be set.
     #[non_exhaustive]
     GlobalVariablesNotEnabled {
         /// The name of one of the prohibited global variables.
+        example: String,
+    },
+
+    /// To use a shader with resources, [`Config::resource_struct()`] must be set.
+    #[non_exhaustive]
+    ResourcesNotEnabled {
+        /// The name of one of the prohibited resources.
         example: String,
     },
 }
@@ -91,7 +98,11 @@ impl fmt::Display for Error {
             }
             Error::GlobalVariablesNotEnabled { example } => write!(
                 f,
-                "global variable `{example}` found in shader, but not enabled in Config"
+                "global variable `{example}` found in shader, but `global_struct` is not configured"
+            ),
+            Error::ResourcesNotEnabled { example } => write!(
+                f,
+                "resource `{example}` found in shader, but `resource_struct` is not configured"
             ),
         }
     }

@@ -83,6 +83,9 @@ impl syn::parse::Parse for ConfigAndStr {
                 "global_struct" => {
                     config = config.global_struct(input.parse::<syn::Ident>()?.to_string());
                 }
+                "resource_struct" => {
+                    config = config.resource_struct(input.parse::<syn::Ident>()?.to_string());
+                }
                 // TODO: implement other configuration options
                 _ => {
                     return Err(syn::Error::new_spanned(

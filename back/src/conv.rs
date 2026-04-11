@@ -39,6 +39,7 @@ pub(crate) fn unwrap_to_rust<T: TryToRust + Copy + fmt::Debug>(value: T) -> &'st
 }
 
 // Contains all keywords, strict or weak, in 2024 and any previous edition, sorted.
+// Also contains names we want to reserve for our own purposes.
 // https://doc.rust-lang.org/reference/keywords.html
 const KEYWORDS_2024_SLICE: &[&str] = &[
     "abstract",
@@ -77,6 +78,7 @@ const KEYWORDS_2024_SLICE: &[&str] = &[
     "pub",
     "raw",
     "ref",
+    "resources", // not a Rust keyword; reserved for ourselves.
     "return",
     "safe",
     "self",

@@ -10,7 +10,7 @@
 //!
 //! This library is in an early stage of development and many features do not work yet.
 //! Expect compilation failures and to have to tweak your code to fit.
-//! Broadly, simple mathematical functions will work, and bindings, textures, atomics,
+//! Broadly, simple mathematical functions will work, and matrices, textures, atomics,
 //! derivatives, and workgroup operations will not.
 //!
 //! # Example
@@ -83,7 +83,7 @@ pub use naga_rust_macros::include_wgsl_mr;
 ///     "var<private> foo: i32 = 10;",
 /// );
 ///
-/// assert_eq!(Globals::default().foo, naga_rust_embed::rt::Scalar(10));
+/// assert_eq!(Globals::new().foo, naga_rust_embed::rt::Scalar(10));
 /// ```
 ///
 #[doc = include_str!("configuration_syntax.md")]

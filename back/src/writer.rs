@@ -12,10 +12,10 @@ use naga::{
     valid::ModuleInfo,
 };
 
-use crate::config::WriterFlags;
 use crate::conv::{self, BinOpClassified, unwrap_to_rust};
 use crate::util::{Gensym, LevelNext};
 use crate::{Config, Error};
+use crate::{config::WriterFlags, util::GlobalKind};
 
 // -------------------------------------------------------------------------------------------------
 
@@ -211,10 +211,14 @@ impl Writer {
             &[FN_INTERNAL_TYPES_PREFIX],
             &mut self.names,
         );
+
+        // TODO: We actually want to say “treat this as reserved but do not rename it”,
+        // but Namer doesn’t have that option
         if let Some(g) = &config.global_struct {
-            // TODO: We actually want to say “treat this as reserved but do not rename it”,
-            // but Namer doesn’t have that option
             namer.call(g);
+        }
+        if let Some(r) = &config.resource_struct {
+            namer.call(r);
         }
         named_expressions.clear();
     }
@@ -264,34 +268,91 @@ impl Writer {
             }
         }
 
-        // If we are using global variables, write the `struct` that contains them.
-        if let Some(global_struct) = self.config.global_struct.clone() {
-            writeln!(out, "struct {global_struct} {{")?;
-            for (handle, global) in module.global_variables.iter() {
-                self.write_global_variable_as_struct_field(out, module, global, handle)?;
+        // If we are using resources, write the `struct` that contains them.
+        {
+            let mut resource_iter = GlobalKind::Resource.filter(&module.global_variables);
+            if let Some(ref resource_struct) = self.config.resource_struct {
+                writeln!(out, "struct {resource_struct} {{")?;
+                for (handle, global) in resource_iter {
+                    self.write_global_variable_as_struct_field(out, module, global, handle)?;
+                }
+                writeln!(out, "}}")?;
+            } else if let Some((_, example)) = resource_iter.next() {
+                return Err(Error::ResourcesNotEnabled {
+                    example: example.name.clone().unwrap_or_default(),
+                });
             }
-            // TODO: instead of trying to implement Default, make a constructor function
-            // for all globals that use bindings rather than initializers
-            writeln!(
-                out,
-                "}}\n\
-                impl Default for {global_struct} {{\n\
-                {INDENT}fn default() -> Self {{ Self {{"
-            )?;
-            for (handle, global) in module.global_variables.iter() {
-                self.write_global_variable_as_field_initializer(out, module, info, global, handle)?;
-            }
-            writeln!(out, "{INDENT}}}}}\n}}")?;
-
-            // Start the `impl` block of the functions
-            writeln!(out, "impl {global_struct} {{")?;
-        } else if let Some((_, example)) = module.global_variables.iter().next() {
-            return Err(Error::GlobalVariablesNotEnabled {
-                example: example.name.clone().unwrap_or_default(),
-            });
         }
 
-        // Write all regular functions (which may or may not be in the `impl` block from above).
+        // If we are using global variables, write the `struct` that contains them.
+        let global_lifetime_generics =
+            if self.config.global_struct.is_some() && self.config.resource_struct.is_some() {
+                "<'g>"
+            } else {
+                ""
+            };
+        {
+            let mut global_variable_iter = GlobalKind::Variable.filter(&module.global_variables);
+            if let Some(ref global_struct) = self.config.global_struct {
+                let visibility = self.visibility();
+                writeln!(out, "struct {global_struct}{global_lifetime_generics} {{")?;
+                if let Some(ref resource_struct_name) = self.config.resource_struct {
+                    writeln!(
+                        out,
+                        "{INDENT}{visibility}resources: &'g {resource_struct_name},"
+                    )?;
+                }
+                for (handle, global) in global_variable_iter {
+                    self.write_global_variable_as_struct_field(out, module, global, handle)?;
+                }
+                write!(
+                    out,
+                    "}}\n\
+                    impl{global_lifetime_generics} {global_struct}{global_lifetime_generics} {{\n\
+                    {INDENT}{visibility}const fn new(",
+                )?;
+                // Define new() function with parameter list depending on whether the resource
+                // struct is needed.
+                if let Some(ref resource_struct_name) = self.config.resource_struct {
+                    write!(out, "resources: &'g {resource_struct_name}")?;
+                }
+                writeln!(out, ") -> Self {{ Self {{")?;
+
+                if self.config.resource_struct.is_some() {
+                    // Note that we reserve the name “resources” using the keyword set.
+                    writeln!(out, "{INDENT}{INDENT}resources,")?;
+                }
+                for (handle, global) in GlobalKind::Variable.filter(&module.global_variables) {
+                    self.write_global_variable_as_field_initializer(
+                        out, module, info, global, handle,
+                    )?;
+                }
+                writeln!(out, "{INDENT}}}}}\n}}")?;
+
+                if self.config.resource_struct.is_none() {
+                    // If the global struct doesn’t need a resource struct,
+                    // then it can implement Default.
+                    writeln!(
+                        out,
+                        "impl Default for {global_struct} {{ fn default() -> Self {{ Self::new() }} }}"
+                    )?;
+                }
+            } else if let Some((_, example)) = global_variable_iter.next() {
+                return Err(Error::GlobalVariablesNotEnabled {
+                    example: example.name.clone().unwrap_or_default(),
+                });
+            }
+        }
+
+        // If we are making methods rather than free functions, start the `impl` block
+        if let Some(name) = self.config.impl_type() {
+            writeln!(
+                out,
+                "impl{global_lifetime_generics} {name}{global_lifetime_generics} {{"
+            )?;
+        }
+
+        // Write all regular functions (which may or may not be in an `impl` block from above).
         for (handle, function) in module.functions.iter() {
             let fun_info = &info[handle];
 
@@ -340,7 +401,7 @@ impl Writer {
             }
         }
 
-        if self.config.use_global_struct() {
+        if self.config.impl_type().is_some() {
             // End the `impl` block
             writeln!(out, "}}")?;
         }
@@ -400,7 +461,7 @@ impl Writer {
         };
         write!(out, "{visibility}fn {name_prefix}{func_name}(")?;
 
-        if self.config.use_global_struct() {
+        if self.config.functions_are_methods() {
             // TODO: need to figure out whether &mut is needed
             write!(out, "&self, ")?;
         } else if func_ctx.info.global_variable_count() > 0 {
@@ -462,7 +523,7 @@ impl Writer {
         if is_public_shim {
             // Write function call to the inner, internally-typed function.
             write!(out, "{INDENT}")?;
-            if self.config.use_global_struct() {
+            if self.config.functions_are_methods() {
                 write!(out, "self.")?;
             }
             write!(out, "{FN_INTERNAL_TYPES_PREFIX}{func_name}(")?;
@@ -722,8 +783,7 @@ impl Writer {
                     self.named_expressions.insert(expr, name);
                 }
 
-                // If we are using a global struct, then functions are methods of that struct.
-                if self.config.use_global_struct() {
+                if self.config.functions_are_methods() {
                     write!(out, "self.")?;
                 }
 
@@ -1257,8 +1317,14 @@ impl Writer {
                 });
             }
             Expression::GlobalVariable(handle) => {
-                let name = &self.names[&NameKey::GlobalVariable(handle)];
-                write!(out, "self.{name}")?;
+                write!(
+                    out,
+                    "{prefix}{name}",
+                    prefix = self
+                        .config
+                        .global_field_access_prefix(&module.global_variables[handle]),
+                    name = &self.names[&NameKey::GlobalVariable(handle)]
+                )?;
             }
 
             Expression::As {
@@ -1646,7 +1712,7 @@ impl Writer {
             space,
             binding: _, // don't (yet) expose numeric binding locations
             ty,
-            init: _,               // TODO: need to put initialize exprs in a new() fn
+            init: _,
             memory_decorations: _, // TODO: probably need to do things with this
         } = global;
 
@@ -1659,8 +1725,9 @@ impl Writer {
 
         write!(
             out,
-            "{INDENT}{}: ",
-            &self.names[&NameKey::GlobalVariable(handle)]
+            "{INDENT}{visibility}{name}: ",
+            visibility = self.visibility(),
+            name = &self.names[&NameKey::GlobalVariable(handle)],
         )?;
         self.write_type(out, module, ty, TypeTranslation::from(space))?;
         writeln!(out, ",")?;
@@ -1675,11 +1742,8 @@ impl Writer {
         global: &naga::GlobalVariable,
         handle: Handle<naga::GlobalVariable>,
     ) -> BackendResult {
-        write!(
-            out,
-            "{INDENT}{INDENT}{}: ",
-            &self.names[&NameKey::GlobalVariable(handle)]
-        )?;
+        let name: &str = &self.names[&NameKey::GlobalVariable(handle)];
+        write!(out, "{INDENT}{INDENT}{name}: ")?;
 
         if let Some(init) = global.init {
             self.write_expr(
