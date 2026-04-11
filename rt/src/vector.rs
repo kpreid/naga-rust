@@ -1,4 +1,4 @@
-use core::{cmp, ops};
+use core::{cmp, fmt, ops};
 use num_traits::ConstZero;
 
 // Provides float math functions without std.
@@ -736,6 +736,16 @@ impl<T> Scalar<T> {
     /// Currently equivalent to `self.0` but can be used as a more strongly typed operation.
     pub fn into_inner(self) -> T {
         self.0
+    }
+
+    pub fn into_array_index(self) -> usize
+    where
+        T: Copy + TryInto<usize> + fmt::Debug,
+    {
+        match self.into_inner().try_into() {
+            Ok(index) => index,
+            Err(_) => panic!("impossible array index {self:?}"),
+        }
     }
 }
 
