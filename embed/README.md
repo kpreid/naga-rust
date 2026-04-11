@@ -13,7 +13,7 @@ use the [`naga-rust-back`] library directly instead.
 
 This library is in an early stage of development and many features do not work yet.
 Expect compilation failures and to have to tweak your code to fit.
-Broadly, simple mathematical functions will work, and bindings, textures, atomics,
+Broadly, simple mathematical functions will work, and matrices, textures, atomics,
 derivatives, and workgroup operations will not.
 
 [`naga`]: https://crates.io/crates/naga

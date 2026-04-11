@@ -66,40 +66,6 @@ fn expect_unimplemented(wgsl_source_text: &str) {
 // -------------------------------------------------------------------------------------------------
 
 #[test]
-fn visibility_control() {
-    assert_eq!(
-        translate(Config::new(), "fn foo() {}"),
-        indoc::indoc! {
-            r"
-            fn foo() {
-                v_foo().into()
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_foo() {
-                return;
-            }
-            
-            "
-        }
-    );
-    assert_eq!(
-        translate(Config::new().public_items(true), "fn foo() {}"),
-        indoc::indoc! {
-            r"
-            pub fn foo() {
-                v_foo().into()
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_foo() {
-                return;
-            }
-            
-            "
-        }
-    );
-}
-
-#[test]
 fn entry_point() {
     assert_eq!(
         translate(
@@ -130,30 +96,210 @@ fn global_variable_enabled() {
     assert_eq!(
         translate(
             Config::new().global_struct("Globals"),
-            r"var<private> foo: i32 = 1;"
+            r"
+            var<private> foo: i32 = 1;
+            fn get_global() -> i32 { return foo; }
+            "
         ),
         indoc::indoc! {
             "
             struct Globals {
                 foo: ::naga_rust_rt::Scalar<i32>,
             }
-            impl Default for Globals {
-                fn default() -> Self { Self {
+            impl Globals {
+                const fn new() -> Self { Self {
                     foo: ::naga_rust_rt::Scalar(1i32),
                 }}
             }
+            impl Default for Globals { fn default() -> Self { Self::new() } }
             impl Globals {
+            fn get_global(&self, ) -> i32 {
+                self.v_get_global().into()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_get_global(&self, ) -> ::naga_rust_rt::Scalar<i32> {
+                let _e1 = self.foo;
+                return _e1;
+            }
+
             }
             "
         }
     );
 }
+
 #[test]
 fn global_variable_disabled() {
     assert!(matches!(
         expect_error(Config::new(), r"var<private> foo: i32 = 1;"),
         naga_rust_back::Error::GlobalVariablesNotEnabled { example: _, .. }
     ));
+}
+
+#[test]
+fn resources_enabled() {
+    assert_eq!(
+        translate(
+            Config::new().resource_struct("Resources"),
+            r"
+            @group(0) @binding(0) var<uniform> foo: i32;
+            fn get_uniform() -> i32 { return foo; }
+            "
+        ),
+        indoc::indoc! {
+            "
+            struct Resources {
+                // group(0) binding(0)
+                foo: ::naga_rust_rt::Scalar<i32>,
+            }
+            impl Resources {
+            fn get_uniform(&self, ) -> i32 {
+                self.v_get_uniform().into()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_get_uniform(&self, ) -> ::naga_rust_rt::Scalar<i32> {
+                let _e1 = self.foo;
+                return _e1;
+            }
+
+            }
+            "
+        }
+    );
+}
+
+#[test]
+fn resources_disabled() {
+    assert!(matches!(
+        expect_error(
+            Config::new(),
+            r"@group(0) @binding(0) var<uniform> foo: i32;"
+        ),
+        naga_rust_back::Error::ResourcesNotEnabled { example: _, .. }
+    ));
+}
+
+/// Code generated when both `global_struct` and `resource_struct` are set.
+///
+/// This test also tests the `public_items` option, because that affects globals and functions.
+#[test]
+fn globals_and_resources_enabled_and_visibility() {
+    let source = r"
+        @group(0) @binding(0) var<uniform> foo: i32;
+        var<private> bar: i32 = 1;
+        fn combine() -> i32 {
+            return foo + bar;
+        } 
+    ";
+
+    // Without public items
+    assert_eq!(
+        translate(
+            Config::new()
+                .global_struct("Globals")
+                .resource_struct("Resources"),
+            source
+        ),
+        indoc::indoc! {
+            "
+            struct Resources {
+                // group(0) binding(0)
+                foo: ::naga_rust_rt::Scalar<i32>,
+            }
+            struct Globals<'g> {
+                resources: &'g Resources,
+                bar: ::naga_rust_rt::Scalar<i32>,
+            }
+            impl<'g> Globals<'g> {
+                const fn new(resources: &'g Resources) -> Self { Self {
+                    resources,
+                    bar: ::naga_rust_rt::Scalar(1i32),
+                }}
+            }
+            impl<'g> Globals<'g> {
+            fn combine(&self, ) -> i32 {
+                self.v_combine().into()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_combine(&self, ) -> ::naga_rust_rt::Scalar<i32> {
+                let _e1 = self.resources.foo;
+                let _e3 = self.bar;
+                return (_e1 + _e3);
+            }
+
+            }
+            "
+        }
+    );
+
+    // With public items
+    assert_eq!(
+        translate(
+            Config::new()
+                .global_struct("Globals")
+                .resource_struct("Resources")
+                .public_items(true),
+            source
+        ),
+        indoc::indoc! {
+            "
+            struct Resources {
+                // group(0) binding(0)
+                pub foo: ::naga_rust_rt::Scalar<i32>,
+            }
+            struct Globals<'g> {
+                pub resources: &'g Resources,
+                pub bar: ::naga_rust_rt::Scalar<i32>,
+            }
+            impl<'g> Globals<'g> {
+                pub const fn new(resources: &'g Resources) -> Self { Self {
+                    resources,
+                    bar: ::naga_rust_rt::Scalar(1i32),
+                }}
+            }
+            impl<'g> Globals<'g> {
+            pub fn combine(&self, ) -> i32 {
+                self.v_combine().into()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_combine(&self, ) -> ::naga_rust_rt::Scalar<i32> {
+                let _e1 = self.resources.foo;
+                let _e3 = self.bar;
+                return (_e1 + _e3);
+            }
+
+            }
+            "
+        }
+    );
+}
+
+#[test]
+fn globals_and_resources_enabled_but_empty() {
+    assert_eq!(
+        translate(
+            Config::new()
+                .global_struct("Globals")
+                .resource_struct("Resources"),
+            r""
+        ),
+        indoc::indoc! {
+            "
+            struct Resources {
+            }
+            struct Globals<'g> {
+                resources: &'g Resources,
+            }
+            impl<'g> Globals<'g> {
+                const fn new(resources: &'g Resources) -> Self { Self {
+                    resources,
+                }}
+            }
+            impl<'g> Globals<'g> {
+            }
+            "
+        }
+    );
 }
 
 #[test]
@@ -218,11 +364,13 @@ fn array_type_sizes() {
     );
 }
 
+/// This test is only intending to check the translation of `arrayLength()`,
+/// but it needs a resource to be able to get a `ptr<storage, array<..>>`.
 #[test]
 fn array_length() {
     assert_eq!(
         translate(
-            Config::new().global_struct("Globals"),
+            Config::new().resource_struct("Resources"),
             r"
             @group(0) @binding(1) var<storage> arr: array<u32>;
             fn length() -> u32 {
@@ -230,22 +378,13 @@ fn array_length() {
             }
             ",
         ),
-        // TODO: we don't yet fully support bindings properly so lots of this code is nonsense.
-        // This test is only intending to check the translation of arrayLength(), which is
-        // hard to test separately since it must take a `ptr<storage, array<..>>`.
-        //
         indoc::indoc! {
             "
-            struct Globals {
+            struct Resources {
                 // group(0) binding(1)
                 arr: [::naga_rust_rt::Scalar<u32>],
             }
-            impl Default for Globals {
-                fn default() -> Self { Self {
-                    arr: Default::default(),
-                }}
-            }
-            impl Globals {
+            impl Resources {
             fn length(&self, ) -> u32 {
                 self.v_length().into()
             }
@@ -265,7 +404,7 @@ fn array_length() {
 fn atomic_type() {
     assert_eq!(
         translate(
-            Config::new().global_struct("Globals"),
+            Config::new().resource_struct("Resources"),
             r"
             @group(0) @binding(0)
             var<storage, read_write> atomic_scalar: atomic<u32>;
@@ -273,16 +412,11 @@ fn atomic_type() {
         ),
         indoc::indoc! {
             "
-            struct Globals {
+            struct Resources {
                 // group(0) binding(0)
                 atomic_scalar: ::core::sync::atomic::AtomicU32,
             }
-            impl Default for Globals {
-                fn default() -> Self { Self {
-                    atomic_scalar: Default::default(),
-                }}
-            }
-            impl Globals {
+            impl Resources {
             }
             "
         }
