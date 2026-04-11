@@ -14,7 +14,7 @@ for the benefit of the code generator. Expect changes in future versions.
 License
 -------
 
-Copyright 2025 Kevin Reid and the gfx-rs authors.
+Copyright 2025-2026 Kevin Reid and the gfx-rs authors.
 
 Licensed under either of
 
