@@ -13,8 +13,9 @@ cargo-fuzz = true
 [dependencies]
 # Note: Cannot use workspace dependencies here!
 naga-rust-back = { path = "../back" }
-naga = { version = "27.0.0", features = ["arbitrary"] }
-arbitrary = { version = "1.4.1", features = ["derive"] }
+# "fs" is a dummy feature to enable std in naga as otherwise the `Arbitrary` derive won't work
+naga = { version = "29.0.0", features = ["arbitrary", "fs"] }
+arbitrary = { version = "1.4.2", features = ["derive"] }
 libfuzzer-sys = "0.4"
 pretty_assertions = { version = "1.2.0" }
 
