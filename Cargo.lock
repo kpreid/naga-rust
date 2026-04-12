@@ -754,6 +754,7 @@ dependencies = [
  "naga",
  "once_cell",
  "pretty_assertions",
+ "proc-macro2",
 ]
 
 [[package]]

@@ -70,6 +70,18 @@ impl Config {
         self
     }
 
+    /// Sets whether to allow the generated code to panic on entering code that cannot be
+    /// translated, rather than failing generation.
+    ///
+    /// This applies to all unsupported expressions and statements, but not to unsupported types.
+    ///
+    /// The default is `false`.
+    #[must_use]
+    pub fn allow_unimplemented(mut self, value: bool) -> Self {
+        self.flags.set(WriterFlags::ALLOW_UNIMPLEMENTED, value);
+        self
+    }
+
     /// Sets the Rust module path to the runtime support library.
     ///
     /// The default is `"::naga_rust_rt"`.
@@ -164,6 +176,10 @@ bitflags::bitflags! {
 
         /// Generate items with `pub` visibility instead of private.
         const PUBLIC = 0x4;
+
+        /// Allow the generated code to panic on entering code that cannot be
+        /// translated, rather than failing generation.
+        const ALLOW_UNIMPLEMENTED = 0x8;
     }
 }
 

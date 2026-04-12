@@ -293,6 +293,7 @@ fn globals_and_resources_enabled_but_empty() {
 
 #[test]
 fn switch() {
+    // TODO: we can’t fully exercise `fall_through` without using an input syntax other than WGSL
     assert_eq!(
         translate(
             Config::new(),

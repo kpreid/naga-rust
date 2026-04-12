@@ -239,7 +239,7 @@ impl Writer {
         info: &ModuleInfo,
     ) -> BackendResult {
         if !module.overrides.is_empty() {
-            return Err(Error::Unimplemented("pipeline constants".into()));
+            self.write_unimplemented_stmt(out, "pipeline constants")?;
         }
 
         self.reset(module);
@@ -606,7 +606,14 @@ impl Writer {
                         // `clippy::all` refers to all *default* clippy lints, not all clippy lints.
                         // We’re allowing all clippy categories except for restriction, which we
                         // shall assume is on purpose, and cargo, which is irrelvant.
-                        "allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)"
+                        "allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery{})",
+                        if self.config.flags.contains(WriterFlags::ALLOW_UNIMPLEMENTED) {
+                            // ALLOW_UNIMPLEMENTED generates `panic!()`s which will often be
+                            // followed by code that is therefore unreachable.
+                            ", unreachable_code"
+                        } else {
+                            ""
+                        }
                     )?;
                 }
                 Attribute::Stage(shader_stage) => {
@@ -801,20 +808,16 @@ impl Writer {
                 writeln!(out, ");")?
             }
             Statement::Atomic { .. } => {
-                return Err(Error::Unimplemented("atomic operations".into()));
+                self.write_unimplemented_stmt(out, "atomic operations")?;
             }
             Statement::ImageAtomic { .. } => {
-                return Err(Error::TexturesAreUnsupported {
-                    found: "textureAtomic",
-                });
+                self.write_unimplemented_stmt(out, "atomic texture operations")?;
             }
             Statement::WorkGroupUniformLoad { .. } => {
                 todo!("Statement::WorkGroupUniformLoad");
             }
             Statement::ImageStore { .. } => {
-                return Err(Error::TexturesAreUnsupported {
-                    found: "textureStore",
-                });
+                self.write_unimplemented_stmt(out, "textureStore")?;
             }
             Statement::Block(ref block) => {
                 write!(out, "{level}")?;
@@ -838,13 +841,6 @@ impl Writer {
                 let l2 = level.next();
                 let mut new_match_arm = true;
                 for case in cases {
-                    if case.fall_through && !case.body.is_empty() {
-                        // TODO
-                        return Err(Error::Unimplemented(
-                            "fall-through switch case block".into(),
-                        ));
-                    }
-
                     if new_match_arm {
                         // Write initial indentation.
                         write!(out, "{l2}")?;
@@ -865,7 +861,7 @@ impl Writer {
                         }
                     }
 
-                    new_match_arm = !case.fall_through;
+                    new_match_arm = !(case.fall_through && case.body.is_empty());
 
                     // End this pattern and begin the body of this arm,
                     // if it is not fall-through.
@@ -874,6 +870,12 @@ impl Writer {
                         for sta in case.body.iter() {
                             self.write_stmt(out, module, sta, func_ctx, l2.next())?;
                         }
+
+                        if case.fall_through && !case.body.is_empty() {
+                            // TODO
+                            self.write_unimplemented_stmt(out, "switch case with fall-through")?;
+                        }
+
                         writeln!(out, "{l2}}}")?;
                     }
                 }
@@ -917,18 +919,18 @@ impl Writer {
             Statement::Break => writeln!(out, "{level}break 'naga_break;")?,
             Statement::Continue => writeln!(out, "{level}break 'naga_continue;")?,
             Statement::ControlBarrier(_) | Statement::MemoryBarrier(_) => {
-                return Err(Error::Unimplemented("barriers".into()));
+                self.write_unimplemented_stmt(out, "barriers")?;
             }
             Statement::RayQuery { .. } | Statement::RayPipelineFunction(_) => {
-                return Err(Error::Unimplemented("raytracing".into()));
+                self.write_unimplemented_stmt(out, "raytracing")?;
             }
             Statement::SubgroupBallot { .. }
             | Statement::SubgroupCollectiveOperation { .. }
             | Statement::SubgroupGather { .. } => {
-                return Err(Error::Unimplemented("workgroup operations".into()));
+                self.write_unimplemented_stmt(out, "workgroup operations")?;
             }
             Statement::CooperativeStore { .. } => {
-                return Err(Error::Unimplemented("cooperative store".into()));
+                self.write_unimplemented_stmt(out, "cooperative store")?;
             }
         }
 
@@ -963,7 +965,8 @@ impl Writer {
             // When they *are* supported, they will be distinct because per Rust mutability rules,
             // we don’t need to obtain a mutable place, so it will suffice to just evaluate the
             // pointer expression and call an atomic operation function on it.
-            return Err(Error::Unimplemented("atomic operations".into()));
+            self.write_unimplemented_stmt(out, "atomic operations")?;
+            return Ok(());
         }
 
         if let Expression::AccessIndex { base, index } = *pointer_expr {
@@ -1455,7 +1458,7 @@ impl Writer {
                 write!(out, ")")?
             }
             Expression::Derivative { .. } => {
-                return Err(Error::Unimplemented("derivatives".into()));
+                self.write_unimplemented_expr(out, "derivatives")?;
 
                 // use naga::{DerivativeAxis as Axis, DerivativeControl as Ctrl};
                 // let op = match (axis, ctrl) {
@@ -1823,6 +1826,39 @@ impl Writer {
         )?;
         writeln!(out, ";")?;
 
+        Ok(())
+    }
+
+    /// For a feature that naga-rust does not support, either return an immediate conversion error, or emit
+    /// an expression that panics when executed.
+    fn write_unimplemented_expr(
+        &self,
+        out: &mut dyn Write,
+        unimplemented_feature: &'static str,
+    ) -> BackendResult {
+        if self.config.flags.contains(WriterFlags::ALLOW_UNIMPLEMENTED) {
+            write!(
+                out,
+                "unimplemented!({message})",
+                message = proc_macro2::Literal::string(&alloc::format!(
+                    "this shader function contains a feature which \
+                    cannot yet be translated to Rust, {unimplemented_feature}"
+                ))
+            )?;
+            Ok(())
+        } else {
+            Err(Error::Unimplemented(unimplemented_feature.into()))
+        }
+    }
+
+    fn write_unimplemented_stmt(
+        &self,
+        out: &mut dyn Write,
+        unimplemented_feature: &'static str,
+    ) -> BackendResult {
+        write!(out, "{INDENT}")?;
+        self.write_unimplemented_expr(out, unimplemented_feature)?;
+        writeln!(out, ";")?;
         Ok(())
     }
 
