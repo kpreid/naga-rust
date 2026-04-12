@@ -14,9 +14,11 @@
 extern crate std;
 
 mod matrix;
+mod texture;
 mod vector;
 
 pub use matrix::*;
+pub use texture::*;
 pub use vector::*;
 
 // TODO: should probably be num_traits::Zero or something custom

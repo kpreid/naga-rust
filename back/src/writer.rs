@@ -269,10 +269,21 @@ impl Writer {
         }
 
         // If we are using resources, write the `struct` that contains them.
+        let any_resource_requires_lifetime = GlobalKind::Resource
+            .filter(&module.global_variables)
+            .any(|(_, global)| matches!(module.types[global.ty].inner, TypeInner::Image { .. }));
+        let resource_lifetime_generics = if any_resource_requires_lifetime {
+            "<'g>"
+        } else {
+            ""
+        };
         {
             let mut resource_iter = GlobalKind::Resource.filter(&module.global_variables);
             if let Some(ref resource_struct) = self.config.resource_struct {
-                writeln!(out, "struct {resource_struct} {{")?;
+                writeln!(
+                    out,
+                    "struct {resource_struct}{resource_lifetime_generics} {{"
+                )?;
                 for (handle, global) in resource_iter {
                     self.write_global_variable_as_struct_field(out, module, global, handle)?;
                 }
@@ -289,7 +300,9 @@ impl Writer {
             if self.config.global_struct.is_some() && self.config.resource_struct.is_some() {
                 "<'g>"
             } else {
-                ""
+                // We use the resource struct like it was the global struct if we have only the
+                // former, so the `impl` must use those generics.
+                resource_lifetime_generics
             };
         {
             let mut global_variable_iter = GlobalKind::Variable.filter(&module.global_variables);
@@ -299,7 +312,8 @@ impl Writer {
                 if let Some(ref resource_struct_name) = self.config.resource_struct {
                     writeln!(
                         out,
-                        "{INDENT}{visibility}resources: &'g {resource_struct_name},"
+                        "{INDENT}{visibility}resources: \
+                            &'g {resource_struct_name}{resource_lifetime_generics},"
                     )?;
                 }
                 for (handle, global) in global_variable_iter {
@@ -314,7 +328,10 @@ impl Writer {
                 // Define new() function with parameter list depending on whether the resource
                 // struct is needed.
                 if let Some(ref resource_struct_name) = self.config.resource_struct {
-                    write!(out, "resources: &'g {resource_struct_name}")?;
+                    write!(
+                        out,
+                        "resources: &'g {resource_struct_name}{resource_lifetime_generics}"
+                    )?;
                 }
                 writeln!(out, ") -> Self {{ Self {{")?;
 
@@ -1320,19 +1337,74 @@ impl Writer {
                 }
             }
             Expression::ImageSample { .. } => {
-                return Err(Error::TexturesAreUnsupported {
-                    found: "textureSample",
-                });
+                self.write_unimplemented_expr(out, "texture sampling (other than textureLoad)")?;
             }
-            Expression::ImageQuery { .. } => {
-                return Err(Error::TexturesAreUnsupported {
-                    found: "texture queries",
-                });
-            }
-            Expression::ImageLoad { .. } => {
-                return Err(Error::TexturesAreUnsupported {
-                    found: "textureLoad",
-                });
+            Expression::ImageQuery { image, query } => match query {
+                naga::ImageQuery::Size { level } => {
+                    write!(out, "{runtime_path}::Texture::dimensions(")?;
+                    self.write_expr(out, image, expr_ctx)?;
+                    write!(out, ", ")?;
+                    if let Some(level) = level {
+                        write!(out, "{runtime_path}::Scalar::<i32>::into_inner(")?;
+                        self.write_expr(out, level, expr_ctx)?;
+                        write!(out, ")")?;
+                    } else {
+                        write!(out, "0")?;
+                    }
+                    write!(out, ")")?;
+                }
+                naga::ImageQuery::NumLevels => {
+                    write!(out, "{runtime_path}::Texture::mip_levels(")?;
+                    self.write_expr(out, image, expr_ctx)?;
+                    write!(out, ")")?;
+                }
+                naga::ImageQuery::NumLayers => {
+                    write!(out, "{runtime_path}::Texture::array_layers(")?;
+                    self.write_expr(out, image, expr_ctx)?;
+                    write!(out, ")")?;
+                }
+                naga::ImageQuery::NumSamples => {
+                    write!(out, "{runtime_path}::Texture::samples(")?;
+                    self.write_expr(out, image, expr_ctx)?;
+                    write!(out, ")")?;
+                }
+            },
+            Expression::ImageLoad {
+                image,
+                coordinate,
+                array_index,
+                sample,
+                level,
+            } => {
+                write!(out, "{runtime_path}::Texture::load(")?;
+                self.write_expr(out, image, expr_ctx)?;
+                write!(out, ", ")?;
+                self.write_expr(out, coordinate, expr_ctx)?;
+                write!(out, ", ")?;
+                if let Some(array_index) = array_index {
+                    write!(out, "{runtime_path}::Scalar::<i32>::into_inner(")?;
+                    self.write_expr(out, array_index, expr_ctx)?;
+                    write!(out, ")")?;
+                } else {
+                    write!(out, "0")?;
+                }
+                write!(out, ", ")?;
+                if let Some(sample) = sample {
+                    write!(out, "{runtime_path}::Scalar::<i32>::into_inner(")?;
+                    self.write_expr(out, sample, expr_ctx)?;
+                    write!(out, ")")?;
+                } else {
+                    write!(out, "0")?;
+                }
+                write!(out, ", ")?;
+                if let Some(level) = level {
+                    write!(out, "{runtime_path}::Scalar::<i32>::into_inner(")?;
+                    self.write_expr(out, level, expr_ctx)?;
+                    write!(out, ")")?;
+                } else {
+                    write!(out, "0")?;
+                }
+                write!(out, ")")?;
             }
             Expression::GlobalVariable(handle) => {
                 write!(
@@ -1653,8 +1725,29 @@ impl Writer {
             TypeInner::Sampler { comparison: true } => {
                 write!(out, "{runtime_path}::SamplerComparison")?;
             }
-            TypeInner::Image { .. } => {
-                write!(out, "{runtime_path}::Image")?;
+            TypeInner::Image {
+                dim,
+                arrayed: _, // TODO: support array textures
+                class: _,   // TODO: might want separate traits per class
+            } => {
+                // TODO: we will want to support statically dispatched texture access,
+                // but that will require more generics work on the resource struct.
+                // `dyn` is a placeholder for further work.
+                let vec = match dim {
+                    naga::ImageDimension::D1 => "Scalar",
+                    naga::ImageDimension::D2 => "Vec2",
+                    naga::ImageDimension::D3 => "Vec3",
+                    naga::ImageDimension::Cube => "Vec3",
+                };
+                write!(
+                    out,
+                    // 'g is a lifetime name which is declared on the global struct *and* the
+                    // resource struct.
+                    "&'g dyn {runtime_path}::Texture<\
+                        Dimensions = {runtime_path}::{vec}<u32>,\
+                        Coordinates = {runtime_path}::{vec}<i32>,\
+                    >",
+                )?;
             }
             TypeInner::Atomic(scalar) => {
                 write!(

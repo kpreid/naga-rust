@@ -7,6 +7,7 @@ mod globals_and_functions;
 mod matrices;
 mod operators;
 mod structs;
+mod textures;
 mod vector_construction;
 
 // -------------------------------------------------------------------------------------------------
