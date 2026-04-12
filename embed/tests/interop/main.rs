@@ -4,6 +4,7 @@ mod arrays;
 mod constants;
 mod control_flow;
 mod globals_and_functions;
+mod matrices;
 mod operators;
 mod structs;
 mod vector_construction;

@@ -1626,6 +1626,17 @@ impl Writer {
                 conv::vector_size_str(size),
                 unwrap_to_rust(scalar),
             )?,
+            TypeInner::Matrix {
+                columns,
+                rows,
+                scalar,
+            } => write!(
+                out,
+                "{runtime_path}::Mat{columns}x{rows}<{scalar}>",
+                columns = conv::vector_size_str(columns),
+                rows = conv::vector_size_str(rows),
+                scalar = unwrap_to_rust(scalar),
+            )?,
             TypeInner::Scalar(scalar) => match type_translation {
                 TypeTranslation::RustScalar => write!(out, "{}", unwrap_to_rust(scalar))?,
                 TypeTranslation::ShaderScalar | TypeTranslation::Simd => {
@@ -1670,9 +1681,6 @@ impl Writer {
                 write!(out, "]")?;
             }
             TypeInner::BindingArray { .. } => {}
-            TypeInner::Matrix { .. } => {
-                return Err(Error::Unimplemented("matrices".into()));
-            }
             TypeInner::Pointer {
                 base,
                 space: pointee_space,
