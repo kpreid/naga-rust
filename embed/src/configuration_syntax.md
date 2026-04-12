@@ -11,4 +11,8 @@ The available configuration options are:
 * `resource_struct = StructNameHere`:
   Allow declarations of resources (uniforms), generate a struct with the given name to hold
   them, and make all functions methods of that struct if `global_struct` is not also set.
+* `allow_unimplemented = true | false`:
+  Whether to allow the generated code to panic on entering code that cannot be
+  translated, rather than failing generation.
+
 * TODO: Other configuration options are not implemented.

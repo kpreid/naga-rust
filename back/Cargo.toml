@@ -24,6 +24,8 @@ arrayvec = { workspace = true }
 bitflags = { workspace = true }
 naga = { workspace = true }
 once_cell = { workspace = true }
+# Used to quote Rust string literals
+proc-macro2.workspace = true
 
 [dev-dependencies]
 # Use WGSL frontend and Rust backend to run tests/textual.rs

@@ -86,6 +86,9 @@ impl syn::parse::Parse for ConfigAndStr {
                 "resource_struct" => {
                     config = config.resource_struct(input.parse::<syn::Ident>()?.to_string());
                 }
+                "allow_unimplemented" => {
+                    config = config.allow_unimplemented(input.parse::<syn::LitBool>()?.value);
+                }
                 // TODO: implement other configuration options
                 _ => {
                     return Err(syn::Error::new_spanned(

@@ -9,6 +9,10 @@ mod operators;
 mod structs;
 mod vector_construction;
 
+// -------------------------------------------------------------------------------------------------
+
+use naga_rust_embed::wgsl;
+
 // TODO: implement atomics
 // #[test]
 // fn atomics() {
@@ -31,3 +35,24 @@ mod vector_construction;
 //     globals.atomic_ops();
 //     assert_eq!(globals.x.load(core::sync::atomic::Ordering::Relaxed), 36);
 // }
+
+#[test]
+fn allowed_unimplemented() {
+    wgsl!(
+        allow_unimplemented = true,
+        r"
+        fn example(x: f32) -> f32 {
+            return dpdx(x);
+        }
+        "
+    );
+
+    let result = std::panic::catch_unwind(|| {
+        example(1.0);
+    });
+    assert_eq!(
+        result.unwrap_err().downcast_ref::<&str>().unwrap(),
+        &"not implemented: this shader function contains a feature \
+            which cannot yet be translated to Rust, derivatives"
+    );
+}
