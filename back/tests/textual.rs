@@ -175,6 +175,7 @@ fn resources_disabled() {
 fn globals_and_resources_enabled_and_visibility() {
     let source = r"
         @group(0) @binding(0) var<uniform> foo: i32;
+        @group(0) @binding(1) var texture: texture_2d<f32>;
         var<private> bar: i32 = 1;
         fn combine() -> i32 {
             return foo + bar;
@@ -191,16 +192,18 @@ fn globals_and_resources_enabled_and_visibility() {
         ),
         indoc::indoc! {
             "
-            struct Resources {
+            struct Resources<'g> {
                 // group(0) binding(0)
                 foo: ::naga_rust_rt::Scalar<i32>,
+                // group(0) binding(1)
+                texture: &'g dyn ::naga_rust_rt::Texture<Dimensions = ::naga_rust_rt::Vec2<u32>,Coordinates = ::naga_rust_rt::Vec2<i32>,>,
             }
             struct Globals<'g> {
-                resources: &'g Resources,
+                resources: &'g Resources<'g>,
                 bar: ::naga_rust_rt::Scalar<i32>,
             }
             impl<'g> Globals<'g> {
-                const fn new(resources: &'g Resources) -> Self { Self {
+                const fn new(resources: &'g Resources<'g>) -> Self { Self {
                     resources,
                     bar: ::naga_rust_rt::Scalar(1i32),
                 }}
@@ -232,16 +235,18 @@ fn globals_and_resources_enabled_and_visibility() {
         ),
         indoc::indoc! {
             "
-            struct Resources {
+            struct Resources<'g> {
                 // group(0) binding(0)
                 pub foo: ::naga_rust_rt::Scalar<i32>,
+                // group(0) binding(1)
+                pub texture: &'g dyn ::naga_rust_rt::Texture<Dimensions = ::naga_rust_rt::Vec2<u32>,Coordinates = ::naga_rust_rt::Vec2<i32>,>,
             }
             struct Globals<'g> {
-                pub resources: &'g Resources,
+                pub resources: &'g Resources<'g>,
                 pub bar: ::naga_rust_rt::Scalar<i32>,
             }
             impl<'g> Globals<'g> {
-                pub const fn new(resources: &'g Resources) -> Self { Self {
+                pub const fn new(resources: &'g Resources<'g>) -> Self { Self {
                     resources,
                     bar: ::naga_rust_rt::Scalar(1i32),
                 }}

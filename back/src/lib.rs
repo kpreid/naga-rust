@@ -57,15 +57,6 @@ pub enum Error {
     // or fall into a well-defined category of unsupportedness.
     Unimplemented(String),
 
-    /// We don’t (yet) support texture operations in Rust,
-    /// and this is a notably broad category so it gets its own variant.
-    #[non_exhaustive]
-    TexturesAreUnsupported {
-        /// The specific kind of thing found that is unsupported.
-        /// Represented as a WGSL-flavored string.
-        found: &'static str,
-    },
-
     /// To use a shader with private global variables, [`Config::global_struct()`] must be set.
     #[non_exhaustive]
     GlobalVariablesNotEnabled {
@@ -93,9 +84,6 @@ impl fmt::Display for Error {
         match self {
             Error::FmtError(fmt::Error) => write!(f, "formatting cancelled"),
             Error::Unimplemented(msg) => write!(f, "not yet implemented for Rust: {msg}"),
-            Error::TexturesAreUnsupported { found } => {
-                write!(f, "texture operations, such as {found}, are not supported")
-            }
             Error::GlobalVariablesNotEnabled { example } => write!(
                 f,
                 "global variable `{example}` found in shader, but `global_struct` is not configured"
