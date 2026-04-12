@@ -743,7 +743,10 @@ impl Writer {
             } => {
                 let l2 = level.next();
 
-                write!(out, "{level}if {runtime_path}::Scalar::into_inner(")?;
+                write!(
+                    out,
+                    "{level}if {runtime_path}::Scalar::into_branch_condition("
+                )?;
                 self.write_expr(out, condition, expr_ctx)?;
                 writeln!(out, ") {{")?;
                 for s in accept {
@@ -882,25 +885,37 @@ impl Writer {
                 ref continuing,
                 break_if,
             } => {
-                write!(out, "{level}")?;
-                writeln!(out, "loop {{")?;
-
                 let l2 = level.next();
+                // We need a special block to implement `continuing`, and we add it unconditionally
+                // so that the translation of `continue` doesn’t need to be conditional.
+                writeln!(out, "{level}'naga_break: loop {{\n{l2}'naga_continue: {{")?;
+
+                let l3 = l2.next();
                 for sta in body.iter() {
+                    self.write_stmt(out, module, sta, func_ctx, l3)?;
+                }
+
+                writeln!(out, "{l2}}}")?;
+
+                for sta in continuing.iter() {
                     self.write_stmt(out, module, sta, func_ctx, l2)?;
                 }
 
-                if !continuing.is_empty() {
-                    return Err(Error::Unimplemented("continuing".into()));
-                }
-                if break_if.is_some() {
-                    return Err(Error::Unimplemented("break_if".into()));
+                if let Some(break_if) = break_if {
+                    write!(
+                        out,
+                        "{l2}if {runtime_path}::Scalar::into_branch_condition(",
+                        runtime_path = self.config.runtime_path,
+                    )?;
+                    self.write_expr(out, break_if, expr_ctx)?;
+                    // No loop label needed because we are directly within the Rust `loop {}`.
+                    writeln!(out, ") {{ break; }}")?;
                 }
 
                 writeln!(out, "{level}}}")?;
             }
-            Statement::Break => writeln!(out, "{level}break;")?,
-            Statement::Continue => writeln!(out, "{level}continue;")?,
+            Statement::Break => writeln!(out, "{level}break 'naga_break;")?,
+            Statement::Continue => writeln!(out, "{level}break 'naga_continue;")?,
             Statement::ControlBarrier(_) | Statement::MemoryBarrier(_) => {
                 return Err(Error::Unimplemented("barriers".into()));
             }
