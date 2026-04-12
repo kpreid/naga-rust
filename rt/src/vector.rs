@@ -30,14 +30,14 @@ pub use core::convert::Into;
 #[repr(transparent)]
 pub struct Scalar<T>(pub T);
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(C)]
 pub struct Vec2<T> {
     pub x: T,
     pub y: T,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(C)]
 pub struct Vec3<T> {
     pub x: T,
@@ -45,7 +45,7 @@ pub struct Vec3<T> {
     pub z: T,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(C)]
 pub struct Vec4<T> {
     pub x: T,
@@ -310,11 +310,6 @@ macro_rules! impl_vector_float_arithmetic {
             pub fn distance(self, rhs: Self) -> Scalar<$float> {
                 (self - rhs).length()
             }
-            /// As per WGSL [`dot()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#dot-builtin).
-            #[inline]
-            pub const fn dot(self, rhs: Self) -> Scalar<$float> {
-                Scalar($( self.$component * rhs.$component + )* 0.0)
-            }
             /// As per WGSL [`faceForward()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#faceForward-builtin).
             #[inline]
             pub fn face_forward(self, e2: Self, e3: Self) -> Self {
@@ -538,6 +533,19 @@ macro_rules! impl_vector_regular_fns {
                     }
                 )*
             }
+
+            /// As per WGSL [`dot()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#dot-builtin).
+            //---
+            // Design note: this is generic so that it can be used by generic matrix operations
+            #[inline]
+            pub fn dot(self, rhs: Self) -> Scalar<T>
+            where
+                // TODO: the ConstZero is purely an artifact of the macro repetition
+                Scalar<T>: ops::Mul<Output = Scalar<T>> + num_traits::ConstZero,
+            {
+                $( Scalar(self.$component) * Scalar(rhs.$component) + )* Scalar::<T>::ZERO
+            }
+
         }
 
         impl_vector_integer_arithmetic!($ty, i32, $($component)*);

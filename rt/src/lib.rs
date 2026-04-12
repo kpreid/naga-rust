@@ -13,8 +13,10 @@
 #[cfg(feature = "std")]
 extern crate std;
 
+mod matrix;
 mod vector;
 
+pub use matrix::*;
 pub use vector::*;
 
 // TODO: should probably be num_traits::Zero or something custom
