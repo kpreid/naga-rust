@@ -52,17 +52,6 @@ fn expect_error(config: Config, wgsl_source_text: &str) -> naga_rust_back::Error
     }
 }
 
-#[track_caller]
-fn expect_unimplemented(wgsl_source_text: &str) {
-    match expect_error(Config::default(), wgsl_source_text) {
-        naga_rust_back::Error::Unimplemented(_) => {}
-        e => panic!(
-            "expected Error::Unimplemented, but got a different error:\n{}",
-            ErrorChain(&e)
-        ),
-    }
-}
-
 // -------------------------------------------------------------------------------------------------
 
 #[test]
@@ -451,30 +440,83 @@ fn precedence_of_prefix_and_postfix() {
 }
 
 #[test]
-fn unimplemented_continuing() {
-    expect_unimplemented(
-        r"fn foo() { 
-            var i = 0;
-            loop {
-                i += 1;
-                continuing { i += 1; }
+fn continuing() {
+    assert_eq!(
+        translate(
+            Config::new(),
+            r"fn foo() {
+                var i = 0;
+                loop {
+                    i += 1;
+                    continuing { i += 1; }
+                }
+            }",
+        ),
+        indoc::indoc! {
+            "
+            fn foo() {
+                v_foo().into()
             }
-        }",
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_foo() {
+                let mut i: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(0i32);
+            
+                'naga_break: loop {
+                    'naga_continue: {
+                        let _e2 = i;
+                        i = (_e2 + ::naga_rust_rt::Scalar(1i32));
+                    }
+                    let _e5 = i;
+                    i = (_e5 + ::naga_rust_rt::Scalar(1i32));
+                }
+                return;
+            }
+
+            "
+        }
     );
 }
 
 #[test]
-fn unimplemented_break_if() {
-    expect_unimplemented(
-        r"fn foo() { 
-            var i = 0;
-            loop {
-                continuing {
+fn continuing_break_if() {
+    assert_eq!(
+        translate(
+            Config::new(),
+            r"fn foo() {
+                var i = 0;
+                loop {
                     i += 1;
-                    break if i > 10;
+                    continuing { 
+                        i += 1;
+                        break if i >= 10;
+                    }
                 }
+            }",
+        ),
+        indoc::indoc! {
+            "
+            fn foo() {
+                v_foo().into()
             }
-        }",
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_foo() {
+                let mut i: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(0i32);
+            
+                'naga_break: loop {
+                    'naga_continue: {
+                        let _e2 = i;
+                        i = (_e2 + ::naga_rust_rt::Scalar(1i32));
+                    }
+                    let _e5 = i;
+                    i = (_e5 + ::naga_rust_rt::Scalar(1i32));
+                    let _e8 = i;
+                    if ::naga_rust_rt::Scalar::into_branch_condition(_e8.elementwise_ge(::naga_rust_rt::Scalar(10i32))) { break; }
+                }
+                return;
+            }
+
+            "
+        }
     );
 }
 

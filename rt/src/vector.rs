@@ -749,6 +749,16 @@ impl<T> Scalar<T> {
     }
 }
 
+impl Scalar<bool> {
+    /// Returns the boolean value of this scalar.
+    ///
+    /// This method only exists for `Scalar<bool>`.
+    // (In the future when we support SIMD, this will be unavailable in the SIMD mode.)
+    pub fn into_branch_condition(self) -> bool {
+        self.0
+    }
+}
+
 impl<T> From<T> for Scalar<T> {
     fn from(value: T) -> Self {
         Self(value)
