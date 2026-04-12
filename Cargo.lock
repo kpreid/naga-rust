@@ -781,7 +781,7 @@ dependencies = [
 
 [[package]]
 name = "naga-rust-rt"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "naga-rust-macros",
  "num-traits",
