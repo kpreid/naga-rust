@@ -1334,12 +1334,14 @@ impl Writer {
                 let base_ty_res = &expr_ctx.expect_func_ctx().info[base].ty;
                 let mut base_ty_resolved = base_ty_res.inner_with(&module.types);
 
-                let base_ty_handle = match *base_ty_resolved {
+                // Find the type of container we are accessing, looking past the pointer if there
+                // is one.
+                let (base_container_ty_handle, base_is_pointer) = match *base_ty_resolved {
                     TypeInner::Pointer { base, space: _ } => {
                         base_ty_resolved = &module.types[base].inner;
-                        Some(base)
+                        (Some(base), true)
                     }
-                    _ => base_ty_res.handle(),
+                    _ => (base_ty_res.handle(), false),
                 };
 
                 match *base_ty_resolved {
@@ -1355,25 +1357,33 @@ impl Writer {
                         write!(out, "[{index}usize]")?
                     }
 
-                    // TODO: This is a horrible "make the tests pass" kludge which should be
-                    // replaced with more general implementation of conversion between different
-                    // `TypeTranslation`s.
-                    TypeInner::Struct { .. } if matches!(result_ty.pointer_base_type(), Some(res) if matches!(res.inner_with(&module.types), TypeInner::Scalar(_))) =>
-                    {
-                        let ty = base_ty_handle.unwrap();
-
-                        write!(out, "{runtime_path}::Scalar(")?;
-                        self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-                        write!(out, ".{})", &self.names[&NameKey::StructMember(ty, index)])?
-                    }
-
                     TypeInner::Struct { .. } => {
-                        // This will never panic in case the type is a `Struct`, this is not true
-                        // for other types so we can only check while inside this match arm
-                        let ty = base_ty_handle.unwrap();
+                        // TODO: This is a horrible "make the tests pass" kludge which should be
+                        // replaced with more general implementation of conversion between different
+                        // `TypeTranslation`s (struct contents are `TypeTranslation::RustScalar`
+                        // and our result needs to be `TypeTranslation::Simd`).
+                        let element_type_is_scalar = if base_is_pointer {
+                            // In Naga IR, if the base is a pointer type then so is the result.
+                            result_ty.pointer_base_type().is_some_and(|res| {
+                                matches!(res.inner_with(&module.types), TypeInner::Scalar(_))
+                            })
+                        } else {
+                            matches!(result_ty, TypeInner::Scalar(_))
+                        };
+                        if element_type_is_scalar {
+                            let ty = base_container_ty_handle.unwrap();
 
-                        self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-                        write!(out, ".{}", &self.names[&NameKey::StructMember(ty, index)])?
+                            write!(out, "{runtime_path}::Scalar(")?;
+                            self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
+                            write!(out, ".{})", &self.names[&NameKey::StructMember(ty, index)])?
+                        } else {
+                            // This will never panic in case the type is a `Struct`; this is not so
+                            // for other types, so we can only check while inside this match arm
+                            let ty = base_container_ty_handle.unwrap();
+
+                            self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
+                            write!(out, ".{}", &self.names[&NameKey::StructMember(ty, index)])?
+                        }
                     }
                     ref other => unreachable!("cannot index into a {other:?}"),
                 }
