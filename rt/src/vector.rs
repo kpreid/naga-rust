@@ -355,6 +355,12 @@ macro_rules! impl_vector_float_arithmetic {
                     }
                 ),* }
             }
+            /// As per WGSL [`smoothstep()`](https://www.w3.org/TR/2026/CRD-WGSL-20260310/#smoothstep-builtin),
+            /// but the third parameter called `x` is moved to be the `self` parameter.
+            pub fn smoothstep(self, edge0: Self, edge1: Self) -> Self {
+                let t = ((self - edge0) / (edge1 - edge0)).saturate();
+                t * t * (Scalar(3.0) - Scalar(2.0) * t)
+            }
 
             // TODO: some more of these can be const
             delegate_unary_methods_elementwise!(const {
