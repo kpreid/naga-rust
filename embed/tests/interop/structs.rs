@@ -1,7 +1,7 @@
 use naga_rust_embed::wgsl;
 
 #[test]
-pub(crate) fn declare_and_modify_struct() {
+fn declare_and_modify_struct() {
     wgsl!(
         r"
         struct StructTest {

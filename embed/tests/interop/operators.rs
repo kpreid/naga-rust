@@ -4,7 +4,7 @@ use naga_rust_embed::rt::{Scalar, Vec2, Vec4};
 use naga_rust_embed::wgsl;
 
 #[test]
-pub(crate) fn scalar_arithmetic() {
+fn scalar_arithmetic() {
     wgsl!(
         r"fn add_one(x: i32) -> i32 {
             return x + 1;
@@ -15,7 +15,7 @@ pub(crate) fn scalar_arithmetic() {
 }
 
 #[test]
-pub(crate) fn vector_arithmetic() {
+fn vector_arithmetic() {
     wgsl!(
         r"fn add_one(x: vec2f) -> vec2f {
             return x + vec2f(1.0);
@@ -26,7 +26,7 @@ pub(crate) fn vector_arithmetic() {
 }
 
 #[test]
-pub(crate) fn scalar_pointer() {
+fn scalar_pointer() {
     wgsl!(
         r"fn add_one_ptr(p: ptr<function, i32>) {
             *p += 1;
@@ -39,7 +39,7 @@ pub(crate) fn scalar_pointer() {
 }
 
 #[test]
-pub(crate) fn vector_pointer() {
+fn vector_pointer() {
     wgsl!(
         r"fn add_to_ptr(p: ptr<function, vec2i>) {
             (*p).x += 1;
@@ -53,7 +53,7 @@ pub(crate) fn vector_pointer() {
 }
 
 #[test]
-pub(crate) fn bool_ops() {
+fn bool_ops() {
     wgsl!(
         r"
         fn short_circuit(a: bool, b: bool, c: bool) -> bool {
@@ -72,7 +72,7 @@ pub(crate) fn bool_ops() {
 }
 
 #[test]
-pub(crate) fn bool_vector_ops() {
+fn bool_vector_ops() {
     wgsl!(
         r"fn bool_vector_func(a: vec4<bool>, b: vec4<bool>, c: vec4<bool>) -> vec4<bool> {
             return a & b | c;
@@ -90,7 +90,7 @@ pub(crate) fn bool_vector_ops() {
 }
 
 #[test]
-pub(crate) fn comparison_of_scalars() {
+fn comparison_of_scalars() {
     wgsl!(
         r"
         fn le(a: f32, b: f32) -> bool {
@@ -105,7 +105,7 @@ pub(crate) fn comparison_of_scalars() {
 }
 
 #[test]
-pub(crate) fn comparison_of_vectors() {
+fn comparison_of_vectors() {
     wgsl!(
         r"
         fn le(a: vec4f, b: vec4f) -> vec4<bool> {
