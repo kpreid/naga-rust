@@ -442,7 +442,8 @@ macro_rules! impl_vector_scalar_float_arithmetic {
     }
 }
 
-macro_rules! impl_vector_bitwise {
+/// Bitwise impls for vectors of integers and vectors of bools
+macro_rules! impl_vector_bitwise_with_bool {
     ($vec:ident, $int:ty, $( $component:tt )*) => {
         impl ops::BitAnd for $vec<$int> {
             type Output = Self;
@@ -466,6 +467,26 @@ macro_rules! impl_vector_bitwise {
             type Output = Self;
             fn not(self) -> Self::Output {
                 $vec { $( $component: !self.$component, )* }
+            }
+        }
+    }
+}
+
+/// Bitwise impls for vectors of integers, not bools
+macro_rules! impl_vector_bitwise_without_bool {
+    ($vec:ident, $int:ty, $( $component:tt )*) => {
+        impl_vector_bitwise_with_bool!($vec, $int, $($component)*);
+
+        impl ops::Shl<$vec<u32>> for $vec<$int> {
+            type Output = Self;
+            fn shl(self, rhs: $vec<u32>) -> Self::Output {
+                $vec { $( $component: self.$component.unbounded_shl(rhs.$component), )* }
+            }
+        }
+        impl ops::Shr<$vec<u32>> for $vec<$int> {
+            type Output = Self;
+            fn shr(self, rhs: $vec<u32>) -> Self::Output {
+                $vec { $( $component: self.$component.unbounded_shr(rhs.$component), )* }
             }
         }
 
@@ -606,9 +627,9 @@ macro_rules! impl_vector_regular_fns {
         impl_vector_float_arithmetic!($ty, f32, $($component)*);
         impl_vector_float_arithmetic!($ty, f64, $($component)*);
 
-        impl_vector_bitwise!($ty, bool, $($component)*);
-        impl_vector_bitwise!($ty, i32, $($component)*);
-        impl_vector_bitwise!($ty, u32, $($component)*);
+        impl_vector_bitwise_with_bool!($ty, bool, $($component)*);
+        impl_vector_bitwise_without_bool!($ty, i32, $($component)*);
+        impl_vector_bitwise_without_bool!($ty, u32, $($component)*);
 
         impl $ty<i32> {
             impl_element_casts!($ty);
