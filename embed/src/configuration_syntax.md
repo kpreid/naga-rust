@@ -5,7 +5,7 @@ The available configuration options are:
   Whether to allow the generated code to panic on entering code that cannot be
   translated, rather than failing generation.
 
-* `explicit_types = true | false` (default: `false`):
+* `explicit_types = true | false` (default: `true`):
 
   Whether the generated code contains explicit types when they could be omitted.
 
