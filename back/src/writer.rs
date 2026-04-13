@@ -1514,17 +1514,9 @@ impl Writer {
                 accept,
                 reject,
             } => {
-                let suffix = match *expr_ctx.resolve_type(condition) {
-                    TypeInner::Scalar(Scalar::BOOL) => "",
-                    TypeInner::Vector {
-                        size,
-                        scalar: Scalar::BOOL,
-                    } => conv::vector_size_str(size),
-                    _ => unreachable!("validation should have rejected this"),
-                };
-                write!(out, "{runtime_path}::select{suffix}(")?;
+                // Calls {vector type}::select() method
                 self.write_expr(out, reject, expr_ctx)?;
-                write!(out, ", ")?;
+                write!(out, ".select(")?;
                 self.write_expr(out, accept, expr_ctx)?;
                 write!(out, ", ")?;
                 self.write_expr(out, condition, expr_ctx)?;
@@ -1552,15 +1544,18 @@ impl Writer {
             Expression::Relational { fun, argument } => {
                 use naga::RelationalFunction as Rf;
 
-                let fun_name = match fun {
-                    Rf::All => "all",
-                    Rf::Any => "any",
-                    Rf::IsNan => "is_nan",
-                    Rf::IsInf => "is_inf",
-                };
-                write!(out, "{runtime_path}::{fun_name}(")?;
-                self.write_expr(out, argument, expr_ctx)?;
-                write!(out, ")")?
+                match fun {
+                    Rf::All => {
+                        self.write_expr(out, argument, expr_ctx)?;
+                        write!(out, ".all()")?
+                    }
+                    Rf::Any => {
+                        self.write_expr(out, argument, expr_ctx)?;
+                        write!(out, ".any()")?
+                    }
+                    Rf::IsNan => self.write_unimplemented_expr(out, "IsNan")?,
+                    Rf::IsInf => self.write_unimplemented_expr(out, "IsInf")?,
+                }
             }
             // Not supported yet
             Expression::RayQueryGetIntersection { .. }

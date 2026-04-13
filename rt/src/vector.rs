@@ -643,6 +643,18 @@ macro_rules! impl_vector_regular_fns {
         impl $ty<u32> {
             pub fn abs(self) -> Self { self }
         }
+
+        // Boolean-specific functions
+        impl $ty<bool> {
+            /// As per WGSL [`any()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#any-builtin).
+            pub fn any(self) -> Scalar<bool> {
+                Scalar($( self.$component | )* false)
+            }
+            /// As per WGSL [`all()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#all-builtin).
+            pub fn all(self) -> Scalar<bool> {
+                Scalar($( self.$component & )* true)
+            }
+        }
     }
 }
 
