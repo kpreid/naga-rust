@@ -25,6 +25,12 @@ pub trait Texture {
     /// of `i32`.
     type Coordinates: Copy + 'static;
 
+    /// Numeric type exposed to the shader.
+    ///
+    /// Should be one of [`u32`], [`i32`], or [`f32`], and must match the parameter of the
+    /// texture type in the shader.
+    type Scalar;
+
     /// Returns the dimensions of the texture.
     fn dimensions(&self, mip_level: i32) -> Self::Dimensions;
 
@@ -47,5 +53,5 @@ pub trait Texture {
         array_layer: i32,
         sample: i32,
         mip_level: i32,
-    ) -> Vec4<f32>;
+    ) -> Vec4<Self::Scalar>;
 }

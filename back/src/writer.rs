@@ -1775,7 +1775,7 @@ impl Writer {
             TypeInner::Image {
                 dim,
                 arrayed: _, // TODO: support array textures
-                class: _,   // TODO: might want separate traits per class
+                class,      // TODO: might want separate traits per class
             } => {
                 // TODO: we will want to support statically dispatched texture access,
                 // but that will require more generics work on the resource struct.
@@ -1786,13 +1786,36 @@ impl Writer {
                     naga::ImageDimension::D3 => "Vec3",
                     naga::ImageDimension::Cube => "Vec3",
                 };
+                let scalar_type: &str = match class {
+                    naga::ImageClass::Sampled { kind, multi: _ } => match kind {
+                        naga::ScalarKind::Sint => "i32",
+                        naga::ScalarKind::Uint => "u32",
+                        naga::ScalarKind::Float => "f32",
+                        naga::ScalarKind::Bool => todo!(),
+                        naga::ScalarKind::AbstractInt | naga::ScalarKind::AbstractFloat => {
+                            unreachable!(
+                                "abstract types should not appear in IR presented to backends"
+                            )
+                        }
+                    },
+                    naga::ImageClass::Depth { multi: _ } => "f32",
+                    naga::ImageClass::External => {
+                        return Err(Error::Unimplemented("external texture types".into()));
+                    }
+                    naga::ImageClass::Storage { .. } => {
+                        return Err(Error::Unimplemented("storage texture types".into()));
+                    }
+                };
                 write!(
                     out,
                     // 'g is a lifetime name which is declared on the global struct *and* the
                     // resource struct.
+                    //
+                    // TODO: scalar type should have an absolute path
                     "&'g dyn {runtime_path}::Texture<\
                         Dimensions = {runtime_path}::{vec}<u32>,\
                         Coordinates = {runtime_path}::{vec}<i32>,\
+                        Scalar = {scalar_type},\
                     >",
                 )?;
             }
