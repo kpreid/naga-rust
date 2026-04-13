@@ -18,7 +18,7 @@ fn call_entry_point() {
 }
 
 #[test]
-pub(crate) fn function_call() {
+fn function_call() {
     wgsl!(
         r"
         fn func0() -> i32 {
@@ -42,7 +42,7 @@ pub(crate) fn function_call() {
 /// When `global_struct` is in use, calls to other functions in the shader must use
 /// `self` syntax.
 #[test]
-pub(crate) fn function_call_with_self() {
+fn function_call_with_self() {
     wgsl!(
         global_struct = Globals,
         r"
@@ -60,7 +60,7 @@ pub(crate) fn function_call_with_self() {
 }
 
 #[test]
-pub(crate) fn uniform_binding() {
+fn uniform_binding() {
     wgsl!(
         resource_struct = Resources,
         r"

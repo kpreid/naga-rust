@@ -1,7 +1,7 @@
 use naga_rust_embed::wgsl;
 
 #[test]
-pub(crate) fn switch() {
+fn switch() {
     wgsl!(
         r"fn switching(x: i32) -> i32 {
             switch (x) {
@@ -18,7 +18,7 @@ pub(crate) fn switch() {
 }
 
 #[test]
-pub(crate) fn while_loop() {
+fn while_loop() {
     wgsl!(
         r"fn count(n: i32) -> i32 {
             var i: i32 = 0;
@@ -33,7 +33,7 @@ pub(crate) fn while_loop() {
 }
 
 #[test]
-pub(crate) fn loop_simple() {
+fn loop_simple() {
     wgsl!(
         r"fn count(n: i32) -> i32 {
             var i: i32 = 0;
@@ -51,7 +51,7 @@ pub(crate) fn loop_simple() {
 }
 
 #[test]
-pub(crate) fn loop_continuing() {
+fn loop_continuing() {
     wgsl!(
         r"fn count_except_five(n: i32) -> i32 {
             var i: i32 = 0;
@@ -76,7 +76,7 @@ pub(crate) fn loop_continuing() {
 }
 
 #[test]
-pub(crate) fn loop_continuing_break_if() {
+fn loop_continuing_break_if() {
     wgsl!(
         r"fn count_except_five_and_at_least_one(n: i32) -> i32 {
             var i: i32 = 0;

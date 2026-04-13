@@ -2,7 +2,7 @@ use naga_rust_embed::wgsl;
 use naga_rust_rt::Scalar;
 
 #[test]
-pub(crate) fn array_ctor() {
+fn array_ctor() {
     wgsl!(
         r"fn f() -> i32 {
             var a: array<i32, 4> = array(10i, 20, 30, 40);
@@ -13,7 +13,7 @@ pub(crate) fn array_ctor() {
 }
 
 #[test]
-pub(crate) fn array_access_static_index() {
+fn array_access_static_index() {
     wgsl!(
         r"
         fn modify_array(a_ptr: ptr<private, array<u32, 2>>) {
@@ -31,7 +31,7 @@ pub(crate) fn array_access_static_index() {
 }
 
 #[test]
-pub(crate) fn array_access_dynamic_index() {
+fn array_access_dynamic_index() {
     wgsl!(
         r"
         fn modify_array(a_ptr: ptr<private, array<i32, 2>>, index: u32, delta: i32) {
