@@ -1,5 +1,7 @@
 use naga_rust_embed::wgsl;
 
+fn traits_implemented<T: Copy + core::fmt::Debug + PartialEq>() {}
+
 #[test]
 fn declare_and_modify_struct() {
     wgsl!(
@@ -15,6 +17,8 @@ fn declare_and_modify_struct() {
         }
         "
     );
+
+    traits_implemented::<StructTest>();
 
     let mut s = StructTest { a: 1, b: 2.0 };
     modify_struct(&mut s);
