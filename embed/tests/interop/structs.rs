@@ -1,4 +1,4 @@
-use naga_rust_embed::rt::Scalar;
+use naga_rust_embed::rt::{Scalar, Vec4};
 use naga_rust_embed::wgsl;
 
 fn traits_implemented<T: Copy + core::fmt::Debug + PartialEq>() {}
@@ -48,5 +48,48 @@ fn ctor() {
     assert_eq!(
         StructTest::new(Scalar(123), Scalar(456.0)),
         StructTest { a: 123, b: 456.0 }
+    );
+}
+
+/// This used to fail because struct fields weren’t being converted from Rust type `i32`
+/// to Rust type `Scalar<i32>` and so the API was not as expected.
+#[test]
+fn struct_field_becomes_scalar() {
+    wgsl!(
+        r"
+        struct StructTest {
+            a: i32,
+            b: f32,
+        }
+        fn combine(s: StructTest) -> f32 {
+            return f32(s.a) + s.b;
+        }
+        "
+    );
+
+    assert_eq!(combine(StructTest { a: 123, b: 456.0 }), 579.0);
+}
+
+/// Test that we don't accidentally make `Scalar<Vec4<f32>>` out of a vector struct field.
+#[test]
+fn struct_field_already_vector() {
+    wgsl!(
+        r"
+        struct StructTest {
+            a: f32,
+            b: vec4f,
+        }
+        fn combine(s: StructTest) -> vec4f {
+            return s.b * s.a;
+        }
+        "
+    );
+
+    assert_eq!(
+        combine(StructTest {
+            a: 2.,
+            b: Vec4::new(1., 2., 3., 4.)
+        }),
+        Vec4::new(2., 4., 6., 8.)
     );
 }
