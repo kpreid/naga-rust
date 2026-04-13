@@ -469,7 +469,7 @@ fn precedence_of_prefix_and_postfix() {
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_f(p: &mut [::naga_rust_rt::Scalar<i32>; 4]) -> ::naga_rust_rt::Scalar<i32> {
-                let _e2 = (*p)[2 as usize];
+                let _e2 = (*p)[2usize];
                 return (!_e2);
             }
 

@@ -53,6 +53,19 @@ fn vector_pointer() {
 }
 
 #[test]
+fn vector_access() {
+    wgsl!(
+        r"
+        fn second_component(v: vec2f) -> f32 {
+            return v[1];
+        }
+        "
+    );
+
+    assert_eq!(second_component(Vec2::new(123., 456.)), 456.);
+}
+
+#[test]
 fn bool_ops() {
     wgsl!(
         r"
