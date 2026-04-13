@@ -297,6 +297,38 @@ fn globals_and_resources_enabled_but_empty() {
 }
 
 #[test]
+fn struct_decl_and_ctor() {
+    assert_eq!(
+        translate(
+            Config::new(),
+            r"struct Foo {
+                x: i32,
+                y: u32,
+            }"
+        ),
+        indoc::indoc! {
+            "#[derive(Clone, Copy, Debug, PartialEq)]
+            #[repr(C)]
+            struct Foo {
+                x: i32,
+                y: u32,
+            }
+            impl Foo {
+                fn new(
+                    x: impl ::naga_rust_rt::Into<i32>,
+                    y: impl ::naga_rust_rt::Into<u32>,
+                ) -> Self { Self {
+                    x: x.into(),
+                    y: y.into(),
+                } }
+            }
+
+            "
+        }
+    );
+}
+
+#[test]
 fn switch() {
     // TODO: we can’t fully exercise `fall_through` without using an input syntax other than WGSL
     assert_eq!(

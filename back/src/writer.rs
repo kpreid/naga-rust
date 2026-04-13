@@ -670,38 +670,79 @@ impl Writer {
         &self,
         out: &mut dyn Write,
         module: &Module,
-        handle: Handle<naga::Type>,
+        struct_handle: Handle<naga::Type>,
         members: &[naga::StructMember],
     ) -> BackendResult {
         // TODO: we will need to do custom dummy fields to ensure that vec3s have correct alignment.
+        let runtime_path = &self.config.runtime_path;
         let visibility = self.visibility();
+        let name: &str = &self.names[&NameKey::Type(struct_handle)];
+
         write!(
             out,
             "#[derive(Clone, Copy, Debug, PartialEq)]\n\
             #[repr(C)]\n\
-            {visibility}struct {}",
-            self.names[&NameKey::Type(handle)]
+            {visibility}struct {name}",
         )?;
         write!(out, " {{")?;
         writeln!(out)?;
-        for (index, member) in members.iter().enumerate() {
-            // The indentation is only for readability
+
+        let mut dyn_sized = false;
+        for (member_name, member) in self.iter_struct_members(struct_handle, members) {
             write!(out, "{INDENT}")?;
+
             // if let Some(ref binding) = member.binding {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
+
             // Write struct member name and type
-            let member_name =
-                &self.names[&NameKey::StructMember(handle, index.try_into().unwrap())];
             write!(out, "{visibility}{member_name}: ")?;
             self.write_type(out, module, member.ty, TypeTranslation::RustScalar)?;
-            write!(out, ",")?;
-            writeln!(out)?;
+            writeln!(out, ",")?;
+
+            if module.types[member.ty]
+                .inner
+                .is_dynamically_sized(&module.types)
+            {
+                dyn_sized = true;
+            }
         }
 
-        writeln!(out, "}}")?;
+        writeln!(out, "}}")?; // end of struct item
+
+        // Constructor (if not dynamically sized)
+        if !dyn_sized {
+            writeln!(out, "impl {name} {{\n{INDENT}{visibility}fn new(")?;
+            // Constructor parameter list
+            for (member_name, member) in self.iter_struct_members(struct_handle, members) {
+                write!(
+                    out,
+                    "{INDENT}{INDENT}{member_name}: impl {runtime_path}::Into<"
+                )?;
+                self.write_type(out, module, member.ty, TypeTranslation::RustScalar)?;
+                writeln!(out, ">,")?;
+            }
+            writeln!(out, "{INDENT}) -> Self {{ Self {{")?;
+            // Struct literal
+            for (member_name, _member) in self.iter_struct_members(struct_handle, members) {
+                writeln!(out, "{INDENT}{INDENT}{member_name}: {member_name}.into(),")?;
+            }
+            writeln!(out, "{INDENT}}} }}\n}}")?;
+        }
 
         Ok(())
+    }
+
+    fn iter_struct_members<'mem, 'name>(
+        &'name self,
+        struct_handle: Handle<naga::Type>,
+        members: &'mem [naga::StructMember],
+    ) -> impl Iterator<Item = (&'name str, &'mem naga::StructMember)> {
+        members.iter().enumerate().map(move |(index, member)| {
+            let name =
+                &*self.names[&NameKey::StructMember(struct_handle, index.try_into().unwrap())];
+            (name, member)
+        })
     }
 
     /// Helper method used to write statements
