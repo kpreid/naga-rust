@@ -66,9 +66,9 @@ jobs:
         tool: nextest@0.9
 
     # Using Nextest gets us faster overall execution...
-    - run: cargo +nightly miri nextest run --package=naga-rust-embed --package=naga-rust-rt
+    - run: cargo +nightly miri nextest run --package=naga-rust-embed --package=naga-rust-rt --features=std
     # ...but doesn’t run doctests.
-    - run: cargo +nightly miri test --doc
+    - run: cargo +nightly miri test --doc --features=std
 
 
   # Run linters.

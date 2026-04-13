@@ -85,6 +85,7 @@ fn bool_ops() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "slow because exhaustive")]
 fn bool_vector_ops() {
     wgsl!(
         r"fn bool_vector_func(a: vec4<bool>, b: vec4<bool>, c: vec4<bool>) -> vec4<bool> {
