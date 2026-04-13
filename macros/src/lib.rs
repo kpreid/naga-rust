@@ -118,7 +118,11 @@ impl syn::parse::Parse for ConfigAndStr {
 }
 
 fn macro_default_config() -> Config {
-    Config::default().runtime_path("::naga_rust_embed::rt")
+    Config::default()
+        .runtime_path("::naga_rust_embed::rt")
+        // Helps give better errors when the generated code is wrong.
+        // TODO: Consider turning this back off for efficiency? Measure impact?
+        .explicit_types(true)
 }
 
 // -------------------------------------------------------------------------------------------------
