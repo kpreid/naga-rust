@@ -899,6 +899,21 @@ impl<T: Copy> Vec4<T> {
     impl_flattening_ctor!(fn new_31(xyz: Vec3<T>, w: Scalar<T>) => (xyz.x, xyz.y, xyz.z, w.0));
 }
 
+// cross() is a function for Vec3 only
+impl<T> Vec3<T> {
+    // As per WGSL [`cross()`](https://www.w3.org/TR/2026/CRD-WGSL-20260310/#cross-builtin).
+    pub fn cross(self, rhs: Self) -> Self
+    where
+        T: Copy + ops::Mul<Output = T> + ops::Sub<Output = T>,
+    {
+        Self {
+            x: self.y * rhs.z - self.z * rhs.y,
+            y: self.z * rhs.x - self.x * rhs.z,
+            z: self.x * rhs.y - self.y * rhs.x,
+        }
+    }
+}
+
 // -------------------------------------------------------------------------------------------------
 // Swizzles and element accessors
 
