@@ -51,6 +51,26 @@ jobs:
 
     - run: cargo test --all-features
 
+  miri:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6.0.2
+
+    - uses: Swatinem/rust-cache@v2.9.1
+
+    - run: rustup toolchain install nightly --component miri
+
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: nextest@0.9
+
+    # Using Nextest gets us faster overall execution...
+    - run: cargo +nightly miri nextest run --package=naga-rust-embed --package=naga-rust-rt
+    # ...but doesn’t run doctests.
+    - run: cargo +nightly miri test --doc
+
+
   # Run linters.
   #
   # This job is separate from the main "test" job so that:
