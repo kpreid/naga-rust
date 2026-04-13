@@ -24,6 +24,10 @@ impl Default for Config {
 }
 
 impl Config {
+    // When adding new options, also add them to:
+    // * `ConfigAndStr::parse` in `macros/src/lib.rs`.
+    // * `embed/src/configuration_syntax.md` (documentation for the macros).
+
     /// Creates a [`Config`] with default options.
     #[must_use]
     pub const fn new() -> Self {
@@ -47,8 +51,16 @@ impl Config {
 
     /// Sets whether the generated code uses raw pointers instead of references.
     ///
-    /// The resulting code is `unsafe` and may be unsound if the input module
-    /// uses pointers incorrectly.
+    /// The resulting code may be unsound if the input module uses pointers incorrectly.
+    ///
+    /// <div class="warning">
+    ///
+    /// Currently, this does not actually work, in that it generates code which does not
+    /// even try to `unsafe`ly dereference the raw pointers it uses.
+    /// The exact behavior of this option is not yet decided, but it will likely cause the
+    /// generated functions to be `unsafe fn`s.
+    ///
+    /// </div>
     ///
     /// The default is `false`.
     ///

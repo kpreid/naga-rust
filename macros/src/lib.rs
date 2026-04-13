@@ -53,6 +53,8 @@ pub fn dummy_attribute(
 
 // -------------------------------------------------------------------------------------------------
 
+/// Parsed syntax for the [`wgsl`] or [`include_wgsl_mr`] macros, which consist of configuration
+/// options `name = value_expr` followed by a string literal which is either source code or a path.
 struct ConfigAndStr {
     config: Config,
     string: syn::LitStr,
@@ -80,16 +82,29 @@ impl syn::parse::Parse for ConfigAndStr {
             })?;
             input.parse::<Token![=]>()?;
             match &*option_name.to_string() {
+                // The options parsed by this match should also be documented in
+                // `embed/src/configuration_syntax.md`.
+                "allow_unimplemented" => {
+                    config = config.allow_unimplemented(input.parse::<syn::LitBool>()?.value);
+                }
+                "explicit_types" => {
+                    config = config.explicit_types(input.parse::<syn::LitBool>()?.value);
+                }
+                "public_items" => {
+                    config = config.public_items(input.parse::<syn::LitBool>()?.value);
+                }
+                // TODO: raw_pointers doesn’t actually work, and will need to be marked unsafe
+                // when it is implemented. So, we don’t offer it yet.
+                //
+                // "raw_pointers" => {
+                //     config = config.raw_pointers(input.parse::<syn::LitBool>()?.value);
+                // }
                 "global_struct" => {
                     config = config.global_struct(input.parse::<syn::Ident>()?.to_string());
                 }
                 "resource_struct" => {
                     config = config.resource_struct(input.parse::<syn::Ident>()?.to_string());
                 }
-                "allow_unimplemented" => {
-                    config = config.allow_unimplemented(input.parse::<syn::LitBool>()?.value);
-                }
-                // TODO: implement other configuration options
                 _ => {
                     return Err(syn::Error::new_spanned(
                         option_name,
