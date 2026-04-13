@@ -495,19 +495,22 @@ macro_rules! impl_vector_bitwise_without_bool {
 
 macro_rules! impl_element_casts {
     ($ty:ident) => {
+        impl_element_casts!($ty, []);
+    };
+    ($ty:ident, [$($extra:tt)*]) => {
         // TODO: These do not have the right cast semantics, but what *are* the right cast
         // semantics? Naga IR docs are cryptic for `Expression::As`.
         pub fn cast_elem_as_u32(self) -> $ty<u32> {
-            self.map(|component| component as u32)
+            self.map(|component| component $($extra)* as u32)
         }
         pub fn cast_elem_as_i32(self) -> $ty<i32> {
-            self.map(|component| component as i32)
+            self.map(|component| component $($extra)* as i32)
         }
         pub fn cast_elem_as_f32(self) -> $ty<f32> {
-            self.map(|component| component as f32)
+            self.map(|component| component $($extra)* as f32)
         }
         pub fn cast_elem_as_f64(self) -> $ty<f64> {
-            self.map(|component| component as f64)
+            self.map(|component| component $($extra)* as f64)
         }
     };
 }
@@ -642,6 +645,9 @@ macro_rules! impl_vector_regular_fns {
         }
         impl $ty<f64> {
             impl_element_casts!($ty);
+        }
+        impl $ty<bool> {
+            impl_element_casts!($ty, [as u8]);
         }
 
         // Indexing, by usize, i32, or u32, yields a scalar
