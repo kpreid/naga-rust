@@ -166,6 +166,13 @@ macro_rules! impl_vector_integer_arithmetic {
         }
 
         impl $vec<$int> {
+            /// As per WGSL [`clamp()`](https://www.w3.org/TR/2026/CRD-WGSL-20260310/#clamp).
+            #[inline]
+            pub fn clamp(self, low: Self, high: Self) -> Self {
+                // std clamp() panics if low > high, which isn’t conformant
+                $vec { $( $component: self.$component.max(low.$component).min(high.$component) ),*  }
+            }
+
             delegate_binary_methods_elementwise!({
                 max, min
             } ($($component)*));
@@ -295,12 +302,11 @@ macro_rules! impl_vector_float_arithmetic {
 
         // Float math functions (mostly elementwise, but not exclusively)
         impl $vec<$float> {
-            /// As per WGSL [`clamp()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#clamp).
+            /// As per WGSL [`clamp()`](https://www.w3.org/TR/2026/CRD-WGSL-20260310/#clamp).
             #[inline]
             pub const fn clamp(self, low: Self, high: Self) -> Self {
-                // TODO: std clamp() panics if low > high, which isn’t conformant
-                // (but maybe a better debugging tool? )
-                $vec { $( $component: self.$component.clamp(low.$component, high.$component) ),*  }
+                // std clamp() panics if low > high, which isn’t conformant
+                $vec { $( $component: self.$component.max(low.$component).min(high.$component) ),*  }
             }
             /// As per WGSL [`distance()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#distance-builtin).
             #[inline]
