@@ -24,6 +24,37 @@ macro_rules! transpose_body {
     }
 }
 
+/// Implement `Index` and `IndexMut`.
+macro_rules! impl_index {
+    ($columns:literal, $mat_type:ident, $column_type:ident, $index_type:ty) => {
+        impl<T> ops::Index<$index_type> for $mat_type<T> {
+            type Output = $column_type<T>;
+
+            #[inline]
+            fn index(&self, index: $index_type) -> &Self::Output {
+                // manual bounds check because we need to convert to usize and we’d like to have
+                // only one panic branch rather than two
+                if (0..$columns).contains(&index) {
+                    &self.as_array_of_columns_ref()[index as usize]
+                } else {
+                    panic!("matrix indexing out of bounds")
+                }
+            }
+        }
+
+        impl<T> ops::IndexMut<$index_type> for $mat_type<T> {
+            #[inline]
+            fn index_mut(&mut self, index: $index_type) -> &mut Self::Output {
+                if (0..$columns).contains(&index) {
+                    &mut self.as_array_of_columns_mut()[index as usize]
+                } else {
+                    panic!("matrix indexing out of bounds")
+                }
+            }
+        }
+    };
+}
+
 macro_rules! matrix_struct {
     ($columns:literal, $rows:literal, $column_type:ident, [$($column_field:ident),*], $row_type:ident, [$($row_field:ident),*]) => {
         paste::paste! {
@@ -50,7 +81,25 @@ macro_rules! matrix_struct {
                         [$($column_field),*]
                     )
                 }
+
+                #[inline]
+                fn as_array_of_columns_ref(&self) -> &[$column_type<T>; $columns] {
+                    // Reinterpret the reference to self as a reference to an array.
+                    // SAFETY: Matrices are `repr(C)` and have the same elements as the array.
+                    unsafe { &*(&raw const *self).cast::<[$column_type<T>; $columns]>() }
+                }
+                #[inline]
+                fn as_array_of_columns_mut(&mut self) -> &mut [$column_type<T>; $columns] {
+                    // Reinterpret the reference to self as a reference to an array.
+                    // SAFETY: Matrices are `repr(C)` and have the same elements as the array.
+                    unsafe { &mut *(&raw mut *self).cast::<[$column_type<T>; $columns]>() }
+                }
             }
+
+            // Indexing, by usize, i32, or u32, yields a column vector
+            impl_index!($columns, [< Mat $columns x $rows >], $column_type, usize);
+            impl_index!($columns, [< Mat $columns x $rows >], $column_type, i32);
+            impl_index!($columns, [< Mat $columns x $rows >], $column_type, u32);
 
             impl<T> ops::Add for [< Mat $columns x $rows >]<T>
             where

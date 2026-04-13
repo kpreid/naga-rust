@@ -479,6 +479,37 @@ macro_rules! impl_element_casts {
     };
 }
 
+/// Implement `Index` and `IndexMut`.
+macro_rules! impl_index {
+    ($component_count:literal, $vector_type:ident, $index_type:ty) => {
+        impl<T> ops::Index<$index_type> for $vector_type<T> {
+            type Output = Scalar<T>;
+
+            #[inline]
+            fn index(&self, index: $index_type) -> &Self::Output {
+                // manual bounds check because we need to convert to usize and we’d like to have
+                // only one panic branch rather than two
+                if (0..$component_count).contains(&index) {
+                    &self.as_array_ref()[index as usize]
+                } else {
+                    panic!("matrix indexing out of bounds")
+                }
+            }
+        }
+
+        impl<T> ops::IndexMut<$index_type> for $vector_type<T> {
+            #[inline]
+            fn index_mut(&mut self, index: $index_type) -> &mut Self::Output {
+                if (0..$component_count).contains(&index) {
+                    &mut self.as_array_mut()[index as usize]
+                } else {
+                    panic!("vector indexing out of bounds")
+                }
+            }
+        }
+    };
+}
+
 macro_rules! impl_vector_regular_fns {
     ( $ty:ident $component_count:literal : $( $component:tt )* ) => {
         impl<T> $ty<T> {
@@ -531,6 +562,19 @@ macro_rules! impl_vector_regular_fns {
                 )*
             }
 
+            #[inline]
+            fn as_array_ref(&self) -> &[Scalar<T>; $component_count] {
+                // Reinterpret the reference to self as a reference to an array.
+                // SAFETY: Vectors are `repr(C)` and have the same elements as the array.
+                unsafe { &*(&raw const *self).cast::<[Scalar<T>; $component_count]>() }
+            }
+            #[inline]
+            fn as_array_mut(&mut self) -> &mut [Scalar<T>; $component_count] {
+                // Reinterpret the reference to self as a reference to an array.
+                // SAFETY: Vectors are `repr(C)` and have the same elements as the array.
+                unsafe { &mut *(&raw mut *self).cast::<[Scalar<T>; $component_count]>() }
+            }
+
             /// As per WGSL [`dot()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#dot-builtin).
             //---
             // Design note: this is generic so that it can be used by generic matrix operations
@@ -566,6 +610,11 @@ macro_rules! impl_vector_regular_fns {
         impl $ty<f64> {
             impl_element_casts!($ty);
         }
+
+        // Indexing, by usize, i32, or u32, yields a scalar
+        impl_index!($component_count, $ty, usize);
+        impl_index!($component_count, $ty, i32);
+        impl_index!($component_count, $ty, u32);
 
         // Zero constant and traits.
         impl<T: ConstZero> $ty<T> {

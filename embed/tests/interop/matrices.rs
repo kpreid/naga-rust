@@ -1,9 +1,9 @@
 //! Tests for matrix operations.
 //! Not very thorough yet.
 
-use naga_rust_embed::rt::Vec4;
+use naga_rust_embed::rt::{self, Vec4};
 use naga_rust_embed::wgsl;
-use naga_rust_rt::Mat4x4;
+use naga_rust_rt::{Mat4x4, Vec2};
 
 #[test]
 fn transpose() {
@@ -104,5 +104,22 @@ fn matrix_matrix_multiply() {
             Vec4::new(0.0, 0.0, 0.0, 1.0),
         )
         .transpose()
+    );
+}
+
+#[test]
+fn matrix_column_access() {
+    wgsl!(
+        r"
+        fn matrix_columns(m: mat2x2f) -> array<vec2f, 2> {
+            return array(m[0], m[1]);
+        }
+        "
+    );
+
+    let matrix = rt::Mat2x2::new(Vec2::new(1., 2.), Vec2::new(3., 4.));
+    assert_eq!(
+        matrix_columns(matrix),
+        [Vec2::new(1., 2.), Vec2::new(3., 4.)]
     );
 }

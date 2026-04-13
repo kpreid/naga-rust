@@ -1352,7 +1352,7 @@ impl Writer {
                     | TypeInner::BindingArray { .. }
                     | TypeInner::ValuePointer { .. } => {
                         self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-                        write!(out, "[{index} as usize]")?
+                        write!(out, "[{index}usize]")?
                     }
 
                     // TODO: This is a horrible "make the tests pass" kludge which should be
