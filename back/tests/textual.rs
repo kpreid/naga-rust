@@ -196,7 +196,7 @@ fn globals_and_resources_enabled_and_visibility() {
                 // group(0) binding(0)
                 foo: ::naga_rust_rt::Scalar<i32>,
                 // group(0) binding(1)
-                texture: &'g dyn ::naga_rust_rt::Texture<Dimensions = ::naga_rust_rt::Vec2<u32>,Coordinates = ::naga_rust_rt::Vec2<i32>,>,
+                texture: &'g dyn ::naga_rust_rt::Texture<Dimensions = ::naga_rust_rt::Vec2<u32>,Coordinates = ::naga_rust_rt::Vec2<i32>,Scalar = f32,>,
             }
             struct Globals<'g> {
                 resources: &'g Resources<'g>,
@@ -239,7 +239,7 @@ fn globals_and_resources_enabled_and_visibility() {
                 // group(0) binding(0)
                 pub foo: ::naga_rust_rt::Scalar<i32>,
                 // group(0) binding(1)
-                pub texture: &'g dyn ::naga_rust_rt::Texture<Dimensions = ::naga_rust_rt::Vec2<u32>,Coordinates = ::naga_rust_rt::Vec2<i32>,>,
+                pub texture: &'g dyn ::naga_rust_rt::Texture<Dimensions = ::naga_rust_rt::Vec2<u32>,Coordinates = ::naga_rust_rt::Vec2<i32>,Scalar = f32,>,
             }
             struct Globals<'g> {
                 pub resources: &'g Resources<'g>,

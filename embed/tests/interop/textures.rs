@@ -9,6 +9,7 @@ fn texture_query_and_load() {
     impl rt::Texture for MyTexture {
         type Dimensions = Vec2<u32>;
         type Coordinates = Vec2<i32>;
+        type Scalar = f32;
 
         fn dimensions(&self, _mip_level: i32) -> Self::Dimensions {
             Vec2::new(100, 100)
