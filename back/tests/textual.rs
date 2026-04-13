@@ -348,7 +348,8 @@ fn array_type_sizes() {
             }"
         ),
         indoc::indoc! {
-            "#[repr(C)]
+            "#[derive(Clone, Copy, Debug, PartialEq)]
+            #[repr(C)]
             struct Foo {
                 x: [i32; 10],
                 y: [i32],

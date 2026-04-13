@@ -677,7 +677,8 @@ impl Writer {
         let visibility = self.visibility();
         write!(
             out,
-            "#[repr(C)]\n\
+            "#[derive(Clone, Copy, Debug, PartialEq)]\n\
+            #[repr(C)]\n\
             {visibility}struct {}",
             self.names[&NameKey::Type(handle)]
         )?;
