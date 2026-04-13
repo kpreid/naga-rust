@@ -1,6 +1,6 @@
 use exhaust::Exhaust as _;
 
-use naga_rust_embed::rt::{Scalar, Vec2, Vec4};
+use naga_rust_embed::rt::{Scalar, Vec2, Vec3, Vec4};
 use naga_rust_embed::wgsl;
 
 #[test]
@@ -86,6 +86,35 @@ fn bool_vector_ops() {
         {
             assert_eq!(element, a[i] && b[i] || c[i]);
         }
+    }
+}
+
+#[test]
+fn bool_builtin_fns() {
+    wgsl!(
+        r"
+        fn any_all(input: vec3<bool>) -> vec2<bool> {
+            return vec2<bool>(any(input), all(input));
+        }
+        fn select_shim(input: vec3<bool>, a: vec3<i32>, b: vec3<i32>) -> vec3<i32> {
+            return select(a, b, input);
+        }
+        "
+    );
+
+    let a = Vec3::new(1, 2, 3);
+    let b = Vec3::new(4, 5, 6);
+    for input in <[bool; 3]>::exhaust() {
+        let any = input.iter().any(|&x| x);
+        let all = input.iter().all(|&x| x);
+        assert_eq!(any_all(input), Vec2::new(any, all));
+
+        let select_expected = Vec3::new(
+            if input[0] { b.x } else { a.x },
+            if input[1] { b.y } else { a.y },
+            if input[2] { b.z } else { a.z },
+        );
+        assert_eq!(select_shim(input, a, b), select_expected);
     }
 }
 
