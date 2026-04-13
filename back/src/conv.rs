@@ -111,8 +111,6 @@ pub(crate) fn keywords_2024() -> &'static KeywordSet {
 ///
 /// These methods are implemented on `naga_rust_rt` vector types, and also overlap
 /// with Rust `std` functions on scalars.
-/// TODO: But not all of them do, so this won’t fully work correctly until  `naga_rust_rt::Scalar`
-/// is in use.
 pub(crate) fn math_function_to_method(f: naga::MathFunction) -> &'static str {
     use naga::MathFunction as Mf;
     match f {
