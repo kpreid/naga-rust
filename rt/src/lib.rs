@@ -17,9 +17,16 @@ mod matrix;
 mod texture;
 mod vector;
 
+// -------------------------------------------------------------------------------------------------
+
 pub use matrix::*;
 pub use texture::*;
 pub use vector::*;
+
+// Used for argument conversion shim functions
+pub use core::convert::Into;
+
+// -------------------------------------------------------------------------------------------------
 
 // TODO: should probably be num_traits::Zero or something custom
 pub fn zero<T: Default>() -> T {
@@ -31,6 +38,8 @@ pub fn discard() {
     panic!("shader reached discard instruction");
 }
 
+// Attributes which naga_rust_back emits that are currently for documentation purposes only,
+// and don’t actually transform the item.
 pub use naga_rust_macros::dummy_attribute as compute;
 pub use naga_rust_macros::dummy_attribute as fragment;
 pub use naga_rust_macros::dummy_attribute as vertex;
