@@ -75,7 +75,26 @@ math_function_test!(
 
 // TODO: cos, cosh
 // TODO: count*
-// TODO: cross
+
+math_function_test!(
+    cross,
+    "fn shim(a: vec3f, b: vec3f) -> vec3f { return cross(a, b); }",
+    [
+        (
+            (Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0)),
+            Vec3::new(0.0, 0.0, 1.0)
+        ),
+        (
+            (Vec3::new(0.0, 1.0, 0.0), Vec3::new(1.0, 0.0, 0.0)),
+            Vec3::new(0.0, 0.0, -1.0)
+        ),
+        (
+            (Vec3::new(1.0, 2.0, 3.0), Vec3::new(4.0, 5.0, 6.0)),
+            Vec3::new(-3.0, 6.0, -3.0)
+        )
+    ]
+);
+
 // TODO: degrees
 // TODO: determinant
 
