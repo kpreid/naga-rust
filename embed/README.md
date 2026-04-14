@@ -12,9 +12,15 @@ If you need additional control over the translation or to use a different source
 use the [`naga-rust-back`] library directly instead.
 
 This library is in an early stage of development and many features do not work yet.
-Expect compilation failures and to have to tweak your code to fit.
-Broadly, simple mathematical functions will work, and matrices, textures, atomics,
-derivatives, and workgroup operations will not.
+Expect compilation failures, incorrect behaviors, and to have to tweak your code to fit,
+if you wish to use them. Broadly:
+
+* Simple mathematical functions will work.
+* Code involving pointers is likely to fail to compile.
+* Textures are supported but texture filtering is not.
+* Atomics, derivatives, and workgroup operations are not supported.
+* Pipelines involving multiple shaders (e.g. passing data from vertex to fragment)
+  are not automatically executed but you can build that yourself.
 
 [`naga`]: https://crates.io/crates/naga
 [`naga-rust-back`]: https://crates.io/crates/naga-rust-back
