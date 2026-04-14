@@ -5,10 +5,16 @@
 //! Alternatively, you can use [`naga_rust_embed`], which combines this library with
 //! [`naga_rust_rt`] and provides convenient macros for embedding translated WGSL in your Rust code.
 //!
-//! This library is in an early stage of development and many features do not work yet;
-//! this may be indicated by returned errors or by the generated code failing to compile.
-//! Broadly, simple mathematical functions will work, and matrices, textures, atomics,
-//! derivatives, and workgroup operations will not.
+//! This library is in an early stage of development and many features do not work yet.
+//! Expect compilation failures, incorrect behaviors, and to have to tweak your code to fit,
+//! if you wish to use it. Broadly:
+//!
+//! * Simple mathematical functions will work.
+//! * Code involving pointers is likely to fail to compile.
+//! * Textures are supported but texture filtering is not.
+//! * Atomics, derivatives, and workgroup operations are not supported.
+//! * Pipelines involving multiple shaders (e.g. passing data from vertex to fragment)
+//!   are not automatically executed but you can build that yourself.
 //!
 //! [`naga_rust_rt`]: https://docs.rs/naga-rust-rt
 //! [`naga_rust_embed`]: https://docs.rs/naga-rust-embed
