@@ -1,6 +1,7 @@
+use core::marker::PhantomData;
 use core::num::NonZeroU32;
 
-use crate::Vec4;
+use crate::{Vec2, Vec3, Vec4};
 
 /// Texture sampler (placeholder).
 ///
@@ -54,4 +55,65 @@ pub trait Texture {
         sample: i32,
         mip_level: i32,
     ) -> Vec4<Self::Scalar>;
+}
+
+/// A [`Texture`] whose texels all have a single value.
+pub struct ConstantTexture<D: Copy + 'static, C: Copy + 'static, S> {
+    pub dimensions: D,
+    pub coordinates: PhantomData<fn(C)>,
+    pub texel: Vec4<S>,
+}
+
+impl<S: Copy> ConstantTexture<Vec2<u32>, Vec2<i32>, S> {
+    pub const fn new_2d(dimensions: Vec2<u32>, texel: Vec4<S>) -> Self {
+        Self {
+            dimensions,
+            coordinates: PhantomData,
+            texel,
+        }
+    }
+}
+
+impl<S: Copy> ConstantTexture<Vec3<u32>, Vec3<i32>, S> {
+    pub const fn new_3d(dimensions: Vec3<u32>, texel: Vec4<S>) -> Self {
+        Self {
+            dimensions,
+            coordinates: PhantomData,
+            texel,
+        }
+    }
+}
+
+impl<D: Copy + 'static, C: Copy + 'static, S: Copy> Texture for ConstantTexture<D, C, S> {
+    type Dimensions = D;
+
+    type Coordinates = C;
+
+    type Scalar = S;
+
+    fn dimensions(&self, _mip_level: i32) -> Self::Dimensions {
+        self.dimensions
+    }
+
+    fn array_layers(&self) -> NonZeroU32 {
+        NonZeroU32::MIN
+    }
+
+    fn mip_levels(&self) -> NonZeroU32 {
+        NonZeroU32::MIN
+    }
+
+    fn samples(&self) -> NonZeroU32 {
+        NonZeroU32::MIN
+    }
+
+    fn load(
+        &self,
+        _coordinates: Self::Coordinates,
+        _array_layer: i32,
+        _sample: i32,
+        _mip_level: i32,
+    ) -> Vec4<Self::Scalar> {
+        self.texel
+    }
 }
