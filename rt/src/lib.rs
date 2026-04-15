@@ -10,17 +10,22 @@
 
 #![no_std]
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
 mod matrix;
-mod texture;
+pub mod texture;
 mod vector;
 
 // -------------------------------------------------------------------------------------------------
 
 pub use matrix::*;
-pub use texture::*;
+pub use texture::{
+    Sampler, Texture1d, Texture2d, Texture2dArray, Texture3d, TextureCube, TextureCubeArray,
+    TextureMultisampled2d,
+};
 pub use vector::*;
 
 // Traits the generated code refers to

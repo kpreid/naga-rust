@@ -5,6 +5,7 @@
 ### Added
 
 * Support for matrices.
+* Support for texture loads (but not yet filtering).
 * Support for `continuing` and `break if` control flow.
 * Support for boolean vector functions `any()`, `all()`, and `select()`.
 * Partial support for additional math functions, such as `cross()` and `smoothstep()`.

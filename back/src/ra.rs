@@ -47,10 +47,12 @@ pub(crate) enum Type {
     Atomic(Scalar),
     /// Rust scalar type, e.g. [`u32`].
     BareScalar(Scalar),
-    /// Texture/image.
+    /// Texture/image handle.
     Texture {
         dim: naga::ImageDimension,
         scalar: Scalar,
+        multisampled: bool,
+        arrayed: bool,
     },
     /// Texture sampler.
     Sampler,
@@ -91,7 +93,7 @@ pub(crate) enum PtrKind {
 /// A type that is a scalar both in Rust terms and shader terms.
 ///
 /// These are a subset of [`Type`] because they appear in particular situations like atomics.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub(crate) enum Scalar {
     Bool,
     F32,
@@ -467,20 +469,38 @@ impl PrintAst for Type {
                 }
             ),
             Type::BareScalar(scalar) => write!(out, "{scalar}"),
-            Type::Texture { dim, scalar } => {
-                let vec = match dim {
-                    naga::ImageDimension::D1 => "Scalar",
-                    naga::ImageDimension::D2 => "Vec2",
-                    naga::ImageDimension::D3 => "Vec3",
-                    naga::ImageDimension::Cube => "Vec3",
+            &Type::Texture {
+                dim,
+                scalar,
+                multisampled,
+                arrayed,
+            } => {
+                let (dim_string, vec) = match dim {
+                    naga::ImageDimension::D1 => ("1d", "Scalar"),
+                    naga::ImageDimension::D2 => ("2d", "Vec2"),
+                    naga::ImageDimension::D3 => ("3d", "Vec3"),
+                    naga::ImageDimension::Cube => ("Cube", "Vec3"),
                 };
+                // TODO: we want to support fully statically dispatched texture access,
+                // but that will require more work to either:
+                //
+                // * allow the user to specify a concrete type for the texture storage,
+                // * make the resource struct generic,
+                // * or allow the user to provide their own resource struct (possibly corresponding
+                //   to a single bind group) and adapt to its types.
+                //
+                // `dyn` is a placeholder for further work, and it’s not great to go through
+                // a dynamic dispatch for every texel load.
                 write!(
                     out,
-                    "&'g dyn {runtime_path}::Texture<\
-                        Dimensions = {runtime_path}::{vec}<u32>,\
-                        Coordinates = {runtime_path}::{vec}<i32>,\
-                        Scalar = {scalar},\
-                     >"
+                    "{runtime_path}::texture::Texture{multi_string}{dim_string}{array_string}<\
+                        &'g dyn {runtime_path}::texture::Read<\
+                            Coordinates = {runtime_path}::{vec}<i32>, \
+                            Component = {scalar}\
+                        >\
+                    >",
+                    multi_string = if multisampled { "Multisampled" } else { "" },
+                    array_string = if arrayed { "Array" } else { "" },
                 )
             }
             Type::Sampler => write!(out, "{runtime_path}::Sampler"),
@@ -745,11 +765,11 @@ impl fmt::Display for RtItem {
                 VectorSize::Tri => "Vec3::splat_from_scalar",
                 VectorSize::Quad => "Vec4::splat_from_scalar",
             },
-            RtItem::TextureLoad => "Texture::load",
-            RtItem::TextureDimensions => "Texture::dimensions",
-            RtItem::TextureNumLevels => "Texture::mip_levels",
-            RtItem::TextureNumLayers => "Texture::array_layers",
-            RtItem::TextureNumSamples => "Texture::samples",
+            RtItem::TextureLoad => "texture::Read::read_texel",
+            RtItem::TextureDimensions => "texture::dimensions",
+            RtItem::TextureNumLevels => "texture::Query::mip_levels",
+            RtItem::TextureNumLayers => "texture::Query::array_layers",
+            RtItem::TextureNumSamples => "texture::Query::samples",
             RtItem::DiscardFn => "discard",
             RtItem::ZeroFn => "zero",
         })

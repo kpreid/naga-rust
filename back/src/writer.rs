@@ -49,6 +49,10 @@ enum Indirection {
     /// The Rust expression is not necessarily a mutable place; it may be borrowed
     /// immutably but not mutably.
     Ordinary,
+
+    /// The Naga expression has a value type, but the Rust expression is a reference type.
+    /// This is currently used only for texture (image) handles.
+    Ref,
 }
 
 /// Modifier for how scalars in Naga types are translated to Rust based on context.
@@ -1153,17 +1157,29 @@ impl Writer {
         Ok(match (requested, plain) {
             // The plain form expression will be a place.
             // Convert it to a reference to match the Naga pointer type.
+            //
+            // Or, the plain form expression will be a Rust value that we want to take by
+            // reference (currently, a texture handle; in the future, buffers too).
+            //
             // TODO: We need to choose which borrow operator to use.
-            (Indirection::Ordinary, Indirection::Place) => {
+            (Indirection::Ordinary, Indirection::Place)
+            | (Indirection::Ref, Indirection::Ordinary) => {
                 ra::Expr::Borrow(ra::PtrKind::Shared(None), Box::new(plain_expr))
             }
 
             // The plain form expression will be a pointer, but the caller wants its pointee.
             // Insert a dereference operator.
-            (Indirection::Place, Indirection::Ordinary) => ra::Expr::Deref(Box::new(plain_expr)),
+            (Indirection::Place, Indirection::Ordinary)
+            | (Indirection::Ordinary, Indirection::Ref) => ra::Expr::Deref(Box::new(plain_expr)),
+
             // Matches.
             (Indirection::Place, Indirection::Place)
-            | (Indirection::Ordinary, Indirection::Ordinary) => plain_expr,
+            | (Indirection::Ordinary, Indirection::Ordinary)
+            | (Indirection::Ref, Indirection::Ref) => plain_expr,
+
+            (Indirection::Ref, Indirection::Place) | (Indirection::Place, Indirection::Ref) => {
+                unreachable!("multi-level ref/deref")
+            }
         })
     }
 
@@ -1377,7 +1393,8 @@ impl Writer {
                 self.unimplemented_expr("texture sampling (other than textureLoad)")?
             }
             Expression::ImageQuery { image, query } => {
-                let image_expr = self.translate_expr(image, expr_ctx)?;
+                let image_expr =
+                    self.expr_ast_with_indirection(image, expr_ctx, Indirection::Ref)?;
                 match query {
                     naga::ImageQuery::Size { level } => ra::Expr::call_rt(
                         ra::RtItem::TextureDimensions,
@@ -1413,7 +1430,7 @@ impl Writer {
             } => ra::Expr::call_rt(
                 ra::RtItem::TextureLoad,
                 [
-                    self.translate_expr(image, expr_ctx)?,
+                    self.expr_ast_with_indirection(image, expr_ctx, Indirection::Ref)?,
                     self.translate_expr(coordinate, expr_ctx)?,
                     if let Some(array_index) = array_index {
                         ra::Expr::call_rt(
@@ -1724,28 +1741,26 @@ impl Writer {
             TypeInner::Sampler { comparison: true } => ra::Type::SamplerComparison,
             TypeInner::Image {
                 dim,
-                arrayed: _, // TODO: support array textures
-                class,      // TODO: might want separate traits per class
+                arrayed,
+                class,
             } => {
-                // TODO: we will want to support statically dispatched texture access,
-                // but that will require more generics work on the resource struct.
-                // `dyn` is a placeholder for further work.
-                let scalar_type: ra::Scalar = match class {
-                    naga::ImageClass::Sampled { kind, multi: _ } => match kind {
-                        naga::ScalarKind::Sint => ra::Scalar::I32,
-                        naga::ScalarKind::Uint => ra::Scalar::U32,
-                        naga::ScalarKind::Float => ra::Scalar::F32,
-                        naga::ScalarKind::Bool => ra::Scalar::Bool,
-                        naga::ScalarKind::AbstractInt | naga::ScalarKind::AbstractFloat => {
-                            unreachable!(
-                                "abstract types should not appear in IR presented to backends"
-                            )
-                        }
-                    },
-                    naga::ImageClass::Depth { multi: _ } => ra::Scalar::F32,
-                    naga::ImageClass::External => {
-                        return Err(Error::Unimplemented("external texture types".into()));
-                    }
+                let (scalar_type, multisampled): (ra::Scalar, bool) = match class {
+                    naga::ImageClass::Sampled { kind, multi } => (
+                        match kind {
+                            naga::ScalarKind::Sint => ra::Scalar::I32,
+                            naga::ScalarKind::Uint => ra::Scalar::U32,
+                            naga::ScalarKind::Float => ra::Scalar::F32,
+                            naga::ScalarKind::Bool => ra::Scalar::Bool,
+                            naga::ScalarKind::AbstractInt | naga::ScalarKind::AbstractFloat => {
+                                unreachable!(
+                                    "abstract types should not appear in IR presented to backends"
+                                )
+                            }
+                        },
+                        multi,
+                    ),
+                    naga::ImageClass::Depth { multi } => (ra::Scalar::F32, multi),
+                    naga::ImageClass::External => (ra::Scalar::F32, false),
                     naga::ImageClass::Storage { .. } => {
                         return Err(Error::Unimplemented("storage texture types".into()));
                     }
@@ -1753,6 +1768,8 @@ impl Writer {
                 ra::Type::Texture {
                     dim,
                     scalar: scalar_type,
+                    multisampled,
+                    arrayed,
                 }
             }
             TypeInner::Atomic(scalar) => ra::Type::Atomic(scalar.try_into()?),
