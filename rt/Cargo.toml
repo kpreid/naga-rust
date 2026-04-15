@@ -22,6 +22,8 @@ doctest = false
 
 [features]
 default = []
+# If enabled, implement texture access traits for `Box`, `Rc`, and `Arc`
+alloc = []
 # If enabled, use `std`’s math functions instead of `libm`’s
 std = []
 
