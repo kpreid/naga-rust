@@ -98,3 +98,78 @@ fn non_comma_after_input() {
         "expected comma or nothing; found `+`"
     );
 }
+
+mod rule_errors {
+    use super::*;
+
+    #[test]
+    fn empty_rule() {
+        assert_eq!(
+            expect_error(quote! { rule(), "" }),
+            "rule must have at least one effect"
+        );
+    }
+
+    #[test]
+    fn condition_but_no_effect() {
+        assert_eq!(
+            expect_error(quote! { rule(struct(Foo)), "" }),
+            "rule must have at least one effect"
+        );
+    }
+
+    #[test]
+    fn empty_condition() {
+        assert_eq!(
+            expect_error(quote! { rule(struct()), "" }),
+            "expected a struct name; found nothing after this"
+        );
+    }
+
+    #[test]
+    fn unknown_name() {
+        assert_eq!(
+            expect_error(quote! { rule(somethingorother()), "" }),
+            "`somethingorother` is not the name of a rule condition or effect"
+        );
+    }
+    #[test]
+    fn no_arrow() {
+        assert_eq!(
+            expect_error(quote! { rule(struct(Foo) derive(PartialOrd)), "" }),
+            "rule effects must be separated from conditions by `=>`"
+        );
+    }
+
+    #[test]
+    fn extra_arrow() {
+        assert_eq!(
+            expect_error(quote! { rule(struct(Foo) => derive(PartialOrd) => derive(Ord)), "" }),
+            "rule must have at most one `=>`"
+        );
+    }
+
+    #[test]
+    fn empty_effect() {
+        assert_eq!(
+            expect_error(quote! { rule(struct(Foo) => derive()), "" }),
+            "expected a path to a derive macro; found nothing"
+        );
+    }
+
+    #[test]
+    fn other_token() {
+        assert_eq!(
+            expect_error(quote! { rule(struct(Foo) => :), "" }),
+            "expected a rule condition or effect; found `:`"
+        );
+    }
+
+    #[test]
+    fn path_colon_not_joint() {
+        assert_eq!(
+            expect_error(quote! { rule(derive(some : : trait)), "" }),
+            "expected a path to a derive macro; found `:`"
+        );
+    }
+}

@@ -40,7 +40,7 @@ mod ra;
 mod util;
 mod writer;
 
-pub use config::Config;
+pub use config::{Condition, Config, Effect, Rule};
 pub use writer::Writer;
 
 /// The version of Naga we are compatible with.

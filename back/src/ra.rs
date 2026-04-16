@@ -85,7 +85,6 @@ pub(crate) enum Trait {
     Default,
     PartialEq,
     /// User-provided path.
-    #[expect(dead_code, reason = "TODO: add user-specified derives")]
     User(String),
 }
 

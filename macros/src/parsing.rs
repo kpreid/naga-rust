@@ -11,7 +11,7 @@ use proc_macro2::TokenTree;
 /// Wrapper around a token stream iterator which provides help with parsing.
 /// Performs a similar function to `syn::ParseStream`.
 pub(crate) struct Parser {
-    previous_token_span: Option<Span>,
+    pub previous_token_span: Option<Span>,
     iter: proc_macro2::token_stream::IntoIter,
 }
 
@@ -53,9 +53,17 @@ impl Parser {
     // wouldn’t make sense if we did.
 
     pub fn expect_ident(&mut self) -> Result<String, MacroError> {
-        match unwrap_invisible_groups(self.next_expect("identifier")?) {
+        match unwrap_invisible_groups(self.next_expect("an identifier")?) {
             TokenTree::Ident(ident) => Ok(ident.to_string()),
             other => Err(MacroError::unexpected_token(&other, "an identifier")),
+        }
+    }
+
+    /// Like `expect_ident` but returning the token and accepting a description
+    pub fn expect_ident_tok(&mut self, description: &'static str) -> Result<Ident, MacroError> {
+        match unwrap_invisible_groups(self.next_expect(description)?) {
+            TokenTree::Ident(ident) => Ok(ident),
+            other => Err(MacroError::unexpected_token(&other, description)),
         }
     }
 
@@ -64,6 +72,40 @@ impl Parser {
         match litrs::BoolLit::try_from(&token) {
             Ok(lit) => Ok(lit.value()),
             Err(_) => Err(MacroError::unexpected_token(&token, "a boolean literal")),
+        }
+    }
+
+    /// Consume a specific punctuation token token or error, then return `self` for chaining.
+    pub fn expect_punct(
+        &mut self,
+        ch: char,
+        description: &'static str,
+    ) -> Result<&mut Self, MacroError> {
+        match self.next_expect(description)? {
+            TokenTree::Punct(punct) if punct.as_char() == ch => Ok(self),
+            other => Err(MacroError::unexpected_token(&other, description)),
+        }
+    }
+
+    /// Consume a `=` token or error, then return `self` for chaining.
+    pub fn expect_eq(&mut self) -> Result<&mut Self, MacroError> {
+        self.expect_punct('=', "`=`")
+    }
+
+    pub fn expect_parenthesis(&mut self) -> Result<Parser, MacroError> {
+        match self.next_expect("parenthesis")? {
+            TokenTree::Group(group) if group.delimiter() == Delimiter::Parenthesis => Ok(Parser {
+                previous_token_span: Some(group.span_open()),
+                iter: group.stream().into_iter(),
+            }),
+            other => Err(MacroError::unexpected_token(&other, "parenthesis")),
+        }
+    }
+
+    pub(crate) fn expect_eof(&mut self, description: &'static str) -> Result<(), MacroError> {
+        match self.next() {
+            Some(other) => Err(MacroError::unexpected_token(&other, description)),
+            None => Ok(()),
         }
     }
 }

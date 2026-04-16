@@ -50,7 +50,7 @@
 /// include_wgsl_mr!("src/example.wgsl");
 /// ```
 ///
-/// If any configuration is needed, write it attribute-style before the source code literal:
+/// If any configuration is needed, write it before the source code literal:
 ///
 /// ```
 /// # use naga_rust_embed::include_wgsl_mr;
@@ -80,7 +80,7 @@ pub use naga_rust_macros::include_wgsl_mr;
 /// }
 /// ```
 ///
-/// If any configuration is needed, write it attribute-style before the source code literal:
+/// If any configuration is needed, write it before the source code literal:
 ///
 /// ```
 /// # use naga_rust_embed::wgsl;
