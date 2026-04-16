@@ -7,7 +7,7 @@ use core::fmt;
 
 use pretty_assertions::assert_eq;
 
-use naga_rust_back::{Condition, Config, Effect};
+use naga_rust_back::{Condition, Config, Effect, Inline};
 
 // -------------------------------------------------------------------------------------------------
 
@@ -493,6 +493,69 @@ fn omitting_functions_also_allows_omitting_resources() {
                 fn new(foo: impl ::naga_rust_rt::Into<i32>) -> Self {
                     Self { foo: ::naga_rust_rt::into(foo) }
                 }
+            }
+        "}
+    );
+}
+
+#[test]
+fn function_inlining_rule() {
+    assert_eq!(
+        translate(
+            Config::new()
+                .rule((
+                    Condition::Function("has_inline".to_owned()),
+                    Effect::Inline(Inline::Maybe)
+                ))
+                .rule((
+                    Condition::Function("has_inline_always".to_owned()),
+                    Effect::Inline(Inline::Always)
+                ))
+                .rule((
+                    Condition::Function("has_inline_never".to_owned()),
+                    Effect::Inline(Inline::Never)
+                )),
+            r"
+            fn has_none() {}
+            fn has_inline() {}
+            fn has_inline_always() {}
+            fn has_inline_never() {}
+            "
+        ),
+        indoc::indoc! {"
+            fn has_none() {
+                ::naga_rust_rt::into(v_has_none())
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_has_none() {
+                return;
+            }
+            #[inline]
+            fn has_inline() {
+                ::naga_rust_rt::into(v_has_inline())
+            }
+            #[inline]
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_has_inline() {
+                return;
+            }
+            #[inline(always)]
+            fn has_inline_always() {
+                ::naga_rust_rt::into(v_has_inline_always())
+            }
+            #[inline(always)]
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_has_inline_always() {
+                return;
+            }
+            #[inline(never)]
+            fn has_inline_never() {
+                ::naga_rust_rt::into(v_has_inline_never())
+            }
+            #[inline(never)]
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_has_inline_never() {
+                return;
             }
         "}
     );

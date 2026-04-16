@@ -1,12 +1,13 @@
-use naga_rust_back::Condition;
-use naga_rust_back::Effect;
-use naga_rust_back::Rule;
 use proc_macro2::Spacing;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use proc_macro2::TokenTree;
 
+use naga_rust_back::Condition;
 use naga_rust_back::Config;
+use naga_rust_back::Effect;
+use naga_rust_back::Inline;
+use naga_rust_back::Rule;
 
 use crate::parsing::{MacroError, Parser, unwrap_invisible_groups};
 
@@ -131,7 +132,7 @@ fn macro_default_config() -> Config {
 
 // -------------------------------------------------------------------------------------------------
 
-fn parse_rule(input: &mut Parser) -> Result<Rule, MacroError> {
+pub(crate) fn parse_rule(input: &mut Parser) -> Result<Rule, MacroError> {
     // The grammar of a rule is
     //   (condition '=>')? effect*
     // but for simplicity and error reporting, the implementation is more like
@@ -144,6 +145,8 @@ fn parse_rule(input: &mut Parser) -> Result<Rule, MacroError> {
         Condition(Condition),
         Effect(Effect),
     }
+
+    const INLINING_DESC: &str = "`always`, `never`, or nothing";
 
     let mut input = input.expect_parenthesis()?;
 
@@ -162,6 +165,31 @@ fn parse_rule(input: &mut Parser) -> Result<Rule, MacroError> {
                         &mut term_args,
                         "a path to a derive macro",
                     )?)),
+                    "function" => Term::Condition(Condition::Function(
+                        term_args.expect_ident_tok("a function name")?.to_string(),
+                    )),
+                    "inline" => {
+                        let inlining = match term_args.next() {
+                            Some(ref tok @ TokenTree::Ident(ref ident)) => {
+                                match &*ident.to_string() {
+                                    "always" => Inline::Always,
+                                    "never" => Inline::Never,
+                                    _ => {
+                                        return Err(MacroError::unexpected_token(
+                                            tok,
+                                            INLINING_DESC,
+                                        ));
+                                    }
+                                }
+                            }
+                            Some(other) => {
+                                return Err(MacroError::unexpected_token(&other, INLINING_DESC));
+                            }
+                            None => Inline::Maybe,
+                        };
+
+                        Term::Effect(Effect::Inline(inlining))
+                    }
                     "struct" => Term::Condition(Condition::Struct(
                         term_args.expect_ident_tok("a struct name")?.to_string(),
                     )),
@@ -172,6 +200,8 @@ fn parse_rule(input: &mut Parser) -> Result<Rule, MacroError> {
                         ));
                     }
                 };
+
+                term_args.expect_eof("no more arguments")?;
 
                 match term_value {
                     Term::Condition(condition) => {

@@ -41,7 +41,7 @@ mod ra;
 mod util;
 mod writer;
 
-pub use config::{Condition, Config, Effect, Rule};
+pub use config::{Condition, Config, Effect, Inline, Rule};
 pub use writer::Writer;
 
 /// The version of Naga we are compatible with.
