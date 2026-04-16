@@ -1767,9 +1767,25 @@ impl Writer {
                 };
                 ra::Type::Texture {
                     dim,
-                    scalar: scalar_type,
                     multisampled,
                     arrayed,
+                    storage_type: Box::new(ra::Type::Ptr(
+                        ra::PtrKind::Shared(Some("g")),
+                        // TODO: we want to support fully statically dispatched texture access,
+                        // but that will require more work to either:
+                        //
+                        // * allow the user to specify a concrete type for the texture storage,
+                        // * make the resource struct generic,
+                        // * or allow the user to provide their own resource struct (possibly
+                        //   corresponding to a single bind group) and adapt to its types.
+                        //
+                        // `dyn` is a placeholder for further work, and it’s not great to go through
+                        // a dynamic dispatch for every texel load.
+                        Box::new(ra::Type::DynTextureRead {
+                            dim,
+                            scalar: scalar_type,
+                        }),
+                    )),
                 }
             }
             TypeInner::Atomic(scalar) => ra::Type::Atomic(scalar.try_into()?),

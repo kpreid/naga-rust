@@ -47,12 +47,18 @@ pub(crate) enum Type {
     Atomic(Scalar),
     /// Rust scalar type, e.g. [`u32`].
     BareScalar(Scalar),
-    /// Texture/image handle.
+    /// Texture/image handle; one of the structs from `naga_rust_rt::texture`.
+    /// TODO: Fold this into the `RtGen` variant because it has the same shape?
     Texture {
         dim: naga::ImageDimension,
-        scalar: Scalar,
         multisampled: bool,
         arrayed: bool,
+        storage_type: Box<Type>,
+    },
+    /// `dyn naga_rust_rt::texture::Read<...>`
+    DynTextureRead {
+        dim: naga::ImageDimension,
+        scalar: Scalar,
     },
     /// Texture sampler.
     Sampler,
@@ -471,36 +477,38 @@ impl PrintAst for Type {
             Type::BareScalar(scalar) => write!(out, "{scalar}"),
             &Type::Texture {
                 dim,
-                scalar,
                 multisampled,
                 arrayed,
+                ref storage_type,
             } => {
-                let (dim_string, vec) = match dim {
-                    naga::ImageDimension::D1 => ("1d", "Scalar"),
-                    naga::ImageDimension::D2 => ("2d", "Vec2"),
-                    naga::ImageDimension::D3 => ("3d", "Vec3"),
-                    naga::ImageDimension::Cube => ("Cube", "Vec3"),
-                };
-                // TODO: we want to support fully statically dispatched texture access,
-                // but that will require more work to either:
-                //
-                // * allow the user to specify a concrete type for the texture storage,
-                // * make the resource struct generic,
-                // * or allow the user to provide their own resource struct (possibly corresponding
-                //   to a single bind group) and adapt to its types.
-                //
-                // `dyn` is a placeholder for further work, and it’s not great to go through
-                // a dynamic dispatch for every texel load.
                 write!(
                     out,
-                    "{runtime_path}::texture::Texture{multi_string}{dim_string}{array_string}<\
-                        &'g dyn {runtime_path}::texture::Read<\
-                            Coordinates = {runtime_path}::{vec}<i32>, \
-                            Component = {scalar}\
-                        >\
-                    >",
+                    "{runtime_path}::texture::Texture{multi_string}{dim_string}{array_string}<",
                     multi_string = if multisampled { "Multisampled" } else { "" },
+                    dim_string = match dim {
+                        naga::ImageDimension::D1 => "1d",
+                        naga::ImageDimension::D2 => "2d",
+                        naga::ImageDimension::D3 => "3d",
+                        naga::ImageDimension::Cube => "Cube",
+                    },
                     array_string = if arrayed { "Array" } else { "" },
+                )?;
+                storage_type.write(out, ctx)?;
+                out.write_str(">")
+            }
+            &Type::DynTextureRead { dim, scalar } => {
+                let vec = match dim {
+                    naga::ImageDimension::D1 => "Scalar",
+                    naga::ImageDimension::D2 => "Vec2",
+                    naga::ImageDimension::D3 => "Vec3",
+                    naga::ImageDimension::Cube => "Vec3",
+                };
+                write!(
+                    out,
+                    "dyn {runtime_path}::texture::Read<\
+                        Coordinates = {runtime_path}::{vec}<i32>, \
+                        Component = {scalar}\
+                    >",
                 )
             }
             Type::Sampler => write!(out, "{runtime_path}::Sampler"),
