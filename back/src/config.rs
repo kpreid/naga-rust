@@ -1,9 +1,13 @@
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::ra;
 use crate::util::GlobalKind;
+
+// -------------------------------------------------------------------------------------------------
 
 /// Configuration/builder for options for Rust code generation.
 ///
@@ -17,6 +21,7 @@ pub struct Config {
     pub(crate) resource_struct: Option<String>,
     #[allow(dead_code, reason = "reminding ourselves of the future")]
     pub(crate) edition: Edition,
+    pub(crate) rules: Vec<Rule>,
 }
 
 impl Default for Config {
@@ -27,7 +32,7 @@ impl Default for Config {
 
 impl Config {
     // When adding new options, also add them to:
-    // * `ConfigAndStr::parse` in `macros/src/lib.rs`.
+    // * `ConfigAndStr::parse` in `macros/src/parse_config.rs`.
     // * `embed/src/configuration_syntax.md` (documentation for the macros).
 
     /// Creates a [`Config`] with default options.
@@ -39,6 +44,7 @@ impl Config {
             global_struct: None,
             resource_struct: None,
             edition: Edition::Rust2024,
+            rules: Vec::new(),
         }
     }
 
@@ -158,6 +164,15 @@ impl Config {
         self.resource_struct = Some(name.into());
         self
     }
+
+    /// Adds a rule.
+    ///
+    /// Rules modify the translation of specific parts of the shader code.
+    #[must_use]
+    pub fn rule(mut self, rule: impl Into<Rule>) -> Self {
+        self.rules.push(rule.into());
+        self
+    }
 }
 
 /// Internal methods that help generate code based on this config.
@@ -187,6 +202,24 @@ impl Config {
             (Some(GlobalKind::Resource), None) | (Some(GlobalKind::Variable), _) => ra::Expr::Self_,
             _ => unreachable!(),
         }
+    }
+
+    /// Iterates over the effects of all rules that apply in the given situation.
+    ///
+    /// Later rules should take priority over earlier rules (e.g. by overwriting a variable).
+    pub(crate) fn apply_rules(&self, input: &RuleInput<'_>) -> impl Iterator<Item = &Effect> {
+        self.rules.iter().flat_map(
+            |Rule {
+                 conditions: condition,
+                 effects,
+             }| {
+                if condition.iter().all(|c| c.test(input)) {
+                    effects.as_slice()
+                } else {
+                    &[]
+                }
+            },
+        )
     }
 }
 
@@ -223,4 +256,73 @@ bitflags::bitflags! {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Edition {
     Rust2024,
+}
+
+// -------------------------------------------------------------------------------------------------
+
+/// Controls some aspect of the translation from shader code to Rust that needs Rust-specific
+/// choices that cannot be expressed inside the shader code.
+///
+/// Put these in [`Config::rule()`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::exhaustive_structs)]
+pub struct Rule {
+    /// The rule applies when all of these conditions are met.
+    pub conditions: Vec<Condition>,
+    /// The rule has all of these effects.
+    pub effects: Vec<Effect>,
+}
+
+/// Specifies a condition under which a [`Rule`] applies to a part of the input shader code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum Condition {
+    /// Applies to the struct with the given name (excluding resource and global structs).
+    Struct(String),
+}
+
+/// Specifies the effect of a [`Rule`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum Effect {
+    /// Applies a derive macro to translated structs.
+    ///
+    /// The given string is copied literally into the output and must be a path to a derive macro,
+    /// as accepted by the `#[derive]` attribute.
+    Derive(String),
+}
+
+/// Data consulted by rules.
+pub(crate) struct RuleInput<'a> {
+    /// Shader struct name.
+    /// `None` if rules are being applied to something other than a struct item,
+    /// or a generated struct not corresponding to a shader struct.
+    pub r#struct: Option<&'a str>,
+}
+
+impl From<(Condition, Effect)> for Rule {
+    fn from((c, e): (Condition, Effect)) -> Self {
+        Self {
+            conditions: vec![c],
+            effects: vec![e],
+        }
+    }
+}
+
+impl From<Effect> for Rule {
+    /// Creates a rule that always applies.
+    fn from(e: Effect) -> Self {
+        Self {
+            conditions: vec![],
+            effects: vec![e],
+        }
+    }
+}
+
+impl Condition {
+    fn test(&self, input: &RuleInput<'_>) -> bool {
+        match *self {
+            Condition::Struct(ref name) => input.r#struct == Some(name.as_str()),
+        }
+    }
 }

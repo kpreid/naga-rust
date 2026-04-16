@@ -1,3 +1,5 @@
+# Configuration
+
 The available configuration options are:
 
 * `allow_unimplemented = true | false` (default: `false`):
@@ -12,7 +14,9 @@ The available configuration options are:
 * `include_functions = true | false` (default: `true`):
 
   Whether the translated code includes functions.
-  When this is false, only `struct`s and `const`s are translated.
+
+  This may be disabled to produce an output containing only `struct`s and `const`s,
+  and remove any requirement to specify a `global_struct` or `resource_struct`.   
 
 * `public_items = true | false` (default: `false`):
 
@@ -34,3 +38,16 @@ The available configuration options are:
 
   Allow declarations of resources (uniforms), generate a struct with the given name to hold
   them, and make all functions methods of that struct if `global_struct` is not also set.
+
+* `rule(condition => effect)` or<br>
+  `rule(effect)`:
+
+  Defines rules that modify how specific parts of the shader are translated to Rust.
+
+  The available **conditions** are:
+
+  * `struct(StructNameHere)`: matches a single struct according to its name in the shader code.
+
+  The available **effects** are:
+
+  * `derive(DeriveMacroNameHere)`: Adds `#[derive(DeriveMacroNameHere)]` to the translated struct.

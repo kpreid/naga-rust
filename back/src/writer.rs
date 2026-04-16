@@ -13,11 +13,12 @@ use naga::{
     valid::ModuleInfo,
 };
 
+use crate::Effect;
+use crate::config::{RuleInput, WriterFlags};
 use crate::conv::{self, BinOpClassified};
 use crate::ra::{self, PrintAst as _};
-use crate::util::Gensym;
+use crate::util::{Gensym, GlobalKind};
 use crate::{Config, Error};
-use crate::{config::WriterFlags, util::GlobalKind};
 
 // -------------------------------------------------------------------------------------------------
 
@@ -695,13 +696,20 @@ impl Writer {
         let name = &self.names[&NameKey::Type(struct_handle)];
         let self_ty = ra::Type::User(name.clone(), ra::Generics::None);
 
-        let derives: Cow<'static, [ra::Trait]> = Cow::Borrowed(&[
+        let mut derives: Cow<'static, [ra::Trait]> = Cow::Borrowed(&[
             ra::Trait::Clone,
             ra::Trait::Copy,
             ra::Trait::Debug,
             ra::Trait::PartialEq,
         ]);
-        // TODO: support adding user-chosen derives.
+        for effect in self.config.apply_rules(&RuleInput {
+            r#struct: Some(name),
+        }) {
+            #[expect(irrefutable_let_patterns, reason = "will be more")]
+            if let Effect::Derive(name) = effect {
+                derives.to_mut().push(ra::Trait::User(name.clone()));
+            }
+        }
         let struct_attributes = vec![ra::Attribute::Derive(derives), ra::Attribute::ReprC];
 
         let mut fields: Vec<ra::Field> = Vec::with_capacity(members.len());

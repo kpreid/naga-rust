@@ -7,7 +7,7 @@ use core::fmt;
 
 use pretty_assertions::assert_eq;
 
-use naga_rust_back::Config;
+use naga_rust_back::{Condition, Config, Effect};
 
 // -------------------------------------------------------------------------------------------------
 
@@ -365,6 +365,44 @@ fn struct_decl_and_ctor() {
             }
             "
         }
+    );
+}
+
+#[test]
+fn struct_custom_derive_rule() {
+    assert_eq!(
+        translate(
+            Config::new().rule((
+                Condition::Struct("Foo".to_owned()),
+                Effect::Derive("bytemuck::NoUninit".to_owned())
+            )),
+            r"
+            struct Foo { x: i32 }
+            struct Bar { x: i32 }
+            "
+        ),
+        indoc::indoc! {"
+            #[::naga_rust_rt::derive(::naga_rust_rt::Clone, ::naga_rust_rt::Copy, ::naga_rust_rt::Debug, ::naga_rust_rt::PartialEq, bytemuck::NoUninit)]
+            #[repr(C)]
+            struct Foo {
+                x: i32,
+            }
+            impl Foo {
+                fn new(x: impl ::naga_rust_rt::Into<i32>) -> Self {
+                    Self { x: ::naga_rust_rt::into(x) }
+                }
+            }
+            #[::naga_rust_rt::derive(::naga_rust_rt::Clone, ::naga_rust_rt::Copy, ::naga_rust_rt::Debug, ::naga_rust_rt::PartialEq)]
+            #[repr(C)]
+            struct Bar {
+                x: i32,
+            }
+            impl Bar {
+                fn new(x: impl ::naga_rust_rt::Into<i32>) -> Self {
+                    Self { x: ::naga_rust_rt::into(x) }
+                }
+            }
+        "}
     );
 }
 
