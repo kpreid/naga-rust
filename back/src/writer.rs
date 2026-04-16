@@ -408,6 +408,19 @@ impl Writer {
             TypeTranslation::Simd
         };
 
+        let mut inlining = None;
+        for effect in self.config.apply_rules(&RuleInput {
+            function: func.name.as_deref(),
+            r#struct: None,
+        }) {
+            if let Effect::Inline(i) = *effect {
+                inlining = Some(i);
+            }
+        }
+        if let Some(inline) = inlining {
+            attributes.push(ra::Attribute::Inline(inline));
+        }
+
         if !is_public_shim {
             // Don’t lint extra parentheses and such that we might emit.
             attributes.push(ra::Attribute::AllowFunctionBody);
@@ -580,9 +593,9 @@ impl Writer {
             ra::Trait::PartialEq,
         ]);
         for effect in self.config.apply_rules(&RuleInput {
+            function: None,
             r#struct: Some(name),
         }) {
-            #[expect(irrefutable_let_patterns, reason = "will be more")]
             if let Effect::Derive(name) = effect {
                 derives.to_mut().push(ra::Trait::User(name.clone()));
             }

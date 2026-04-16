@@ -168,6 +168,8 @@ impl Config {
     /// Adds a rule.
     ///
     /// Rules modify the translation of specific parts of the shader code.
+    /// When multiple rules apply and their effects conflict, rules added later take priority over
+    /// rules added earlier.
     #[must_use]
     pub fn rule(mut self, rule: impl Into<Rule>) -> Self {
         self.rules.push(rule.into());
@@ -270,6 +272,9 @@ pub(crate) enum Edition {
 /// choices that cannot be expressed inside the shader code.
 ///
 /// Put these in [`Config::rule()`].
+///
+/// When multiple rules apply and their effects conflict, rules added later take priority over
+/// rules added earlier.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::exhaustive_structs)]
 pub struct Rule {
@@ -283,6 +288,8 @@ pub struct Rule {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Condition {
+    /// Applies to the shader function with the given name.
+    Function(String),
     /// Applies to the struct with the given name (excluding resource and global structs).
     Struct(String),
 }
@@ -296,10 +303,45 @@ pub enum Effect {
     /// The given string is copied literally into the output and must be a path to a derive macro,
     /// as accepted by the `#[derive]` attribute.
     Derive(String),
+
+    /// Applies the `#[inline]` attribute to translated functions.
+    ///
+    /// If multiple `Inline` effects apply, then for each function,
+    /// the last choice of inlining wins.
+    ///
+    /// See [The Rust Reference](https://doc.rust-lang.org/reference/attributes/codegen.html#the-inline-attribute)
+    /// for information on how the `#[inline]` attribute is interpreted.
+    ///
+    /// Caution: Using this attribute is not always necessary to obtain inlining,
+    /// and inlining is not always beneficial. Usage should be guided by profiling and benchmarks.
+    Inline(Inline),
+}
+
+/// What `#[inline]` attribute [`Effect::Inline`] produces.
+///
+/// See [The Rust Reference](https://doc.rust-lang.org/reference/attributes/codegen.html#the-inline-attribute)
+/// for information on how the `#[inline]` attribute is interpreted.
+///
+/// Caution: Using this attribute is not always necessary to obtain inlining,
+/// and inlining is not always beneficial. Usage should be guided by profiling and benchmarks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum Inline {
+    /// `#[inline]`
+    Maybe,
+    /// `#[inline(always)]`
+    Always,
+    /// `#[inline(never)]`
+    Never,
 }
 
 /// Data consulted by rules.
 pub(crate) struct RuleInput<'a> {
+    /// Shader function name.
+    /// `None` if rules are being applied to something other than a function item,
+    /// or a generated function not corresponding to a shader function.
+    pub function: Option<&'a str>,
+
     /// Shader struct name.
     /// `None` if rules are being applied to something other than a struct item,
     /// or a generated struct not corresponding to a shader struct.
@@ -328,6 +370,7 @@ impl From<Effect> for Rule {
 impl Condition {
     fn test(&self, input: &RuleInput<'_>) -> bool {
         match *self {
+            Condition::Function(ref name) => input.function == Some(name.as_str()),
             Condition::Struct(ref name) => input.r#struct == Some(name.as_str()),
         }
     }

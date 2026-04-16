@@ -6,6 +6,7 @@
 use quote::quote;
 
 use crate::ConfigAndStr;
+use crate::parsing::Parser;
 
 // -------------------------------------------------------------------------------------------------
 
@@ -99,8 +100,15 @@ fn non_comma_after_input() {
     );
 }
 
-mod rule_errors {
+mod rules {
     use super::*;
+    use naga_rust_back::{Condition, Effect, Inline, Rule};
+
+    /// We can’t extract rules back out of a `Config`, so parse them in isolation for success
+    /// tests.
+    fn parse_one_rule(token_stream: proc_macro2::TokenStream) -> Rule {
+        crate::parse_config::parse_rule(&mut Parser::from_token_stream(token_stream)).unwrap()
+    }
 
     #[test]
     fn empty_rule() {
@@ -170,6 +178,56 @@ mod rule_errors {
         assert_eq!(
             expect_error(quote! { rule(derive(some : : trait)), "" }),
             "expected a path to a derive macro; found `:`"
+        );
+    }
+
+    #[test]
+    fn inline_extra_token() {
+        assert_eq!(
+            expect_error(quote! { rule(struct(Foo) => inline(always and forever)), "" }),
+            "expected no more arguments; found `and`"
+        );
+    }
+
+    #[test]
+    fn inline_non_ident() {
+        assert_eq!(
+            expect_error(quote! { rule(struct(Foo) => inline(3)), "" }),
+            "expected `always`, `never`, or nothing; found `3`"
+        );
+    }
+
+    // Inlining can’t be observed by running the code, so we must test parsing of inlining rules
+    // directly. (Or examine the output tokens, but such tests are harder to maintain, and
+    // `naga-rust-back` has its own test that the rule applies correctly.)
+    #[test]
+    fn inline_success_maybe() {
+        assert_eq!(
+            parse_one_rule(quote! { (struct(Foo) => inline()) }),
+            Rule {
+                conditions: vec![Condition::Struct("Foo".into())],
+                effects: vec![Effect::Inline(Inline::Maybe)]
+            }
+        );
+    }
+    #[test]
+    fn inline_success_always() {
+        assert_eq!(
+            parse_one_rule(quote! { (struct(Foo) => inline(always)) }),
+            Rule {
+                conditions: vec![Condition::Struct("Foo".into())],
+                effects: vec![Effect::Inline(Inline::Always)]
+            }
+        );
+    }
+    #[test]
+    fn inline_success_never() {
+        assert_eq!(
+            parse_one_rule(quote! { (struct(Foo) => inline(never)) }),
+            Rule {
+                conditions: vec![Condition::Struct("Foo".into())],
+                effects: vec![Effect::Inline(Inline::Never)]
+            }
         );
     }
 }

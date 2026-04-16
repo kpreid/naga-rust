@@ -369,6 +369,9 @@ pub(crate) enum Attribute {
 
     /// `repr(C)`
     ReprC,
+
+    /// `inline(...)`
+    Inline(crate::Inline),
 }
 
 #[derive(Clone, Copy)]
@@ -968,6 +971,11 @@ impl PrintAst for Attribute {
             Attribute::ReprC => {
                 out.write_str("repr(C)")?;
             }
+            Attribute::Inline(i) => out.write_str(match i {
+                crate::Inline::Maybe => "inline",
+                crate::Inline::Always => "inline(always)",
+                crate::Inline::Never => "inline(never)",
+            })?,
         }
         Ok(())
     }
