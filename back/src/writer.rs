@@ -1,19 +1,21 @@
-use alloc::{
-    string::{String, ToString},
-    vec,
-};
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 use arrayvec::ArrayVec;
 use core::fmt::Write;
 
 use naga::{
-    Expression, Handle, Module, Scalar, ShaderStage, TypeInner,
-    back::{self, INDENT},
+    Expression, Handle, Module, ShaderStage, TypeInner, back,
     proc::{self, NameKey},
     valid::ModuleInfo,
 };
 
-use crate::conv::{self, BinOpClassified, unwrap_to_rust};
-use crate::util::{Gensym, LevelNext};
+use crate::conv::{self, BinOpClassified};
+use crate::ra::{self, PrintAst as _};
+use crate::util::Gensym;
 use crate::{Config, Error};
 use crate::{config::WriterFlags, util::GlobalKind};
 
@@ -22,23 +24,7 @@ use crate::{config::WriterFlags, util::GlobalKind};
 /// Shorthand result used internally by the backend
 type BackendResult = Result<(), Error>;
 
-/// Rust attributes that we generate to correspond to shader properties that don’t
-/// map directly to Rust code generation.
-///
-/// Currently, many of these attributes have no effect (they are discarded by the
-/// corresponding attribute macros) and exist solely for documentation purposes.
-/// Arguably, they could be comments instead.
-enum Attribute {
-    /// `allow` attribute for ignoring lints that might occur in a generated function body.
-    AllowFunctionBody,
-
-    /// Entry point function’s stage. Ignored.
-    Stage(ShaderStage),
-    /// Compute entry point function’s workgroup size. Ignored.
-    WorkGroupSize([u32; 3]),
-}
-
-/// The Rust form that `write_expr_with_indirection` should use to render a Naga
+/// The Rust form that [`Writer::expr_ast_with_indirection`] should use to render a Naga
 /// expression.
 ///
 /// Sometimes a Naga `Expression` alone doesn't provide enough information to
@@ -50,7 +36,7 @@ enum Attribute {
 /// reference or pointer to) a place, and if so, *how* to borrow it (`&`, `&mut`,
 /// or `&raw`) to satisfy type and borrow checking.
 ///
-/// The caller of `write_expr_with_indirection` must therefore provide this parameter
+/// The caller of `expr_ast_with_indirection` must therefore provide this parameter
 /// to say what kind of Rust expression it wants, relative to the type of the Naga IR
 /// expression.
 #[derive(Clone, Copy, Debug)]
@@ -239,33 +225,34 @@ impl Writer {
         info: &ModuleInfo,
     ) -> BackendResult {
         if !module.overrides.is_empty() {
-            self.write_unimplemented_stmt(out, "pipeline constants")?;
+            // TODO: using a statement here is wrong; we need a `compile_error!`
+            self.unimplemented_stmt("pipeline constants")?.write(
+                out,
+                ra::PrintCtx {
+                    config: &self.config,
+                    indent: back::Level(0),
+                },
+            )?;
+            return Ok(());
         }
 
         self.reset(module);
 
-        // Write all structs
+        let visibility = self.visibility();
+        let mut top_level_items: Vec<ra::Item> = Vec::new();
+
+        // Translate all structs
         for (handle, ty) in module.types.iter() {
             if let TypeInner::Struct { ref members, .. } = ty.inner {
-                {
-                    self.write_struct_definition(out, module, handle, members)?;
-                    writeln!(out)?;
-                }
+                top_level_items.extend(self.translate_struct_definition(module, handle, members)?);
             }
         }
 
-        // Write all named constants
-        let mut constants = module
-            .constants
-            .iter()
-            .filter(|&(_, c)| c.name.is_some())
-            .peekable();
-        while let Some((handle, _)) = constants.next() {
-            self.write_global_constant(out, module, info, handle)?;
-            // Add extra newline for readability on last iteration
-            if constants.peek().is_none() {
-                writeln!(out)?;
-            }
+        // Translate all named constants
+        for (handle, _) in module.constants.iter().filter(|&(_, c)| c.name.is_some()) {
+            top_level_items.push(ra::Item::Const(
+                self.translate_global_constant(module, info, handle)?,
+            ));
         }
 
         // If we are using resources, write the `struct` that contains them.
@@ -273,21 +260,26 @@ impl Writer {
             .filter(&module.global_variables)
             .any(|(_, global)| matches!(module.types[global.ty].inner, TypeInner::Image { .. }));
         let resource_lifetime_generics = if any_resource_requires_lifetime {
-            "<'g>"
+            ra::Generics::LtG
         } else {
-            ""
+            ra::Generics::None
         };
         {
             let mut resource_iter = GlobalKind::Resource.filter(&module.global_variables);
-            if let Some(ref resource_struct) = self.config.resource_struct {
-                writeln!(
-                    out,
-                    "struct {resource_struct}{resource_lifetime_generics} {{"
-                )?;
-                for (handle, global) in resource_iter {
-                    self.write_global_variable_as_struct_field(out, module, global, handle)?;
-                }
-                writeln!(out, "}}")?;
+            if let Some(ref resource_struct_name) = self.config.resource_struct {
+                let resource_struct_ast = ra::StructItem {
+                    attributes: vec![],
+                    visibility: ra::Visibility::Private, // TODO: wrong visibility
+                    name: resource_struct_name.clone(),
+                    generics: resource_lifetime_generics,
+                    fields: resource_iter
+                        .map(|(handle, global)| {
+                            self.translate_global_variable_to_struct_field(module, global, handle)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                };
+
+                top_level_items.push(ra::Item::Struct(resource_struct_ast));
             } else if let Some((_, example)) = resource_iter.next() {
                 return Err(Error::ResourcesNotEnabled {
                     example: example.name.clone().unwrap_or_default(),
@@ -295,10 +287,17 @@ impl Writer {
             }
         }
 
+        let ref_to_resources_ty = self.config.resource_struct.as_ref().map(|name| {
+            ra::Type::Ptr(
+                ra::PtrKind::Shared(Some("g")),
+                Box::new(ra::Type::User(name.clone(), resource_lifetime_generics)),
+            )
+        });
+
         // If we are using global variables, write the `struct` that contains them.
         let global_lifetime_generics =
             if self.config.global_struct.is_some() && self.config.resource_struct.is_some() {
-                "<'g>"
+                ra::Generics::LtG
             } else {
                 // We use the resource struct like it was the global struct if we have only the
                 // former, so the `impl` must use those generics.
@@ -306,53 +305,96 @@ impl Writer {
             };
         {
             let mut global_variable_iter = GlobalKind::Variable.filter(&module.global_variables);
-            if let Some(ref global_struct) = self.config.global_struct {
-                let visibility = self.visibility();
-                writeln!(out, "struct {global_struct}{global_lifetime_generics} {{")?;
-                if let Some(ref resource_struct_name) = self.config.resource_struct {
-                    writeln!(
-                        out,
-                        "{INDENT}{visibility}resources: \
-                            &'g {resource_struct_name}{resource_lifetime_generics},"
-                    )?;
+            if let Some(ref global_struct_name) = self.config.global_struct {
+                let mut global_struct_fields = Vec::new();
+                if let Some(ref ref_to_resources_ty) = ref_to_resources_ty {
+                    global_struct_fields.push(ra::Field {
+                        attributes: vec![],
+                        visibility,
+                        name: "resources".into(),
+                        ty: ref_to_resources_ty.clone(),
+                    });
                 }
                 for (handle, global) in global_variable_iter {
-                    self.write_global_variable_as_struct_field(out, module, global, handle)?;
+                    global_struct_fields.push(
+                        self.translate_global_variable_to_struct_field(module, global, handle)?,
+                    );
                 }
-                write!(
-                    out,
-                    "}}\n\
-                    impl{global_lifetime_generics} {global_struct}{global_lifetime_generics} {{\n\
-                    {INDENT}{visibility}const fn new(",
-                )?;
-                // Define new() function with parameter list depending on whether the resource
-                // struct is needed.
-                if let Some(ref resource_struct_name) = self.config.resource_struct {
-                    write!(
-                        out,
-                        "resources: &'g {resource_struct_name}{resource_lifetime_generics}"
-                    )?;
-                }
-                writeln!(out, ") -> Self {{ Self {{")?;
 
-                if self.config.resource_struct.is_some() {
-                    // Note that we reserve the name “resources” using the keyword set.
-                    writeln!(out, "{INDENT}{INDENT}resources,")?;
-                }
-                for (handle, global) in GlobalKind::Variable.filter(&module.global_variables) {
-                    self.write_global_variable_as_field_initializer(
-                        out, module, info, global, handle,
-                    )?;
-                }
-                writeln!(out, "{INDENT}}}}}\n}}")?;
+                let global_struct_item = ra::StructItem {
+                    attributes: vec![],
+                    visibility: ra::Visibility::Private, // TODO: existing behavior but is it right?
+                    name: global_struct_name.clone(),
+                    generics: global_lifetime_generics,
+                    fields: global_struct_fields,
+                };
+                top_level_items.push(ra::Item::Struct(global_struct_item));
+
+                let global_struct_constructor_fn = ra::FunctionItem {
+                    attributes: vec![],
+                    visibility,
+                    const_: true,
+                    name: "new".into(),
+                    // Define new() function with parameter list depending on whether the resource
+                    // struct is needed.
+                    parameters: if let Some(ref_to_resources_ty) = ref_to_resources_ty {
+                        vec![(
+                            ra::Pattern::Binding("resources".into()),
+                            ref_to_resources_ty,
+                        )]
+                    } else {
+                        vec![]
+                    },
+                    self_param: None,
+                    return_type: ra::Type::Self_,
+                    body: ra::Block::expr(ra::Expr::Struct(ra::Type::Self_, {
+                        let mut fields = Vec::new();
+                        if self.config.resource_struct.is_some() {
+                            // Note that we reserve the name “resources” using the keyword set.
+                            fields.push(("resources".into(), ra::Expr::Ident("resources".into())));
+                        }
+                        for (handle, global) in
+                            GlobalKind::Variable.filter(&module.global_variables)
+                        {
+                            fields.push((
+                                self.names[&NameKey::GlobalVariable(handle)].clone(),
+                                self.global_variable_as_field_initializer_expr(
+                                    module, info, global,
+                                )?,
+                            ));
+                        }
+                        fields
+                    })),
+                };
+
+                top_level_items.push(ra::Item::Impl(
+                    global_lifetime_generics,
+                    None,
+                    ra::Type::User(global_struct_name.clone(), global_lifetime_generics),
+                    vec![ra::Item::Function(global_struct_constructor_fn)],
+                ));
 
                 if self.config.resource_struct.is_none() {
                     // If the global struct doesn’t need a resource struct,
                     // then it can implement Default.
-                    writeln!(
-                        out,
-                        "impl Default for {global_struct} {{ fn default() -> Self {{ Self::new() }} }}"
-                    )?;
+                    top_level_items.push(ra::Item::Impl(
+                        global_lifetime_generics,
+                        Some(ra::Trait::Default),
+                        ra::Type::User(global_struct_name.clone(), global_lifetime_generics),
+                        vec![ra::Item::Function(ra::FunctionItem {
+                            attributes: Vec::new(),
+                            visibility: ra::Visibility::Private, // actually implicit-public
+                            const_: false,
+                            name: "default".into(),
+                            self_param: None,
+                            parameters: vec![],
+                            return_type: ra::Type::Self_,
+                            body: ra::Block::expr(ra::Expr::Call(
+                                Box::new(ra::Expr::QualifiedPath(ra::Type::Self_, "new")),
+                                vec![],
+                            )),
+                        })],
+                    ));
                 }
             } else if let Some((_, example)) = global_variable_iter.next() {
                 return Err(Error::GlobalVariablesNotEnabled {
@@ -361,15 +403,10 @@ impl Writer {
             }
         }
 
-        // If we are making methods rather than free functions, start the `impl` block
-        if let Some(name) = self.config.impl_type() {
-            writeln!(
-                out,
-                "impl{global_lifetime_generics} {name}{global_lifetime_generics} {{"
-            )?;
-        }
+        // Collects all items that go in the `impl Globals` if there is one.
+        let mut maybe_impl_items: Vec<ra::Item> = Vec::new();
 
-        // Write all regular functions (which may or may not be in an `impl` block from above).
+        // Translate all regular functions (which may or may not go in an `impl` block).
         for (handle, function) in module.functions.iter() {
             let fun_info = &info[handle];
 
@@ -380,15 +417,18 @@ impl Writer {
                 named_expressions: &function.named_expressions,
             };
 
-            // Write the function
-            self.write_function(out, module, function, &func_ctx)?;
-
-            writeln!(out)?;
+            // Translate the function
+            maybe_impl_items.extend(self.translate_function(
+                module,
+                function,
+                &func_ctx,
+                vec![],
+            )?);
         }
 
-        // Write all entry points
+        // Translate all entry points
         for (index, ep) in module.entry_points.iter().enumerate() {
-            let attributes = match ep.stage {
+            let entry_point_attributes = match ep.stage {
                 ShaderStage::Vertex
                 | ShaderStage::Fragment
                 | ShaderStage::Task
@@ -396,14 +436,12 @@ impl Writer {
                 | ShaderStage::RayGeneration
                 | ShaderStage::Miss
                 | ShaderStage::AnyHit
-                | ShaderStage::ClosestHit => vec![Attribute::Stage(ep.stage)],
+                | ShaderStage::ClosestHit => vec![ra::Attribute::Stage(ep.stage)],
                 ShaderStage::Compute => vec![
-                    Attribute::Stage(ShaderStage::Compute),
-                    Attribute::WorkGroupSize(ep.workgroup_size),
+                    ra::Attribute::Stage(ShaderStage::Compute),
+                    ra::Attribute::WorkGroupSize(ep.workgroup_size),
                 ],
             };
-
-            self.write_attributes(out, back::Level(0), &attributes)?;
 
             let func_ctx = back::FunctionCtx {
                 ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
@@ -411,45 +449,61 @@ impl Writer {
                 expressions: &ep.function.expressions,
                 named_expressions: &ep.function.named_expressions,
             };
-            self.write_function(out, module, &ep.function, &func_ctx)?;
-
-            if index < module.entry_points.len() - 1 {
-                writeln!(out)?;
-            }
+            maybe_impl_items.extend(self.translate_function(
+                module,
+                &ep.function,
+                &func_ctx,
+                entry_point_attributes,
+            )?);
         }
 
-        if self.config.impl_type().is_some() {
-            // End the `impl` block
-            writeln!(out, "}}")?;
+        // If we are making methods rather than free functions, start the `impl` block
+        if let Some(name) = self.config.impl_type() {
+            top_level_items.push(ra::Item::Impl(
+                global_lifetime_generics,
+                None,
+                ra::Type::User(name.to_string(), global_lifetime_generics),
+                maybe_impl_items,
+            ))
+        } else {
+            top_level_items.extend(maybe_impl_items);
+        }
+
+        let print_ctx = ra::PrintCtx {
+            config: &self.config,
+            indent: back::Level(0),
+        };
+        for item in top_level_items {
+            item.write(out, print_ctx)?;
         }
 
         Ok(())
     }
 
-    /// Writes a shader function as a pair of Rust functions.
+    /// Translates a shader function to a pair of Rust functions.
     /// The shader function may be an entry point or not.
     /// Depending on the configuration it may be written as a method or a free function.
-    fn write_function(
+    fn translate_function(
         &mut self,
-        out: &mut dyn Write,
         module: &Module,
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
-    ) -> BackendResult {
-        self.write_function_inner(out, module, func, func_ctx, true)?;
-        self.write_function_inner(out, module, func, func_ctx, false)?;
-        Ok(())
+        extra_attributes: Vec<ra::Attribute>,
+    ) -> Result<[ra::Item; 2], Error> {
+        Ok([
+            self.translate_function_inner(module, func, func_ctx, true, extra_attributes)?,
+            self.translate_function_inner(module, func, func_ctx, false, vec![])?,
+        ])
     }
 
-    fn write_function_inner(
+    fn translate_function_inner(
         &mut self,
-        out: &mut dyn Write,
         module: &Module,
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
         is_public_shim: bool,
-    ) -> BackendResult {
-        let runtime_path = &self.config.runtime_path;
+        mut attributes: Vec<ra::Attribute>,
+    ) -> Result<ra::Item, Error> {
         let signature_type_translation = if is_public_shim {
             TypeTranslation::RustScalar
         } else {
@@ -458,11 +512,10 @@ impl Writer {
 
         if !is_public_shim {
             // Don’t lint extra parentheses and such that we might emit.
-            self.write_attributes(out, back::Level(0), &[Attribute::AllowFunctionBody])?;
+            attributes.push(ra::Attribute::AllowFunctionBody);
         }
 
-        // Write start of function item
-        let func_name = match func_ctx.ty {
+        let shader_func_name = match func_ctx.ty {
             back::FunctionType::EntryPoint(index) => &self.names[&NameKey::EntryPoint(index)],
             back::FunctionType::Function(handle) => &self.names[&NameKey::Function(handle)],
         };
@@ -471,22 +524,24 @@ impl Writer {
         } else {
             FN_INTERNAL_TYPES_PREFIX
         };
+        let rust_func_name = format!("{name_prefix}{shader_func_name}");
         let visibility = if is_public_shim {
             self.visibility()
         } else {
-            "" // private
+            ra::Visibility::Private
         };
-        write!(out, "{visibility}fn {name_prefix}{func_name}(")?;
 
-        if self.config.functions_are_methods() {
+        let self_param = if self.config.functions_are_methods() {
             // TODO: need to figure out whether &mut is needed
-            write!(out, "&self, ")?;
+            Some(ra::PtrKind::Shared(None))
         } else if func_ctx.info.global_variable_count() > 0 {
             unreachable!(
                 "function has globals but globals are not enabled; \
                 should have been rejected earlier"
-            );
-        }
+            )
+        } else {
+            None
+        };
 
         let use_into_for_arg = |arg: &naga::FunctionArgument| {
             matches!(
@@ -495,210 +550,151 @@ impl Writer {
             )
         };
 
-        // Write function arguments
+        // Translate function arguments
+        let mut rust_params: Vec<(ra::Pattern, ra::Type)> =
+            Vec::with_capacity(func.arguments.len());
         for (index, arg) in func.arguments.iter().enumerate() {
-            // // Write argument attribute if a binding is present
-            // if let Some(ref binding) = arg.binding {
-            //     self.write_attributes(&map_binding_to_attribute(binding))?;
-            // }
-
-            // Write argument name
             let argument_name = &self.names[&func_ctx.argument_key(index.try_into().unwrap())];
-            write!(out, "{argument_name}: ")?;
 
-            // Write argument type
             // TODO: When `TypeTranslation` actually does things, this and the return value
             // processing will need to be tweaked.
-            if is_public_shim && use_into_for_arg(arg) {
+            let rust_type = if is_public_shim && use_into_for_arg(arg) {
                 // Allow vectors and scalars to be converted.
-                write!(out, "impl {runtime_path}::Into<")?;
-                self.write_type(out, module, arg.ty, TypeTranslation::ShaderScalar)?;
-                write!(out, ">")?;
+                ra::Type::ImplInto(Box::new(self.type_ast(
+                    module,
+                    arg.ty,
+                    TypeTranslation::ShaderScalar,
+                )?))
             } else {
-                self.write_type(out, module, arg.ty, signature_type_translation)?;
-            }
-            if index < func.arguments.len() - 1 {
-                // Add a separator between args
-                write!(out, ", ")?;
-            }
+                self.type_ast(module, arg.ty, signature_type_translation)?
+            };
+
+            rust_params.push((ra::Pattern::Binding(argument_name.clone()), rust_type));
         }
 
-        write!(out, ")")?;
-
-        // Write function return type
-        if let Some(ref result) = func.result {
-            write!(out, " -> ")?;
+        let return_type = if let Some(ref result) = func.result {
             // if let Some(ref binding) = result.binding {
             //     self.write_attributes(&map_binding_to_attribute(binding))?;
             // }
-            self.write_type(out, module, result.ty, signature_type_translation)?;
-        }
+            self.type_ast(module, result.ty, signature_type_translation)?
+        } else {
+            ra::Type::Unit
+        };
 
-        write!(out, " {{")?;
-        writeln!(out)?;
+        let body = if is_public_shim {
+            // Translate function call to the inner, internally-typed function.
 
-        if is_public_shim {
-            // Write function call to the inner, internally-typed function.
-            write!(out, "{INDENT}")?;
-            if self.config.functions_are_methods() {
-                write!(out, "self.")?;
-            }
-            write!(out, "{FN_INTERNAL_TYPES_PREFIX}{func_name}(")?;
+            let mut call_args = Vec::new();
             for (index, arg) in func.arguments.iter().enumerate() {
                 let argument_name = &self.names[&func_ctx.argument_key(index.try_into().unwrap())];
-                write!(out, "{argument_name}")?;
-                if use_into_for_arg(arg) {
-                    write!(out, ".into()")?;
-                }
-                if index < func.arguments.len() - 1 {
-                    // Add a separator between args
-                    write!(out, ", ")?;
-                }
+                let argument_expr = if use_into_for_arg(arg) {
+                    ra::Expr::Method(
+                        Box::new(ra::Expr::Ident(argument_name.clone())),
+                        "into".into(),
+                        vec![],
+                    )
+                } else {
+                    ra::Expr::Ident(argument_name.clone())
+                };
+                call_args.push(argument_expr);
             }
+
             // The final into() converts from the internal `TypeTranslation::Simd`
             // type to the public `TypeTranslation::RustScalar` type.
-            writeln!(out, ").into()")?;
+            // TODO: calling into as a trait method can be ambiguous
+            ra::Block::expr(ra::Expr::Method(
+                Box::new(ra::Expr::call_maybe_self(
+                    self.config.functions_are_methods(),
+                    format!("{FN_INTERNAL_TYPES_PREFIX}{shader_func_name}"),
+                    call_args,
+                )),
+                "into".into(),
+                vec![],
+            ))
         } else {
-            // Write function local variables
+            let mut body_statements = Vec::new();
+
+            // Define function local variables
             for (handle, local) in func.local_variables.iter() {
-                // Write indentation (only for readability)
-                write!(out, "{INDENT}")?;
-
-                // Write the local name
-                // The leading space is important
-                write!(out, "let mut {}: ", self.names[&func_ctx.name_key(handle)])?;
-
-                // Write the local type
-                self.write_type(out, module, local.ty, TypeTranslation::Simd)?;
-
-                // Write the local initializer if needed
-                if let Some(init) = local.init {
-                    write!(out, " = ")?;
-                    self.write_expr(
-                        out,
+                let local_name = self.names[&func_ctx.name_key(handle)].clone();
+                let init_expression = if let Some(init) = local.init {
+                    Some(self.translate_expr(
                         init,
                         &ExpressionCtx::Function {
                             module,
                             func_ctx,
                             //module_info: info,
                         },
-                    )?;
-                }
+                    )?)
+                } else {
+                    None
+                };
 
-                // Finish the local with `;` and add a newline (only for readability)
-                writeln!(out, ";")?;
+                body_statements.push(ra::Statement::Let(
+                    ra::Pattern::BindingMut(local_name),
+                    Some(self.type_ast(module, local.ty, TypeTranslation::Simd)?),
+                    init_expression,
+                ));
             }
-
             if !func.local_variables.is_empty() {
-                writeln!(out)?;
+                body_statements.push(ra::Statement::BlankLine);
             }
 
-            // Write the function body (statement list)
+            // Translate the function body (statement list)
             for sta in func.body.iter() {
-                // The indentation should always be 1 when writing the function body
-                self.write_stmt(out, module, sta, func_ctx, back::Level(1))?;
+                body_statements.extend(self.translate_statement(module, sta, func_ctx)?);
             }
 
             self.named_expressions.clear();
-        }
-        writeln!(out, "}}")?;
 
-        Ok(())
+            ra::Block(body_statements, None)
+        };
+
+        Ok(ra::Item::Function(ra::FunctionItem {
+            attributes,
+            visibility,
+            const_: false,
+            name: rust_func_name,
+            self_param,
+            parameters: rust_params,
+            return_type,
+            body,
+        }))
     }
 
-    /// Writes one or more [`Attribute`]s as outer attributes.
-    fn write_attributes(
-        &self,
-        out: &mut dyn Write,
-        level: back::Level,
-        attributes: &[Attribute],
-    ) -> BackendResult {
-        let runtime_path = &self.config.runtime_path;
-        for attribute in attributes {
-            write!(out, "{level}#[")?;
-            match *attribute {
-                Attribute::AllowFunctionBody => {
-                    write!(
-                        out,
-                        // `clippy::all` refers to all *default* clippy lints, not all clippy lints.
-                        // We’re allowing all clippy categories except for restriction, which we
-                        // shall assume is on purpose, and cargo, which is irrelvant.
-                        "allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery{})",
-                        if self.config.flags.contains(WriterFlags::ALLOW_UNIMPLEMENTED) {
-                            // ALLOW_UNIMPLEMENTED generates `panic!()`s which will often be
-                            // followed by code that is therefore unreachable.
-                            ", unreachable_code"
-                        } else {
-                            ""
-                        }
-                    )?;
-                }
-                Attribute::Stage(shader_stage) => {
-                    let stage_str = match shader_stage {
-                        ShaderStage::Vertex => "vertex",
-                        ShaderStage::Fragment => "fragment",
-                        ShaderStage::Compute => "compute",
-                        ShaderStage::Task => "task",
-                        ShaderStage::Mesh => "mesh",
-                        ShaderStage::RayGeneration => "ray_generation",
-                        ShaderStage::Miss => "miss",
-                        ShaderStage::AnyHit => "any_hit",
-                        ShaderStage::ClosestHit => "closest_hit",
-                    };
-                    write!(out, "{runtime_path}::{stage_str}")?;
-                }
-                Attribute::WorkGroupSize(size) => {
-                    write!(
-                        out,
-                        "{runtime_path}::workgroup_size({}, {}, {})",
-                        size[0], size[1], size[2]
-                    )?;
-                }
-            }
-            writeln!(out, "]")?;
-        }
-        Ok(())
-    }
-
-    /// Write out a definition of the struct type referred to by
-    /// `handle` in `module`.
+    /// Translates the definition of the struct type referred to by `handle` in `module`.
+    /// Generates a `struct` item, and a constructor function if the struct type is not
+    /// dynamically sized.
     ///
     /// Use `members` as the list of `handle`'s members. (This
     /// function is usually called after matching a `TypeInner`, so
     /// the callers already have the members at hand.)
-    fn write_struct_definition(
+    fn translate_struct_definition(
         &self,
-        out: &mut dyn Write,
         module: &Module,
         struct_handle: Handle<naga::Type>,
         members: &[naga::StructMember],
-    ) -> BackendResult {
+    ) -> Result<Vec<ra::Item>, Error> {
         // TODO: we will need to do custom dummy fields to ensure that vec3s have correct alignment.
-        let runtime_path = &self.config.runtime_path;
         let visibility = self.visibility();
-        let name: &str = &self.names[&NameKey::Type(struct_handle)];
+        let name = &self.names[&NameKey::Type(struct_handle)];
+        let struct_attributes = vec![ra::Attribute::DeriveStructTraits, ra::Attribute::ReprC];
+        let self_ty = ra::Type::User(name.clone(), ra::Generics::None);
 
-        write!(
-            out,
-            "#[derive(Clone, Copy, Debug, PartialEq)]\n\
-            #[repr(C)]\n\
-            {visibility}struct {name}",
-        )?;
-        write!(out, " {{")?;
-        writeln!(out)?;
-
+        let mut fields: Vec<ra::Field> = Vec::with_capacity(members.len());
         let mut dyn_sized = false;
         for (member_name, member) in self.iter_struct_members(struct_handle, members) {
-            write!(out, "{INDENT}")?;
-
+            // TODO: add bindings as doc-comments ?
             // if let Some(ref binding) = member.binding {
-            //     self.write_attributes(&map_binding_to_attribute(binding))?;
+            //     map_binding_to_attribute(binding);
             // }
 
-            // Write struct member name and type
-            write!(out, "{visibility}{member_name}: ")?;
-            self.write_type(out, module, member.ty, TypeTranslation::RustScalar)?;
-            writeln!(out, ",")?;
+            fields.push(ra::Field {
+                attributes: vec![],
+                visibility,
+                name: member_name.to_string(),
+                ty: self.type_ast(module, member.ty, TypeTranslation::RustScalar)?,
+            });
 
             if module.types[member.ty]
                 .inner
@@ -708,29 +704,57 @@ impl Writer {
             }
         }
 
-        writeln!(out, "}}")?; // end of struct item
+        let mut items = vec![ra::Item::Struct(ra::StructItem {
+            attributes: struct_attributes,
+            visibility,
+            name: name.clone(),
+            generics: ra::Generics::None,
+            fields,
+        })];
 
         // Constructor (if not dynamically sized)
         if !dyn_sized {
-            writeln!(out, "impl {name} {{\n{INDENT}{visibility}fn new(")?;
-            // Constructor parameter list
+            let mut constructor_parameters = Vec::new();
+            let mut constructor_fields = Vec::new();
             for (member_name, member) in self.iter_struct_members(struct_handle, members) {
-                write!(
-                    out,
-                    "{INDENT}{INDENT}{member_name}: impl {runtime_path}::Into<"
-                )?;
-                self.write_type(out, module, member.ty, TypeTranslation::RustScalar)?;
-                writeln!(out, ">,")?;
+                constructor_parameters.push((
+                    ra::Pattern::Binding(member_name.to_string()),
+                    ra::Type::ImplInto(Box::new(self.type_ast(
+                        module,
+                        member.ty,
+                        TypeTranslation::RustScalar,
+                    )?)),
+                ));
+                constructor_fields.push((
+                    member_name.to_string(),
+                    ra::Expr::Method(
+                        Box::new(ra::Expr::Ident(member_name.to_string())),
+                        "into".into(),
+                        vec![],
+                    ),
+                ));
             }
-            writeln!(out, "{INDENT}) -> Self {{ Self {{")?;
-            // Struct literal
-            for (member_name, _member) in self.iter_struct_members(struct_handle, members) {
-                writeln!(out, "{INDENT}{INDENT}{member_name}: {member_name}.into(),")?;
-            }
-            writeln!(out, "{INDENT}}} }}\n}}")?;
+
+            let constructor_fn = ra::FunctionItem {
+                attributes: vec![],
+                visibility,
+                const_: false,
+                name: "new".into(),
+                self_param: None,
+                parameters: constructor_parameters,
+                return_type: ra::Type::Self_,
+                body: ra::Block::expr(ra::Expr::Struct(ra::Type::Self_, constructor_fields)),
+            };
+
+            items.push(ra::Item::Impl(
+                ra::Generics::None,
+                None,
+                self_ty,
+                vec![ra::Item::Function(constructor_fn)],
+            ));
         }
 
-        Ok(())
+        Ok(items)
     }
 
     fn iter_struct_members<'mem, 'name>(
@@ -745,36 +769,53 @@ impl Writer {
         })
     }
 
-    /// Helper method used to write statements
-    ///
-    /// # Notes
-    /// Always adds a newline
-    fn write_stmt(
+    fn translate_block(
         &mut self,
-        out: &mut dyn Write,
+        module: &Module,
+        stmts: &[naga::Statement],
+        func_ctx: &back::FunctionCtx<'_>,
+    ) -> Result<ra::Block, Error> {
+        Ok(ra::Block(
+            self.translate_statements(module, stmts, func_ctx)?,
+            None,
+        ))
+    }
+
+    fn translate_statements(
+        &mut self,
+        module: &Module,
+        stmts: &[naga::Statement],
+        func_ctx: &back::FunctionCtx<'_>,
+    ) -> Result<Vec<ra::Statement>, Error> {
+        let mut output: Vec<ra::Statement> = Vec::with_capacity(stmts.len());
+        for s in stmts {
+            output.append(&mut self.translate_statement(module, s, func_ctx)?);
+        }
+        Ok(output)
+    }
+
+    fn translate_statement(
+        &mut self,
         module: &Module,
         stmt: &naga::Statement,
         func_ctx: &back::FunctionCtx<'_>,
-        level: back::Level,
-    ) -> BackendResult {
+    ) -> Result<Vec<ra::Statement>, Error> {
         use naga::{Expression, Statement};
 
-        let runtime_path = &self.config.runtime_path;
         let expr_ctx = &ExpressionCtx::Function {
             module,
             func_ctx,
             //module_info: info,
         };
 
-        match *stmt {
+        Ok(match *stmt {
             Statement::Emit(ref range) => {
+                let mut output = Vec::new();
                 for handle in range.clone() {
                     let expr_info = &func_ctx.info[handle];
+                    // TODO: this naming logic originated as a copy from the WGSL backend and it is
+                    // unclear what the rationale is (original comments were unclear).
                     let expr_name = if let Some(name) = func_ctx.named_expressions.get(&handle) {
-                        // Front end provides names for all variables at the start of writing.
-                        // But we write them to step by step. We need to recache them
-                        // Otherwise, we could accidentally write variable name instead of full expression.
-                        // Also, we use sanitized names! It defense backend from generating variable with name from reserved keywords.
                         Some(self.namer.call(name))
                     } else {
                         let expr = &func_ctx.expressions[handle];
@@ -794,222 +835,198 @@ impl Writer {
                     };
 
                     if let Some(name) = expr_name {
-                        write!(out, "{level}")?;
-                        self.start_named_expr(out, module, handle, func_ctx, &name)?;
-                        self.write_expr(out, handle, expr_ctx)?;
+                        output.push(self.let_ast(
+                            module,
+                            handle,
+                            func_ctx,
+                            name.clone(),
+                            self.translate_expr(handle, expr_ctx)?,
+                        )?);
                         self.named_expressions.insert(handle, name);
-                        writeln!(out, ";")?;
                     }
                 }
+                output
             }
             Statement::If {
                 condition,
                 ref accept,
                 ref reject,
             } => {
-                let l2 = level.next();
-
-                write!(
-                    out,
-                    "{level}if {runtime_path}::Scalar::into_branch_condition("
-                )?;
-                self.write_expr(out, condition, expr_ctx)?;
-                writeln!(out, ") {{")?;
-                for s in accept {
-                    self.write_stmt(out, module, s, func_ctx, l2)?;
-                }
-                if !reject.is_empty() {
-                    writeln!(out, "{level}}} else {{")?;
-                    for s in reject {
-                        self.write_stmt(out, module, s, func_ctx, l2)?;
-                    }
-                }
-                writeln!(out, "{level}}}")?
+                vec![ra::Statement::If(
+                    Box::new(ra::Expr::call_rt(
+                        ra::RtItem::ScalarIntoBranchCondition,
+                        [self.translate_expr(condition, expr_ctx)?],
+                    )),
+                    self.translate_block(module, accept, func_ctx)?,
+                    self.translate_block(module, reject, func_ctx)?,
+                )]
             }
             Statement::Return { value } => {
-                write!(out, "{level}return")?;
-                if let Some(return_value) = value {
-                    write!(out, " ")?;
-                    self.write_expr(out, return_value, expr_ctx)?;
-                }
-                writeln!(out, ";")?;
+                vec![ra::Statement::Return(
+                    value
+                        .map(|v| self.translate_expr(v, expr_ctx))
+                        .transpose()?,
+                )]
             }
-            Statement::Kill => write!(out, "{level}{runtime_path}::discard();")?,
+            Statement::Kill => vec![ra::Statement::Expr(ra::Expr::call_rt(
+                ra::RtItem::DiscardFn,
+                [],
+            ))],
             Statement::Store { pointer, value } => {
-                self.write_store_statement(out, level, expr_ctx, pointer, value)?;
+                vec![self.translate_store_statement(expr_ctx, pointer, value)?]
             }
             Statement::Call {
                 function,
                 ref arguments,
                 result,
             } => {
-                write!(out, "{level}")?;
+                let func_name = &self.names[&NameKey::Function(function)];
+                let rust_func_name = format!("{FN_INTERNAL_TYPES_PREFIX}{func_name}");
+                let rust_args = self.translate_exprs(expr_ctx, arguments.iter().copied())?;
+
+                let translated_call_expr = ra::Expr::call_maybe_self(
+                    self.config.functions_are_methods(),
+                    Cow::Owned(rust_func_name),
+                    rust_args,
+                );
 
                 // If the result is used, give it a name (`let _e10 = `).
-                if let Some(expr) = result {
-                    let name = Gensym(expr).to_string();
-                    self.start_named_expr(out, module, expr, func_ctx, &name)?;
-                    self.named_expressions.insert(expr, name);
+                if let Some(result_expr) = result {
+                    let name = Gensym(result_expr).to_string();
+                    self.named_expressions.insert(result_expr, name.clone());
+                    vec![self.let_ast(module, result_expr, func_ctx, name, translated_call_expr)?]
+                } else {
+                    vec![ra::Statement::Expr(translated_call_expr)]
                 }
-
-                if self.config.functions_are_methods() {
-                    write!(out, "self.")?;
-                }
-
-                let func_name = &self.names[&NameKey::Function(function)];
-                write!(out, "{FN_INTERNAL_TYPES_PREFIX}{func_name}(")?;
-                for (index, &argument) in arguments.iter().enumerate() {
-                    if index != 0 {
-                        write!(out, ", ")?;
-                    }
-                    self.write_expr(out, argument, expr_ctx)?;
-                }
-                writeln!(out, ");")?
             }
-            Statement::Atomic { .. } => {
-                self.write_unimplemented_stmt(out, "atomic operations")?;
-            }
+            Statement::Atomic { .. } => vec![self.unimplemented_stmt("atomic operations")?],
             Statement::ImageAtomic { .. } => {
-                self.write_unimplemented_stmt(out, "atomic texture operations")?;
+                vec![self.unimplemented_stmt("atomic texture operations")?]
             }
             Statement::WorkGroupUniformLoad { .. } => {
                 todo!("Statement::WorkGroupUniformLoad");
             }
-            Statement::ImageStore { .. } => {
-                self.write_unimplemented_stmt(out, "textureStore")?;
-            }
+            Statement::ImageStore { .. } => vec![self.unimplemented_stmt("textureStore")?],
             Statement::Block(ref block) => {
-                write!(out, "{level}")?;
-                writeln!(out, "{{")?;
-                for s in block.iter() {
-                    self.write_stmt(out, module, s, func_ctx, level.next())?;
-                }
-                writeln!(out, "{level}}}")?;
+                vec![ra::Statement::Block(
+                    None, // no label
+                    self.translate_block(module, block, func_ctx)?,
+                )]
             }
             Statement::Switch {
                 selector,
                 ref cases,
             } => {
-                // Beginning of the match expression
-                write!(out, "{level}")?;
-                write!(out, "match {runtime_path}::Scalar::into_inner(")?;
-                self.write_expr(out, selector, expr_ctx)?;
-                writeln!(out, ") {{")?;
-
                 // Generate each arm, collapsing empty fall-through into a single arm.
-                let l2 = level.next();
-                let mut new_match_arm = true;
+                let mut arms: Vec<ra::Arm> = Vec::with_capacity(cases.len());
+                let mut previous_case_was_fall_through = false;
                 for case in cases {
-                    if new_match_arm {
-                        // Write initial indentation.
-                        write!(out, "{l2}")?;
+                    let &naga::SwitchCase {
+                        value,
+                        ref body,
+                        fall_through,
+                    } = case;
+                    if fall_through && !body.is_empty() {
+                        // TODO
+                        return Ok(vec![self.unimplemented_stmt(
+                            "switch case with statements and fall-through",
+                        )?]);
+                    }
+
+                    let pattern = match value {
+                        naga::SwitchValue::I32(value) => ra::Pattern::LitI32(value),
+                        naga::SwitchValue::U32(value) => ra::Pattern::LitU32(value),
+                        naga::SwitchValue::Default => ra::Pattern::Wildcard,
+                    };
+
+                    let translated_body = self.translate_block(module, body, func_ctx)?;
+
+                    if previous_case_was_fall_through {
+                        let existing_arm = arms.last_mut().unwrap();
+                        existing_arm.pattern_alternatives.push(pattern);
+                        existing_arm.body.0.extend(translated_body.0);
                     } else {
-                        // Write or-pattern to combine cases.
-                        write!(out, " | ")?;
-                    }
-                    // Write the case's pattern
-                    match case.value {
-                        naga::SwitchValue::I32(value) => {
-                            write!(out, "{value}i32")?;
-                        }
-                        naga::SwitchValue::U32(value) => {
-                            write!(out, "{value}u32")?;
-                        }
-                        naga::SwitchValue::Default => {
-                            write!(out, "_")?;
-                        }
+                        arms.push(ra::Arm {
+                            pattern_alternatives: vec![pattern],
+                            body: translated_body,
+                        });
                     }
 
-                    new_match_arm = !(case.fall_through && case.body.is_empty());
-
-                    // End this pattern and begin the body of this arm,
-                    // if it is not fall-through.
-                    if new_match_arm {
-                        writeln!(out, " => {{")?;
-                        for sta in case.body.iter() {
-                            self.write_stmt(out, module, sta, func_ctx, l2.next())?;
-                        }
-
-                        if case.fall_through && !case.body.is_empty() {
-                            // TODO
-                            self.write_unimplemented_stmt(out, "switch case with fall-through")?;
-                        }
-
-                        writeln!(out, "{l2}}}")?;
-                    }
+                    previous_case_was_fall_through = case.fall_through;
                 }
 
-                writeln!(out, "{level}}}")?;
+                vec![ra::Statement::Match(
+                    Box::new(ra::Expr::call_rt(
+                        ra::RtItem::ScalarIntoInner,
+                        [self.translate_expr(selector, expr_ctx)?],
+                    )),
+                    arms,
+                )]
             }
             Statement::Loop {
                 ref body,
                 ref continuing,
                 break_if,
             } => {
-                let l2 = level.next();
-                // We need a special block to implement `continuing`, and we add it unconditionally
-                // so that the translation of `continue` doesn’t need to be conditional.
-                writeln!(out, "{level}'naga_break: loop {{\n{l2}'naga_continue: {{")?;
+                let mut rust_loop_body = Vec::with_capacity(3);
 
-                let l3 = l2.next();
-                for sta in body.iter() {
-                    self.write_stmt(out, module, sta, func_ctx, l3)?;
-                }
+                rust_loop_body.push(ra::Statement::Block(
+                    Some("naga_continue"),
+                    self.translate_block(module, body, func_ctx)?,
+                ));
 
-                writeln!(out, "{l2}}}")?;
-
-                for sta in continuing.iter() {
-                    self.write_stmt(out, module, sta, func_ctx, l2)?;
-                }
+                // continuing block is the target of a Naga "continue", so it is outside the
+                // labeled block `'naga_continue: { ...body... }`.
+                rust_loop_body
+                    .append(&mut self.translate_statements(module, continuing, func_ctx)?);
 
                 if let Some(break_if) = break_if {
-                    write!(
-                        out,
-                        "{l2}if {runtime_path}::Scalar::into_branch_condition(",
-                        runtime_path = self.config.runtime_path,
-                    )?;
-                    self.write_expr(out, break_if, expr_ctx)?;
-                    // No loop label needed because we are directly within the Rust `loop {}`.
-                    writeln!(out, ") {{ break; }}")?;
+                    rust_loop_body.push(ra::Statement::If(
+                        Box::new(ra::Expr::call_rt(
+                            ra::RtItem::ScalarIntoBranchCondition,
+                            [self.translate_expr(break_if, expr_ctx)?],
+                        )),
+                        ra::Block(vec![ra::Statement::Break(Some("naga_break"))], None),
+                        ra::Block(vec![], None),
+                    ));
                 }
 
-                writeln!(out, "{level}}}")?;
+                vec![ra::Statement::Loop(
+                    "naga_break",
+                    ra::Block(rust_loop_body, None),
+                )]
             }
-            Statement::Break => writeln!(out, "{level}break 'naga_break;")?,
-            Statement::Continue => writeln!(out, "{level}break 'naga_continue;")?,
+            Statement::Break => vec![ra::Statement::Break(Some("naga_break"))],
+            Statement::Continue => vec![ra::Statement::Break(Some("naga_continue"))],
+
             Statement::ControlBarrier(_) | Statement::MemoryBarrier(_) => {
-                self.write_unimplemented_stmt(out, "barriers")?;
+                vec![self.unimplemented_stmt("barriers")?]
             }
             Statement::RayQuery { .. } | Statement::RayPipelineFunction(_) => {
-                self.write_unimplemented_stmt(out, "raytracing")?;
+                vec![self.unimplemented_stmt("raytracing")?]
             }
             Statement::SubgroupBallot { .. }
             | Statement::SubgroupCollectiveOperation { .. }
             | Statement::SubgroupGather { .. } => {
-                self.write_unimplemented_stmt(out, "workgroup operations")?;
+                vec![self.unimplemented_stmt("workgroup operations")?]
             }
             Statement::CooperativeStore { .. } => {
-                self.write_unimplemented_stmt(out, "cooperative store")?;
+                vec![self.unimplemented_stmt("cooperative store")?]
             }
-        }
-
-        Ok(())
+        })
     }
 
-    /// Write a statement which assigns `value_expr` to `*pointer`.
+    /// Translate a statement which assigns `value_expr` to `*pointer`.
     ///
-    /// This is a helper for [`Self::write_stmt()`], broken out because not all pointers will
-    /// correspond to single Rust places of the correct type; sometimes we need to use setter
+    /// This is a helper for [`Self::translate_statement()`], broken out because not all pointers
+    /// will correspond to single Rust places of the correct type; sometimes we need to use setter
     /// functions, so this becomes potentially very complex.
-    fn write_store_statement(
+    fn translate_store_statement(
         &mut self,
-        out: &mut dyn Write,
-        level: back::Level,
         expr_ctx: &ExpressionCtx<'_>,
         pointer: Handle<Expression>,
         value_expr: Handle<Expression>,
-    ) -> Result<(), Error> {
-        let runtime_path = &self.config.runtime_path;
+    ) -> Result<ra::Statement, Error> {
         let pointer_type: &TypeInner = expr_ctx.resolve_type(pointer);
         let pointer_base_type = pointer_type
             .pointer_base_type()
@@ -1024,8 +1041,7 @@ impl Writer {
             // When they *are* supported, they will be distinct because per Rust mutability rules,
             // we don’t need to obtain a mutable place, so it will suffice to just evaluate the
             // pointer expression and call an atomic operation function on it.
-            self.write_unimplemented_stmt(out, "atomic operations")?;
-            return Ok(());
+            return self.unimplemented_stmt("atomic operations");
         }
 
         if let Expression::AccessIndex { base, index } = *pointer_expr {
@@ -1034,44 +1050,38 @@ impl Writer {
                 .pointer_base_type()
                 .expect("Store statement’s access expression's base type not a pointer type");
 
-            // Decide whether to use an accessor function instead of an assignment...
+            // Decide whether to use an accessor function instead of an assignment.
             if let TypeInner::Vector { .. } = access_pointer_base_type.inner_with(expr_ctx.types())
             {
-                let component = back::COMPONENTS[index as usize];
-
-                write!(out, "{level}")?;
-                self.write_expr_with_indirection(out, base, expr_ctx, Indirection::Place)?;
-                write!(out, ".set_{component}(")?;
-                self.write_expr(out, value_expr, expr_ctx)?;
-                writeln!(out, ");")?;
-                return Ok(());
+                return Ok(ra::Statement::Expr(ra::Expr::Method(
+                    Box::new(self.expr_ast_with_indirection(base, expr_ctx, Indirection::Place)?),
+                    Cow::Owned(format!("set_{}", back::COMPONENTS[index as usize])),
+                    vec![self.translate_expr(value_expr, expr_ctx)?],
+                )));
             }
         }
 
         // Fallthrough: Use Rust assignment.
-        write!(out, "{level}")?;
-        self.write_expr_with_indirection(out, pointer, expr_ctx, Indirection::Place)?;
-        write!(out, " = ")?;
 
         // The fields of aggregates are (currently) translated as `TypeTranslation::RustScalar`.
         // Therefore, if we are storing to a member of a struct, we need to insert a conversion.
         // TODO: this should be factored out into a general function for converting
         // between TypeTranslations.
-        match TypeTranslation::from(pointer_type.pointer_space().unwrap()) {
-            TypeTranslation::RustScalar => {
-                write!(out, "{runtime_path}::Scalar::into_inner(")?;
-                self.write_expr(out, value_expr, expr_ctx)?;
-                write!(out, ")")?;
-            }
+        let value_expr = match TypeTranslation::from(pointer_type.pointer_space().unwrap()) {
+            TypeTranslation::RustScalar => ra::Expr::call_rt(
+                ra::RtItem::ScalarIntoInner,
+                [self.translate_expr(value_expr, expr_ctx)?],
+            ),
             TypeTranslation::ShaderScalar | TypeTranslation::Simd => {
                 // No unwrapping
-                self.write_expr(out, value_expr, expr_ctx)?;
+                self.translate_expr(value_expr, expr_ctx)?
             }
-        }
+        };
 
-        writeln!(out, ";")?;
-
-        Ok(())
+        Ok(ra::Statement::Assign(
+            self.expr_ast_with_indirection(pointer, expr_ctx, Indirection::Place)?,
+            value_expr,
+        ))
     }
 
     /// Return the sort of indirection that `expr`'s plain form evaluates to.
@@ -1082,8 +1092,9 @@ impl Writer {
     /// type (because Naga does not have places, only pointers and non-pointer values).
     ///
     /// This function is in a sense a secondary return value from
-    /// [`Self::write_expr_plain_form()`], but we need to have it available
-    /// *before* writing the expression itself.
+    /// [`Self::expr_ast_plain_form()`], but we need to have it available
+    /// *before* writing the expression itself. (TODO: That's no longer true now that
+    /// we generate an AST instead of writing directly.)
     fn plain_form_indirection(
         &self,
         expr: Handle<Expression>,
@@ -1131,92 +1142,90 @@ impl Writer {
         }
     }
 
-    fn start_named_expr(
+    /// Build a `let` statement. Helper for statement processing.
+    fn let_ast(
         &self,
-        out: &mut dyn Write,
         module: &Module,
         handle: Handle<Expression>,
         func_ctx: &back::FunctionCtx<'_>,
-        name: &str,
-    ) -> BackendResult {
-        // Write variable name
-        write!(out, "let {name}")?;
-        if self.config.flags.contains(WriterFlags::EXPLICIT_TYPES) {
-            write!(out, ": ")?;
-            let ty = &func_ctx.info[handle].ty;
-            // Write variable type
-            match *ty {
+        name: String,
+        expr: ra::Expr,
+    ) -> Result<ra::Statement, Error> {
+        let rust_ty = if self.config.flags.contains(WriterFlags::EXPLICIT_TYPES) {
+            Some(match func_ctx.info[handle].ty {
                 proc::TypeResolution::Handle(ty_handle) => {
-                    self.write_type(out, module, ty_handle, TypeTranslation::Simd)?;
+                    self.type_ast(module, ty_handle, TypeTranslation::Simd)?
                 }
                 proc::TypeResolution::Value(ref inner) => {
-                    self.write_type_inner(out, module, inner, TypeTranslation::Simd)?;
+                    self.type_ast_inner(module, inner, TypeTranslation::Simd)?
                 }
-            }
-        }
+            })
+        } else {
+            None
+        };
 
-        write!(out, " = ")?;
-        Ok(())
+        Ok(ra::Statement::Let(
+            ra::Pattern::Binding(name),
+            rust_ty,
+            Some(expr),
+        ))
     }
 
-    /// Write the ordinary Rust form of `expr`.
+    /// Translate `expr` to Rust.
     ///
-    /// See `write_expr_with_indirection` for details.
-    fn write_expr(
+    /// See `expr_ast_with_indirection` for details.
+    fn translate_expr(
         &self,
-        out: &mut dyn Write,
         expr: Handle<Expression>,
         expr_ctx: &ExpressionCtx<'_>,
-    ) -> BackendResult {
-        self.write_expr_with_indirection(out, expr, expr_ctx, Indirection::Ordinary)
+    ) -> Result<ra::Expr, Error> {
+        self.expr_ast_with_indirection(expr, expr_ctx, Indirection::Ordinary)
     }
 
-    /// Write `expr` as a Rust expression with the requested indirection.
-    ///
-    /// The expression is parenthesized if necessary to ensure it cannot be affected by precedence.
-    ///
-    /// This does not produce newlines or indentation.
+    /// Translate multiple expressions.
+    fn translate_exprs(
+        &self,
+        expr_ctx: &ExpressionCtx<'_>,
+        exprs: impl IntoIterator<Item = Handle<Expression>>,
+    ) -> Result<Vec<ra::Expr>, Error> {
+        exprs
+            .into_iter()
+            .map(|expr| self.translate_expr(expr, expr_ctx))
+            .collect()
+    }
+
+    /// Translate `expr` to Rust with the requested indirection.
     ///
     /// The `requested` argument indicates how the produced Rust expression’s type should relate
     /// to the Naga type of the input expression. See [`Indirection`]’s documentation for details.
-    fn write_expr_with_indirection(
+    fn expr_ast_with_indirection(
         &self,
-        out: &mut dyn Write,
         expr: Handle<Expression>,
         expr_ctx: &ExpressionCtx<'_>,
         requested: Indirection,
-    ) -> BackendResult {
+    ) -> Result<ra::Expr, Error> {
         // If the plain form of the expression is not what we need, emit the
         // operator necessary to correct that.
-        let plain = self.plain_form_indirection(expr, expr_ctx);
-        match (requested, plain) {
+        let plain: Indirection = self.plain_form_indirection(expr, expr_ctx);
+        let plain_expr: ra::Expr = self.expr_ast_plain_form(expr, expr_ctx, plain)?;
+        Ok(match (requested, plain) {
             // The plain form expression will be a place.
             // Convert it to a reference to match the Naga pointer type.
             // TODO: We need to choose which borrow operator to use.
             (Indirection::Ordinary, Indirection::Place) => {
-                write!(out, "(&")?;
-                self.write_expr_plain_form(out, expr, expr_ctx, plain)?;
-                write!(out, ")")?;
+                ra::Expr::Borrow(ra::PtrKind::Shared(None), Box::new(plain_expr))
             }
 
             // The plain form expression will be a pointer, but the caller wants its pointee.
             // Insert a dereference operator.
-            (Indirection::Place, Indirection::Ordinary) => {
-                write!(out, "(*")?;
-                self.write_expr_plain_form(out, expr, expr_ctx, plain)?;
-                write!(out, ")")?;
-            }
+            (Indirection::Place, Indirection::Ordinary) => ra::Expr::Deref(Box::new(plain_expr)),
             // Matches.
             (Indirection::Place, Indirection::Place)
-            | (Indirection::Ordinary, Indirection::Ordinary) => {
-                self.write_expr_plain_form(out, expr, expr_ctx, plain)?
-            }
-        }
-
-        Ok(())
+            | (Indirection::Ordinary, Indirection::Ordinary) => plain_expr,
+        })
     }
 
-    /// Write the 'plain form' of `expr`.
+    /// Translates to the 'plain form' of `expr`.
     ///
     /// An expression's 'plain form' is the shortest rendition of that
     /// expression's meaning into Rust, lacking `&` or `*` operators.
@@ -1225,108 +1234,111 @@ impl Writer {
     ///
     /// When it does not match, this is indicated by [`Self::plain_form_indirection()`].
     /// It is the caller’s responsibility to adapt as needed, usually via
-    /// [`Self::write_expr_with_indirection()`].
+    /// [`Self::expr_ast_with_indirection()`].
     ///
     /// The return type of the written expression always follows [`TypeTranslation::Simd`] form.
     /// (We will need to refine that later.)
     ///
     /// TODO: explain the indirection parameter of *this* function.
-    fn write_expr_plain_form(
+    fn expr_ast_plain_form(
         &self,
-        out: &mut dyn Write,
         expr: Handle<Expression>,
         expr_ctx: &ExpressionCtx<'_>,
         indirection: Indirection,
-    ) -> BackendResult {
+    ) -> Result<ra::Expr, Error> {
         if let Some(name) = self.named_expressions.get(&expr) {
-            write!(out, "{name}")?;
-            return Ok(());
+            return Ok(ra::Expr::Ident(name.clone()));
         }
 
         let expression = &expr_ctx.expressions()[expr];
         let module = expr_ctx.module();
-        let runtime_path = &self.config.runtime_path;
 
-        match *expression {
-            Expression::Literal(literal) => match literal {
-                // TODO: Should we use the `half` library for f16 support
-                // instead of only allowing it as a Rust unstable feature?
-                naga::Literal::F16(value) => write!(out, "{runtime_path}::Scalar({value}f16)")?,
-                naga::Literal::F32(value) => write!(out, "{runtime_path}::Scalar({value}f32)")?,
-                naga::Literal::U32(value) => write!(out, "{runtime_path}::Scalar({value}u32)")?,
-                naga::Literal::I32(value) => {
-                    write!(out, "{runtime_path}::Scalar({value}i32)")?;
-                }
-                naga::Literal::Bool(value) => write!(out, "{runtime_path}::Scalar({value})")?,
-                naga::Literal::F64(value) => write!(out, "{runtime_path}::Scalar({value}f64)")?,
-                naga::Literal::I64(value) => {
-                    write!(out, "{runtime_path}::Scalar({value}i64)")?;
-                }
-                naga::Literal::U64(value) => write!(out, "{runtime_path}::Scalar({value}u64)")?,
-                naga::Literal::AbstractInt(_) | naga::Literal::AbstractFloat(_) => {
-                    unreachable!("abstract types should not appear in IR presented to backends");
-                }
-            },
+        Ok(match *expression {
+            Expression::Literal(literal) => {
+                let rust_literal = match literal {
+                    // TODO: Should we use the `half` library for f16 support at run time
+                    // instead of only allowing it as a Rust unstable feature?
+                    naga::Literal::F16(value) => ra::Expr::LitF16(value),
+                    naga::Literal::F32(value) => ra::Expr::LitF32(value),
+                    naga::Literal::U32(value) => ra::Expr::LitU32(value),
+                    naga::Literal::I32(value) => ra::Expr::LitI32(value),
+                    naga::Literal::Bool(value) => ra::Expr::LitBool(value),
+                    naga::Literal::F64(value) => ra::Expr::LitF64(value),
+                    naga::Literal::I64(value) => ra::Expr::LitI64(value),
+                    naga::Literal::U64(value) => ra::Expr::LitU64(value),
+                    naga::Literal::AbstractInt(_) | naga::Literal::AbstractFloat(_) => {
+                        unreachable!(
+                            "abstract types should not appear in IR presented to backends"
+                        );
+                    }
+                };
+                ra::Expr::call_rt(ra::RtItem::Scalar, [rust_literal])
+            }
             Expression::Constant(handle) => {
                 let constant = &module.constants[handle];
                 if constant.name.is_some() {
-                    write!(out, "{}", self.names[&NameKey::Constant(handle)])?;
+                    ra::Expr::Ident(self.names[&NameKey::Constant(handle)].clone())
                 } else {
-                    self.write_expr(out, constant.init, expr_ctx)?;
+                    self.translate_expr(constant.init, expr_ctx)?
                 }
             }
-            Expression::ZeroValue(ty) => {
-                write!(out, "{runtime_path}::zero::<")?;
-                self.write_type(out, module, ty, TypeTranslation::Simd)?;
-                write!(out, ">()")?;
+            Expression::ZeroValue(_ty) => {
+                // TODO: need to translate type
+                ra::Expr::call_rt(ra::RtItem::ZeroFn, [])
             }
             Expression::Compose { ty, ref components } => {
-                self.write_constructor_expression(out, ty, components, expr_ctx)?;
+                self.constructor_expression_ast(ty, components, expr_ctx)?
             }
-            Expression::Splat { size, value } => {
-                let size = conv::vector_size_str(size);
-                // TODO: emit explicit element type if explicit types requested
-                write!(out, "{runtime_path}::Vec{size}::splat_from_scalar(")?;
-                self.write_expr(out, value, expr_ctx)?;
-                write!(out, ")")?;
-            }
+            Expression::Splat { size, value } => ra::Expr::call_rt(
+                ra::RtItem::SplatFromScalar(size),
+                [self.translate_expr(value, expr_ctx)?],
+            ),
             Expression::Override(_) => unreachable!(),
             Expression::FunctionArgument(pos) => {
                 let name_key = expr_ctx.expect_func_ctx().argument_key(pos);
                 let name = &self.names[&name_key];
-                write!(out, "{name}")?;
+                ra::Expr::Ident(name.clone())
             }
             Expression::Binary { op, left, right } => match BinOpClassified::from(op) {
-                BinOpClassified::Vectorizable(_) => {
-                    write!(out, "(")?;
-                    self.write_expr(out, left, expr_ctx)?;
-                    write!(out, " {} ", back::binary_operation_str(op))?;
-                    self.write_expr(out, right, expr_ctx)?;
-                    write!(out, ")")?;
-                }
-                BinOpClassified::ScalarBool(bop) => {
-                    self.write_expr(out, left, expr_ctx)?;
-                    write!(out, ".{}(", bop.to_vector_method())?;
-                    self.write_expr(out, right, expr_ctx)?;
-                    write!(out, ")")?;
-                }
-                BinOpClassified::ShortCircuit(bop) => {
+                BinOpClassified::Vectorizable(_) => ra::Expr::BinOp(
+                    Box::new(self.translate_expr(left, expr_ctx)?),
+                    op,
+                    Box::new(self.translate_expr(right, expr_ctx)?),
+                ),
+                BinOpClassified::ScalarBool(bop) => ra::Expr::Method(
+                    Box::new(self.translate_expr(left, expr_ctx)?),
+                    Cow::Borrowed(bop.to_vector_method()),
+                    vec![self.translate_expr(right, expr_ctx)?],
+                ),
+                BinOpClassified::ShortCircuit(_bop) => {
                     // The ".0"s are for unwrapping the input `Scalar`s
                     // TODO: when we support SIMD this will need to change completely
-                    write!(out, "{runtime_path}::Scalar(")?;
-                    self.write_expr(out, left, expr_ctx)?;
-                    write!(out, ".0 {} ", bop.to_binary_operator())?;
-                    self.write_expr(out, right, expr_ctx)?;
-                    write!(out, ".0)")?;
+                    ra::Expr::call_rt(
+                        ra::RtItem::Scalar,
+                        vec![ra::Expr::BinOp(
+                            Box::new(ra::Expr::TupleField(
+                                Box::new(self.translate_expr(left, expr_ctx)?),
+                                0,
+                            )),
+                            op,
+                            Box::new(ra::Expr::TupleField(
+                                Box::new(self.translate_expr(right, expr_ctx)?),
+                                0,
+                            )),
+                        )],
+                    )
                 }
             },
             Expression::Access { base, index } => {
-                self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
                 // TODO: when we support SIMD, this will need to change to not be a single indexing
                 // expression but a scatter/gather operation which isn’t a Rust place.
-                write!(out, "[{runtime_path}::Scalar::into_array_index(")?;
-                self.write_expr(out, index, expr_ctx)?;
-                write!(out, ")]")?
+                ra::Expr::Index(
+                    Box::new(self.expr_ast_with_indirection(base, expr_ctx, indirection)?),
+                    Box::new(ra::Expr::call_rt(
+                        ra::RtItem::ScalarIntoArrayIndex,
+                        [self.translate_expr(index, expr_ctx)?],
+                    )),
+                )
             }
             Expression::AccessIndex { base, index } => {
                 let result_ty = expr_ctx.resolve_type(expr);
@@ -1345,17 +1357,18 @@ impl Writer {
                 };
 
                 match *base_ty_resolved {
-                    TypeInner::Vector { .. } => {
-                        self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-                        write!(out, ".{}()", back::COMPONENTS[index as usize])?
-                    }
+                    TypeInner::Vector { .. } => ra::Expr::Method(
+                        Box::new(self.expr_ast_with_indirection(base, expr_ctx, indirection)?),
+                        Cow::Borrowed(["x", "y", "z", "w"][index as usize]),
+                        vec![],
+                    ),
                     TypeInner::Matrix { .. }
                     | TypeInner::Array { .. }
                     | TypeInner::BindingArray { .. }
-                    | TypeInner::ValuePointer { .. } => {
-                        self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-                        write!(out, "[{index}usize]")?
-                    }
+                    | TypeInner::ValuePointer { .. } => ra::Expr::Index(
+                        Box::new(self.expr_ast_with_indirection(base, expr_ctx, indirection)?),
+                        Box::new(ra::Expr::LitUsize(index)),
+                    ),
 
                     TypeInner::Struct { .. } => {
                         // TODO: This is a horrible "make the tests pass" kludge which should be
@@ -1370,194 +1383,197 @@ impl Writer {
                         } else {
                             matches!(result_ty, TypeInner::Scalar(_))
                         };
+                        // This will never panic in case the type is a `Struct`; this is not so
+                        // for other types, so we can only check while inside this match arm
+                        let ty = base_container_ty_handle.unwrap();
                         if element_type_is_scalar {
-                            let ty = base_container_ty_handle.unwrap();
-
-                            write!(out, "{runtime_path}::Scalar(")?;
-                            self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-                            write!(out, ".{})", &self.names[&NameKey::StructMember(ty, index)])?
+                            ra::Expr::call_rt(
+                                ra::RtItem::Scalar,
+                                [ra::Expr::NamedField(
+                                    Box::new(self.expr_ast_with_indirection(
+                                        base,
+                                        expr_ctx,
+                                        indirection,
+                                    )?),
+                                    self.names[&NameKey::StructMember(ty, index)].clone(),
+                                )],
+                            )
                         } else {
-                            // This will never panic in case the type is a `Struct`; this is not so
-                            // for other types, so we can only check while inside this match arm
-                            let ty = base_container_ty_handle.unwrap();
-
-                            self.write_expr_with_indirection(out, base, expr_ctx, indirection)?;
-                            write!(out, ".{}", &self.names[&NameKey::StructMember(ty, index)])?
+                            ra::Expr::NamedField(
+                                Box::new(self.expr_ast_with_indirection(
+                                    base,
+                                    expr_ctx,
+                                    indirection,
+                                )?),
+                                self.names[&NameKey::StructMember(ty, index)].clone(),
+                            )
                         }
                     }
                     ref other => unreachable!("cannot index into a {other:?}"),
                 }
             }
             Expression::ImageSample { .. } => {
-                self.write_unimplemented_expr(out, "texture sampling (other than textureLoad)")?;
+                self.unimplemented_expr("texture sampling (other than textureLoad)")?
             }
-            Expression::ImageQuery { image, query } => match query {
-                naga::ImageQuery::Size { level } => {
-                    write!(out, "{runtime_path}::Texture::dimensions(")?;
-                    self.write_expr(out, image, expr_ctx)?;
-                    write!(out, ", ")?;
-                    if let Some(level) = level {
-                        write!(out, "{runtime_path}::Scalar::<i32>::into_inner(")?;
-                        self.write_expr(out, level, expr_ctx)?;
-                        write!(out, ")")?;
-                    } else {
-                        write!(out, "0")?;
+            Expression::ImageQuery { image, query } => {
+                let image_expr = self.translate_expr(image, expr_ctx)?;
+                match query {
+                    naga::ImageQuery::Size { level } => ra::Expr::call_rt(
+                        ra::RtItem::TextureDimensions,
+                        [
+                            image_expr,
+                            if let Some(level) = level {
+                                ra::Expr::call_rt(
+                                    ra::RtItem::ScalarIntoInner,
+                                    [self.translate_expr(level, expr_ctx)?],
+                                )
+                            } else {
+                                ra::Expr::LitI32(0)
+                            },
+                        ],
+                    ),
+                    naga::ImageQuery::NumLevels => {
+                        ra::Expr::call_rt(ra::RtItem::TextureNumLevels, [image_expr])
                     }
-                    write!(out, ")")?;
+                    naga::ImageQuery::NumLayers => {
+                        ra::Expr::call_rt(ra::RtItem::TextureNumLayers, [image_expr])
+                    }
+                    naga::ImageQuery::NumSamples => {
+                        ra::Expr::call_rt(ra::RtItem::TextureNumSamples, [image_expr])
+                    }
                 }
-                naga::ImageQuery::NumLevels => {
-                    write!(out, "{runtime_path}::Texture::mip_levels(")?;
-                    self.write_expr(out, image, expr_ctx)?;
-                    write!(out, ")")?;
-                }
-                naga::ImageQuery::NumLayers => {
-                    write!(out, "{runtime_path}::Texture::array_layers(")?;
-                    self.write_expr(out, image, expr_ctx)?;
-                    write!(out, ")")?;
-                }
-                naga::ImageQuery::NumSamples => {
-                    write!(out, "{runtime_path}::Texture::samples(")?;
-                    self.write_expr(out, image, expr_ctx)?;
-                    write!(out, ")")?;
-                }
-            },
+            }
             Expression::ImageLoad {
                 image,
                 coordinate,
                 array_index,
                 sample,
                 level,
-            } => {
-                write!(out, "{runtime_path}::Texture::load(")?;
-                self.write_expr(out, image, expr_ctx)?;
-                write!(out, ", ")?;
-                self.write_expr(out, coordinate, expr_ctx)?;
-                write!(out, ", ")?;
-                if let Some(array_index) = array_index {
-                    write!(out, "{runtime_path}::Scalar::<i32>::into_inner(")?;
-                    self.write_expr(out, array_index, expr_ctx)?;
-                    write!(out, ")")?;
-                } else {
-                    write!(out, "0")?;
-                }
-                write!(out, ", ")?;
-                if let Some(sample) = sample {
-                    write!(out, "{runtime_path}::Scalar::<i32>::into_inner(")?;
-                    self.write_expr(out, sample, expr_ctx)?;
-                    write!(out, ")")?;
-                } else {
-                    write!(out, "0")?;
-                }
-                write!(out, ", ")?;
-                if let Some(level) = level {
-                    write!(out, "{runtime_path}::Scalar::<i32>::into_inner(")?;
-                    self.write_expr(out, level, expr_ctx)?;
-                    write!(out, ")")?;
-                } else {
-                    write!(out, "0")?;
-                }
-                write!(out, ")")?;
-            }
-            Expression::GlobalVariable(handle) => {
-                write!(
-                    out,
-                    "{prefix}{name}",
-                    prefix = self
-                        .config
-                        .global_field_access_prefix(&module.global_variables[handle]),
-                    name = &self.names[&NameKey::GlobalVariable(handle)]
-                )?;
-            }
+            } => ra::Expr::call_rt(
+                ra::RtItem::TextureLoad,
+                [
+                    self.translate_expr(image, expr_ctx)?,
+                    self.translate_expr(coordinate, expr_ctx)?,
+                    if let Some(array_index) = array_index {
+                        ra::Expr::call_rt(
+                            ra::RtItem::ScalarIntoInner,
+                            [self.translate_expr(array_index, expr_ctx)?],
+                        )
+                    } else {
+                        ra::Expr::LitI32(0)
+                    },
+                    if let Some(sample) = sample {
+                        ra::Expr::call_rt(
+                            ra::RtItem::ScalarIntoInner,
+                            [self.translate_expr(sample, expr_ctx)?],
+                        )
+                    } else {
+                        ra::Expr::LitI32(0)
+                    },
+                    if let Some(level) = level {
+                        ra::Expr::call_rt(
+                            ra::RtItem::ScalarIntoInner,
+                            [self.translate_expr(level, expr_ctx)?],
+                        )
+                    } else {
+                        ra::Expr::LitI32(0)
+                    },
+                ],
+            ),
+            Expression::GlobalVariable(handle) => ra::Expr::NamedField(
+                Box::new(
+                    self.config
+                        .global_field_access_expr(&module.global_variables[handle]),
+                ),
+                self.names[&NameKey::GlobalVariable(handle)].clone(),
+            ),
 
             Expression::As {
                 expr,
                 kind: to_kind,
                 convert: to_width,
             } => {
+                use naga::ScalarKind as Sk;
                 use naga::TypeInner as Ti;
 
                 let input_type = expr_ctx.resolve_type(expr);
+                let rust_expr = self.translate_expr(expr, expr_ctx)?;
 
-                self.write_expr(out, expr, expr_ctx)?;
                 match (input_type, to_kind, to_width) {
                     (
                         Ti::Vector { size: _, scalar: _ } | Ti::Scalar(_),
                         to_kind,
                         Some(to_width),
-                    ) => {
-                        write!(
-                            out,
-                            ".cast_elem_as_{elem_ty}()",
-                            elem_ty = unwrap_to_rust(Scalar {
-                                kind: to_kind,
-                                width: to_width
-                            }),
-                        )?;
-                    }
+                    ) => ra::Expr::Method(
+                        Box::new(rust_expr),
+                        Cow::Borrowed(match (to_kind, to_width) {
+                            (Sk::Sint, 4) => "cast_elem_as_i32",
+                            (Sk::Sint, 8) => "cast_elem_as_i64",
+                            (Sk::Uint, 4) => "cast_elem_as_u32",
+                            (Sk::Uint, 8) => "cast_elem_as_u64",
+                            (Sk::Float, 4) => "cast_elem_as_f32",
+                            (Sk::Float, 8) => "cast_elem_as_f64",
+                            _ => panic!(
+                                "unimplemented cast of vector to kind {to_kind:?} width {to_width:?}"
+                            ),
+                        }),
+                        vec![],
+                    ),
                     _ => panic!(
                         "unimplemented cast {input_type:?} to kind {to_kind:?} width {to_width:?}"
                     ),
                 }
             }
             Expression::Load { pointer } => {
-                self.write_expr_with_indirection(out, pointer, expr_ctx, Indirection::Place)?;
+                self.expr_ast_with_indirection(pointer, expr_ctx, Indirection::Place)?
             }
-            Expression::LocalVariable(handle) => write!(
-                out,
-                "{}",
-                self.names[&expr_ctx.expect_func_ctx().name_key(handle)]
-            )?,
-            Expression::ArrayLength(expr) => {
-                self.write_expr(out, expr, expr_ctx)?;
-                write!(out, ".len()")?;
+            Expression::LocalVariable(handle) => {
+                ra::Expr::Ident(self.names[&expr_ctx.expect_func_ctx().name_key(handle)].clone())
             }
+            Expression::ArrayLength(expr) => ra::Expr::Method(
+                Box::new(self.translate_expr(expr, expr_ctx)?),
+                Cow::Borrowed("len"),
+                vec![],
+            ),
 
             Expression::Math {
                 fun,
-                arg,
+                arg: first_arg,
                 arg1,
                 arg2,
                 arg3,
-            } => {
-                self.write_expr(out, arg, expr_ctx)?;
-                write!(
-                    out,
-                    ".{method}(",
-                    method = conv::math_function_to_method(fun)
-                )?;
-                for arg in [arg1, arg2, arg3].into_iter().flatten() {
-                    self.write_expr(out, arg, expr_ctx)?;
-                    write!(out, ", ")?;
-                }
-                write!(out, ")")?
-            }
+            } => ra::Expr::Method(
+                Box::new(self.translate_expr(first_arg, expr_ctx)?),
+                Cow::Borrowed(conv::math_function_to_method(fun)),
+                self.translate_exprs(
+                    expr_ctx,
+                    [arg1, arg2, arg3].into_iter().flatten(), // flatten options into nonexistence
+                )?,
+            ),
 
             Expression::Swizzle {
                 size,
                 vector,
                 pattern,
             } => {
-                self.write_expr(out, vector, expr_ctx)?;
-                write!(out, ".")?;
-                for &sc in pattern[..size as usize].iter() {
-                    out.write_char(back::COMPONENTS[sc as usize])?;
-                }
-                write!(out, "()")?;
+                let swizzle_method = String::from_iter(
+                    pattern[..size as usize]
+                        .iter()
+                        .map(|&component| back::COMPONENTS[component as usize]),
+                );
+                ra::Expr::Method(
+                    Box::new(self.translate_expr(vector, expr_ctx)?),
+                    Cow::Owned(swizzle_method),
+                    vec![],
+                )
             }
             Expression::Unary { op, expr } => {
-                let unary = match op {
-                    naga::UnaryOperator::Negate => "-",
-                    naga::UnaryOperator::LogicalNot => "!",
-                    naga::UnaryOperator::BitwiseNot => "!",
+                let ctor = match op {
+                    naga::UnaryOperator::Negate => ra::Expr::Negate,
+                    naga::UnaryOperator::LogicalNot => ra::Expr::Not,
+                    naga::UnaryOperator::BitwiseNot => ra::Expr::Not,
                 };
-
-                // The parentheses go on the outside because `write_expr` promises to
-                // produce an unambiguous expression, so we have to wrap our expression,
-                // and we don't need to wrap our own call to `write_expr`.
-                write!(out, "({unary}")?;
-                self.write_expr(out, expr, expr_ctx)?;
-
-                write!(out, ")")?
+                ctor(Box::new(self.translate_expr(expr, expr_ctx)?))
             }
 
             Expression::Select {
@@ -1566,63 +1582,48 @@ impl Writer {
                 reject,
             } => {
                 // Calls {vector type}::select() method
-                self.write_expr(out, reject, expr_ctx)?;
-                write!(out, ".select(")?;
-                self.write_expr(out, accept, expr_ctx)?;
-                write!(out, ", ")?;
-                self.write_expr(out, condition, expr_ctx)?;
-                write!(out, ")")?
+                ra::Expr::Method(
+                    Box::new(self.translate_expr(reject, expr_ctx)?),
+                    Cow::Borrowed("select"),
+                    vec![
+                        self.translate_expr(accept, expr_ctx)?,
+                        self.translate_expr(condition, expr_ctx)?,
+                    ],
+                )
             }
-            Expression::Derivative { .. } => {
-                self.write_unimplemented_expr(out, "derivatives")?;
-
-                // use naga::{DerivativeAxis as Axis, DerivativeControl as Ctrl};
-                // let op = match (axis, ctrl) {
-                //     (Axis::X, Ctrl::Coarse) => "dpdxCoarse",
-                //     (Axis::X, Ctrl::Fine) => "dpdxFine",
-                //     (Axis::X, Ctrl::None) => "dpdx",
-                //     (Axis::Y, Ctrl::Coarse) => "dpdyCoarse",
-                //     (Axis::Y, Ctrl::Fine) => "dpdyFine",
-                //     (Axis::Y, Ctrl::None) => "dpdy",
-                //     (Axis::Width, Ctrl::Coarse) => "fwidthCoarse",
-                //     (Axis::Width, Ctrl::Fine) => "fwidthFine",
-                //     (Axis::Width, Ctrl::None) => "fwidth",
-                // };
-                // write!(out, "{runtime_path}::{op}(")?;
-                // self.write_expr(out, expr, expr_ctx)?;
-                // write!(out, ")")?
-            }
+            Expression::Derivative { .. } => self.unimplemented_expr("derivatives")?,
             Expression::Relational { fun, argument } => {
                 use naga::RelationalFunction as Rf;
 
                 match fun {
-                    Rf::All => {
-                        self.write_expr(out, argument, expr_ctx)?;
-                        write!(out, ".all()")?
-                    }
-                    Rf::Any => {
-                        self.write_expr(out, argument, expr_ctx)?;
-                        write!(out, ".any()")?
-                    }
-                    Rf::IsNan => self.write_unimplemented_expr(out, "IsNan")?,
-                    Rf::IsInf => self.write_unimplemented_expr(out, "IsInf")?,
+                    Rf::All => ra::Expr::Method(
+                        Box::new(self.translate_expr(argument, expr_ctx)?),
+                        Cow::Borrowed("all"),
+                        vec![],
+                    ),
+                    Rf::Any => ra::Expr::Method(
+                        Box::new(self.translate_expr(argument, expr_ctx)?),
+                        Cow::Borrowed("any"),
+                        vec![],
+                    ),
+                    Rf::IsNan => self.unimplemented_expr("IsNan")?,
+                    Rf::IsInf => self.unimplemented_expr("IsInf")?,
                 }
             }
-            // Not supported yet
             Expression::RayQueryGetIntersection { .. }
             | Expression::RayQueryVertexPositions { .. }
             | Expression::CooperativeLoad { .. }
-            | Expression::CooperativeMultiplyAdd { .. } => unreachable!(),
-            // Nothing to do here, since call expression already cached
+            | Expression::CooperativeMultiplyAdd { .. } => unreachable!("unsupported feature"),
+            //
             Expression::CallResult(_)
             | Expression::AtomicResult { .. }
             | Expression::RayQueryProceedResult
             | Expression::SubgroupBallotResult
             | Expression::SubgroupOperationResult { .. }
-            | Expression::WorkGroupUniformLoadResult { .. } => {}
-        }
-
-        Ok(())
+            | Expression::WorkGroupUniformLoadResult { .. } => {
+                unreachable!("nothing to do here, since call expression already cached")
+            }
+        })
     }
 
     /// Translates [`Expression::Compose`].
@@ -1630,16 +1631,20 @@ impl Writer {
     ///
     /// We do not delegate to a library trait for this because the construction
     /// must be const-compatible.
-    fn write_constructor_expression(
+    fn constructor_expression_ast(
         &self,
-        out: &mut dyn Write,
         ty: Handle<naga::Type>,
         components: &[Handle<Expression>],
         expr_ctx: &ExpressionCtx<'_>,
-    ) -> BackendResult {
+    ) -> Result<ra::Expr, Error> {
         use naga::VectorSize::{Bi, Quad, Tri};
 
-        let ctor_name = match expr_ctx.types()[ty].inner {
+        let translated_components = components
+            .iter()
+            .map(|&component| self.translate_expr(component, expr_ctx))
+            .collect::<Result<Vec<ra::Expr>, Error>>()?;
+
+        let ctor_name: &'static str = match expr_ctx.types()[ty].inner {
             TypeInner::Vector { size, scalar: _ } => {
                 // Vectors may be constructed by a collection of scalars and vectors which in
                 // total have the required component count.
@@ -1679,18 +1684,7 @@ impl Writer {
                 stride: _,
             } => {
                 assert!(matches!(size, naga::ArraySize::Constant(_)));
-
-                // Write array syntax instead of a function call.
-                write!(out, "[")?;
-                for (index, component) in components.iter().enumerate() {
-                    if index > 0 {
-                        write!(out, ", ")?;
-                    }
-                    self.write_expr(out, *component, expr_ctx)?;
-                }
-                write!(out, "]")?;
-
-                return Ok(());
+                return Ok(ra::Expr::Array(translated_components));
             }
 
             // Fallback: Assume that a suitable `T::new()` associated function
@@ -1698,80 +1692,57 @@ impl Writer {
             _ => "new",
         };
 
-        write!(out, "<")?;
-        self.write_type(out, expr_ctx.module(), ty, TypeTranslation::Simd)?;
-        write!(out, ">::{ctor_name}(")?;
-        for (index, component) in components.iter().enumerate() {
-            if index > 0 {
-                write!(out, ", ")?;
-            }
-            self.write_expr(out, *component, expr_ctx)?;
-        }
-        write!(out, ")")?;
-
-        Ok(())
+        Ok(ra::Expr::Call(
+            Box::new(ra::Expr::QualifiedPath(
+                self.type_ast(expr_ctx.module(), ty, TypeTranslation::Simd)?,
+                ctor_name,
+            )),
+            translated_components,
+        ))
     }
 
-    /// Write the Rust form of the Naga type `type_handle`.
+    /// Translate the gtiven `type_handle` to [`ra::Type`] format.
     ///
     /// The form a type takes depends on the address space in which the value of that type lives.
-    pub(super) fn write_type(
+    pub(super) fn type_ast(
         &self,
-        out: &mut dyn Write,
         module: &Module,
         type_handle: Handle<naga::Type>,
         type_translation: TypeTranslation,
-    ) -> BackendResult {
-        let ty = &module.types[type_handle];
-        match ty.inner {
-            TypeInner::Struct { .. } => {
-                out.write_str(self.names[&NameKey::Type(type_handle)].as_str())?
-            }
-            ref other => self.write_type_inner(out, module, other, type_translation)?,
+    ) -> Result<ra::Type, Error> {
+        match module.types[type_handle].inner {
+            TypeInner::Struct { .. } => Ok(ra::Type::User(
+                self.names[&NameKey::Type(type_handle)].clone(),
+                ra::Generics::None,
+            )),
+            ref other => self.type_ast_inner(module, other, type_translation),
         }
-
-        Ok(())
     }
 
-    fn write_type_inner(
+    fn type_ast_inner(
         &self,
-        out: &mut dyn Write,
         module: &Module,
         inner: &TypeInner,
         type_translation: TypeTranslation,
-    ) -> BackendResult {
-        let runtime_path = &self.config.runtime_path;
-        match *inner {
-            TypeInner::Vector { size, scalar } => write!(
-                out,
-                "{runtime_path}::Vec{}<{}>",
-                conv::vector_size_str(size),
-                unwrap_to_rust(scalar),
-            )?,
+    ) -> Result<ra::Type, Error> {
+        Ok(match *inner {
+            TypeInner::Vector { size, scalar } => {
+                ra::Type::RtGen(ra::RtGen::vector(size), scalar.try_into()?)
+            }
             TypeInner::Matrix {
                 columns,
                 rows,
                 scalar,
-            } => write!(
-                out,
-                "{runtime_path}::Mat{columns}x{rows}<{scalar}>",
-                columns = conv::vector_size_str(columns),
-                rows = conv::vector_size_str(rows),
-                scalar = unwrap_to_rust(scalar),
-            )?,
+            } => ra::Type::RtGen(ra::RtGen::matrix(columns, rows), scalar.try_into()?),
             TypeInner::Scalar(scalar) => match type_translation {
-                TypeTranslation::RustScalar => write!(out, "{}", unwrap_to_rust(scalar))?,
+                TypeTranslation::RustScalar => ra::Type::BareScalar(scalar.try_into()?),
                 TypeTranslation::ShaderScalar | TypeTranslation::Simd => {
-                    write!(out, "{runtime_path}::Scalar<{}>", unwrap_to_rust(scalar))?
+                    ra::Type::RtGen(ra::RtGen::Scalar, scalar.try_into()?)
                 }
             },
 
-            TypeInner::Sampler { comparison: false } => {
-                write!(out, "{runtime_path}::Sampler")?;
-            }
-            TypeInner::Sampler { comparison: true } => {
-                write!(out, "{runtime_path}::SamplerComparison")?;
-            }
+            TypeInner::Sampler { comparison: false } => ra::Type::Sampler,
+            TypeInner::Sampler { comparison: true } => ra::Type::SamplerComparison,
             TypeInner::Image {
                 dim,
                 arrayed: _, // TODO: support array textures
@@ -1780,25 +1751,19 @@ impl Writer {
                 // TODO: we will want to support statically dispatched texture access,
                 // but that will require more generics work on the resource struct.
                 // `dyn` is a placeholder for further work.
-                let vec = match dim {
-                    naga::ImageDimension::D1 => "Scalar",
-                    naga::ImageDimension::D2 => "Vec2",
-                    naga::ImageDimension::D3 => "Vec3",
-                    naga::ImageDimension::Cube => "Vec3",
-                };
-                let scalar_type: &str = match class {
+                let scalar_type: ra::Scalar = match class {
                     naga::ImageClass::Sampled { kind, multi: _ } => match kind {
-                        naga::ScalarKind::Sint => "i32",
-                        naga::ScalarKind::Uint => "u32",
-                        naga::ScalarKind::Float => "f32",
-                        naga::ScalarKind::Bool => todo!(),
+                        naga::ScalarKind::Sint => ra::Scalar::I32,
+                        naga::ScalarKind::Uint => ra::Scalar::U32,
+                        naga::ScalarKind::Float => ra::Scalar::F32,
+                        naga::ScalarKind::Bool => ra::Scalar::Bool,
                         naga::ScalarKind::AbstractInt | naga::ScalarKind::AbstractFloat => {
                             unreachable!(
                                 "abstract types should not appear in IR presented to backends"
                             )
                         }
                     },
-                    naga::ImageClass::Depth { multi: _ } => "f32",
+                    naga::ImageClass::Depth { multi: _ } => ra::Scalar::F32,
                     naga::ImageClass::External => {
                         return Err(Error::Unimplemented("external texture types".into()));
                     }
@@ -1806,70 +1771,45 @@ impl Writer {
                         return Err(Error::Unimplemented("storage texture types".into()));
                     }
                 };
-                write!(
-                    out,
-                    // 'g is a lifetime name which is declared on the global struct *and* the
-                    // resource struct.
-                    //
-                    // TODO: scalar type should have an absolute path
-                    "&'g dyn {runtime_path}::Texture<\
-                        Dimensions = {runtime_path}::{vec}<u32>,\
-                        Coordinates = {runtime_path}::{vec}<i32>,\
-                        Scalar = {scalar_type},\
-                    >",
-                )?;
+                ra::Type::Texture {
+                    dim,
+                    scalar: scalar_type,
+                }
             }
-            TypeInner::Atomic(scalar) => {
-                write!(
-                    out,
-                    "::core::sync::atomic::{}",
-                    conv::atomic_type_name(scalar)?
-                )?;
-            }
+            TypeInner::Atomic(scalar) => ra::Type::Atomic(scalar.try_into()?),
             TypeInner::Array {
                 base,
                 size,
                 stride: _,
             } => {
-                write!(out, "[")?;
-                self.write_type(out, module, base, type_translation)?;
+                let element_type = Box::new(self.type_ast(module, base, type_translation)?);
                 match size {
-                    naga::ArraySize::Constant(len) => {
-                        write!(out, "; {len}")?;
-                    }
-                    naga::ArraySize::Pending(..) => {
+                    naga::ArraySize::Constant(size) => ra::Type::Array(element_type, size.get()),
+                    naga::ArraySize::Pending(_handle) => {
                         return Err(Error::Unimplemented("override array size".into()));
                     }
-                    naga::ArraySize::Dynamic => {
-                        // slice syntax needs no further tokens
-                    }
+                    naga::ArraySize::Dynamic => ra::Type::Slice(element_type),
                 }
-                write!(out, "]")?;
             }
-            TypeInner::BindingArray { .. } => {}
+            TypeInner::BindingArray { .. } => {
+                return Err(Error::Unimplemented("binding array".into()));
+            }
             TypeInner::Pointer {
                 base,
                 space: pointee_space,
-            } => {
+            } => ra::Type::Ptr(
                 if self.config.flags.contains(WriterFlags::RAW_POINTERS) {
-                    write!(out, "*mut ")?;
+                    ra::PtrKind::RawMut
                 } else {
-                    write!(out, "&mut ")?;
-                }
-                self.write_type(out, module, base, TypeTranslation::from(pointee_space))?;
-            }
+                    ra::PtrKind::Exclusive(None)
+                },
+                Box::new(self.type_ast(module, base, TypeTranslation::from(pointee_space))?),
+            ),
             TypeInner::ValuePointer {
                 size: _,
                 scalar: _,
                 space: _,
-            } => {
-                if self.config.flags.contains(WriterFlags::RAW_POINTERS) {
-                    write!(out, "*mut ")?;
-                } else {
-                    write!(out, "&mut ")?;
-                }
-                todo!()
-            }
+            } => todo!(),
             TypeInner::Struct { .. } => {
                 unreachable!("should only see a struct by name");
             }
@@ -1882,20 +1822,15 @@ impl Writer {
             TypeInner::CooperativeMatrix { .. } => {
                 return Err(Error::Unimplemented("type CooperativeMatrix".into()));
             }
-        }
-
-        Ok(())
+        })
     }
 
-    /// Helper method used to write global variables as translated into struct fields
-    fn write_global_variable_as_struct_field(
+    fn translate_global_variable_to_struct_field(
         &self,
-        out: &mut dyn Write,
         module: &Module,
         global: &naga::GlobalVariable,
         handle: Handle<naga::GlobalVariable>,
-    ) -> BackendResult {
-        // Write group and binding attributes if present
+    ) -> Result<ra::Field, Error> {
         let &naga::GlobalVariable {
             name: _, // renamed instead
             space,
@@ -1905,131 +1840,115 @@ impl Writer {
             memory_decorations: _, // TODO: probably need to do things with this
         } = global;
 
-        // Note bindings.
-        // These are not emitted as attributes because Rust does not allow macro attributes to be
-        // placed on struct fields.
-        if let Some(naga::ResourceBinding { group, binding }) = global.binding {
-            writeln!(out, "{INDENT}// group({group}) binding({binding})")?;
-        }
+        // TODO: reenable this
+        // // Note bindings.
+        // // These are not emitted as attributes because Rust does not allow macro attributes to be
+        // // placed on struct fields.
+        // if let Some(naga::ResourceBinding { group, binding }) = global.binding {
+        //     writeln!(out, "{INDENT}// group({group}) binding({binding})")?;
+        // }
 
-        write!(
-            out,
-            "{INDENT}{visibility}{name}: ",
-            visibility = self.visibility(),
-            name = &self.names[&NameKey::GlobalVariable(handle)],
-        )?;
-        self.write_type(out, module, ty, TypeTranslation::from(space))?;
-        writeln!(out, ",")?;
-
-        Ok(())
+        Ok(ra::Field {
+            attributes: if let Some(naga::ResourceBinding { group, binding }) = global.binding {
+                vec![ra::Attribute::Doc(format!(
+                    "group({group}) binding({binding})"
+                ))]
+            } else {
+                vec![]
+            },
+            visibility: self.visibility(),
+            name: self.names[&NameKey::GlobalVariable(handle)].clone(),
+            ty: self.type_ast(module, ty, TypeTranslation::from(space))?,
+        })
     }
-    fn write_global_variable_as_field_initializer(
+    fn global_variable_as_field_initializer_expr(
         &self,
-        out: &mut dyn Write,
         module: &Module,
         info: &ModuleInfo,
         global: &naga::GlobalVariable,
-        handle: Handle<naga::GlobalVariable>,
-    ) -> BackendResult {
-        let name: &str = &self.names[&NameKey::GlobalVariable(handle)];
-        write!(out, "{INDENT}{INDENT}{name}: ")?;
-
+    ) -> Result<ra::Expr, Error> {
         if let Some(init) = global.init {
-            self.write_expr(
-                out,
+            self.translate_expr(
                 init,
                 &ExpressionCtx::Global {
                     expressions: &module.global_expressions,
                     module,
                     module_info: info,
                 },
-            )?;
+            )
         } else {
-            // Default will generally produce zero
-            write!(out, "Default::default()")?;
+            Ok(ra::Expr::call_rt(ra::RtItem::ZeroFn, []))
         }
-
-        // End with comma separating from the next field
-        writeln!(out, ",")?;
-
-        Ok(())
     }
 
-    /// Writes a Rust `const` item for a [`naga::Constant`], with trailing newline.
-    fn write_global_constant(
+    /// Translates a [`naga::Constant`] to a Rust `const` item.
+    fn translate_global_constant(
         &self,
-        out: &mut dyn Write,
         module: &Module,
         info: &ModuleInfo,
         handle: Handle<naga::Constant>,
-    ) -> BackendResult {
-        let name = &self.names[&NameKey::Constant(handle)];
+    ) -> Result<ra::ConstItem, Error> {
+        let name = self.names[&NameKey::Constant(handle)].clone();
         let visibility = self.visibility();
-        let init = module.constants[handle].init;
-
-        write!(
-            out,
-            "#[allow(non_upper_case_globals)]\n{visibility}const {name}: "
-        )?;
-        self.write_type(
-            out,
+        let ty = self.type_ast(
             module,
             module.constants[handle].ty,
             TypeTranslation::ShaderScalar,
         )?;
-        write!(out, " = ")?;
-        self.write_expr(
-            out,
-            init,
-            &ExpressionCtx::Global {
-                expressions: &module.global_expressions,
-                module,
-                module_info: info,
-            },
-        )?;
-        writeln!(out, ";")?;
+        let init = module.constants[handle].init;
 
-        Ok(())
+        Ok(ra::ConstItem {
+            attributes: vec![ra::Attribute::AllowNonUpperCaseGlobals],
+            visibility,
+            name,
+            ty,
+            value: self.translate_expr(
+                init,
+                &ExpressionCtx::Global {
+                    expressions: &module.global_expressions,
+                    module,
+                    module_info: info,
+                },
+            )?,
+        })
     }
 
     /// For a feature that naga-rust does not support, either return an immediate conversion error, or emit
     /// an expression that panics when executed.
-    fn write_unimplemented_expr(
-        &self,
-        out: &mut dyn Write,
-        unimplemented_feature: &'static str,
-    ) -> BackendResult {
+    fn unimplemented_expr(&self, unimplemented_feature: &'static str) -> Result<ra::Expr, Error> {
+        assert!(
+            !unimplemented_feature.contains(['{', '}']),
+            "escaping format strings not supported yet"
+        );
+
         if self.config.flags.contains(WriterFlags::ALLOW_UNIMPLEMENTED) {
-            write!(
-                out,
-                "unimplemented!({message})",
-                message = proc_macro2::Literal::string(&alloc::format!(
+            Ok(ra::Expr::FormatLikeMacro(
+                // TODO: path needs to be qualified
+                "unimplemented",
+                alloc::format!(
                     "this shader function contains a feature which \
                     cannot yet be translated to Rust, {unimplemented_feature}"
-                ))
-            )?;
-            Ok(())
+                ),
+            ))
         } else {
             Err(Error::Unimplemented(unimplemented_feature.into()))
         }
     }
 
-    fn write_unimplemented_stmt(
+    fn unimplemented_stmt(
         &self,
-        out: &mut dyn Write,
         unimplemented_feature: &'static str,
-    ) -> BackendResult {
-        write!(out, "{INDENT}")?;
-        self.write_unimplemented_expr(out, unimplemented_feature)?;
-        writeln!(out, ";")?;
-        Ok(())
+    ) -> Result<ra::Statement, Error> {
+        Ok(ra::Statement::Expr(
+            self.unimplemented_expr(unimplemented_feature)?,
+        ))
     }
 
-    fn visibility(&self) -> &'static str {
+    fn visibility(&self) -> ra::Visibility {
         if self.config.flags.contains(WriterFlags::PUBLIC) {
-            "pub "
+            ra::Visibility::Public
         } else {
-            ""
+            ra::Visibility::Private
         }
     }
 }

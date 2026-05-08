@@ -790,7 +790,9 @@ version = "0.2.0"
 dependencies = [
  "arrayvec",
  "bitflags 2.11.1",
+ "half",
  "indoc",
+ "mutants",
  "naga",
  "once_cell",
  "pretty_assertions",

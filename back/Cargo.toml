@@ -22,6 +22,9 @@ default = []
 [dependencies]
 arrayvec = { workspace = true }
 bitflags = { workspace = true }
+# Used because naga uses it
+half = { workspace = true }
+mutants = { workspace = true }
 naga = { workspace = true }
 once_cell = { workspace = true }
 # Used to quote Rust string literals

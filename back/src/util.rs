@@ -6,15 +6,6 @@ impl core::fmt::Display for Gensym {
     }
 }
 
-pub(crate) trait LevelNext {
-    fn next(self) -> Self;
-}
-impl LevelNext for naga::back::Level {
-    fn next(self) -> Self {
-        Self(self.0.saturating_add(1))
-    }
-}
-
 /// Classifies address spaces into two kinds: the kind that go in our global variables struct,
 /// and the kind that go in our resources struct.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
