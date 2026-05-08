@@ -3,40 +3,8 @@ Conversion of Naga/shader vocabulary to Rust.
 */
 
 use alloc::boxed::Box;
-use alloc::format;
-use core::fmt;
 
-use naga::Scalar;
 use naga::proc::KeywordSet;
-
-/// Types that may be able to return the Rust source representation
-/// for their values as a `'static` string.
-///
-/// This trait is specifically for types whose values are either
-/// simple enough that their Rust form can be represented a static
-/// string, or aren't representable in Rust at all.
-///
-/// - If a type's Rust form requires dynamic formatting, so that
-///   returning a `&'static str` isn't feasible, consider implementing
-///   [`core::fmt::Display`] on some wrapper type instead.
-pub trait TryToRust: Sized {
-    /// Return the Rust form of `self` as a `'static` string.
-    ///
-    /// If `self` doesn't have a representation in Rust, then return `None`.
-    fn try_to_rust(self) -> Option<&'static str>;
-
-    /// What kind of Rust thing `Self` represents.
-    const DESCRIPTION: &'static str;
-}
-
-pub(crate) fn unwrap_to_rust<T: TryToRust + Copy + fmt::Debug>(value: T) -> &'static str {
-    value.try_to_rust().unwrap_or_else(|| {
-        unreachable!(
-            "validation should have forbidden {}: {value:?}",
-            T::DESCRIPTION
-        );
-    })
-}
 
 // Contains all keywords, strict or weak, in 2024 and any previous edition, sorted.
 // Also contains names we want to reserve for our own purposes.
@@ -196,35 +164,6 @@ pub(crate) fn math_function_to_method(f: naga::MathFunction) -> &'static str {
     }
 }
 
-impl TryToRust for Scalar {
-    const DESCRIPTION: &'static str = "scalar type";
-
-    fn try_to_rust(self) -> Option<&'static str> {
-        Some(match self {
-            Scalar::F64 => "f64",
-            Scalar::F32 => "f32",
-            Scalar::I32 => "i32",
-            Scalar::U32 => "u32",
-            Scalar::I64 => "i64",
-            Scalar::U64 => "u64",
-            Scalar::BOOL => "bool",
-            _ => return None,
-        })
-    }
-}
-
-/// Maps a scalar type to the corresponding `core::sync::atomic` type.
-pub fn atomic_type_name(scalar: Scalar) -> Result<&'static str, crate::Error> {
-    Ok(match scalar {
-        Scalar::I32 => "AtomicI32",
-        Scalar::U32 => "AtomicU32",
-        Scalar::I64 => "AtomicI64",
-        Scalar::U64 => "AtomicU64",
-        Scalar::BOOL => "AtomicBool",
-        _ => return Err(crate::Error::Unimplemented(format!("atomic {scalar:?}"))),
-    })
-}
-
 // TODO: This code won't be used until we support textures
 //
 // impl ToRust for naga::Interpolation {
@@ -338,22 +277,5 @@ impl BinOpBool {
             Bo::Greater => "elementwise_gt",
             Bo::GreaterEqual => "elementwise_ge",
         }
-    }
-}
-
-impl BinOpSc {
-    pub fn to_binary_operator(self) -> &'static str {
-        match self {
-            BinOpSc::LogicalAnd => "&&",
-            BinOpSc::LogicalOr => "||",
-        }
-    }
-}
-
-pub(crate) const fn vector_size_str(size: naga::VectorSize) -> &'static str {
-    match size {
-        naga::VectorSize::Bi => "2",
-        naga::VectorSize::Tri => "3",
-        naga::VectorSize::Quad => "4",
     }
 }

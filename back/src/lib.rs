@@ -32,6 +32,7 @@ use naga::valid::Capabilities;
 
 mod config;
 mod conv;
+mod ra;
 mod util;
 mod writer;
 

@@ -23,8 +23,9 @@ pub use matrix::*;
 pub use texture::*;
 pub use vector::*;
 
-// Used for argument conversion shim functions
+// Traits the generated code refers to
 pub use core::convert::Into;
+pub use core::default::Default;
 
 // -------------------------------------------------------------------------------------------------
 

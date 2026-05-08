@@ -1,6 +1,8 @@
 use alloc::borrow::Cow;
+use alloc::boxed::Box;
 use alloc::string::String;
 
+use crate::ra;
 use crate::util::GlobalKind;
 
 /// Configuration/builder for options for Rust code generation.
@@ -160,15 +162,16 @@ impl Config {
         }
     }
 
-    pub(crate) fn global_field_access_prefix(
-        &self,
-        variable: &naga::GlobalVariable,
-    ) -> &'static str {
+    /// Returns the expression for the struct whose fields are the translation of
+    /// shader global variables.
+    pub(crate) fn global_field_access_expr(&self, variable: &naga::GlobalVariable) -> ra::Expr {
         match (GlobalKind::of_variable(variable), &self.global_struct) {
             // If we have both resource struct and global struct, the resource struct is
             // nested inside the global struct.
-            (Some(GlobalKind::Resource), Some(_)) => "self.resources.",
-            (Some(GlobalKind::Resource), None) | (Some(GlobalKind::Variable), _) => "self.",
+            (Some(GlobalKind::Resource), Some(_)) => {
+                ra::Expr::NamedField(Box::new(ra::Expr::Self_), "resources".into())
+            }
+            (Some(GlobalKind::Resource), None) | (Some(GlobalKind::Variable), _) => ra::Expr::Self_,
             _ => unreachable!(),
         }
     }

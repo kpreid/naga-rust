@@ -29,7 +29,9 @@ naga-rust-rt = { version = "0.2.0", path = "rt" }
 arrayvec = { version = "0.7.6", default-features = false }
 bitflags = "2.9"
 exhaust = { version = "0.2.0", default-features = false }
+half = { version = "2.5" } # must agree with version used by naga version
 indoc = { version = "2.0.1", default-features = false }
+mutants = { version = ">=0.0.1, <0.0.5" }
 naga = { version = "29.0.1", default-features = false }
 num-traits = { version = "0.2.19", default-features = false }
 once_cell = { version = "1.21.3", default-features = false }
@@ -66,6 +68,7 @@ bool_assert_comparison = "allow" # not necessarily clearer
 # clippy::pedantic lints that are set to allow
 explicit_iter_loop = "allow"
 float_cmp = "allow"
+from_iter_instead_of_collect = "allow" # <https://github.com/rust-lang/rust-clippy/pull/16923>
 match_same_arms = "allow"
 semicolon_if_nothing_returned = "allow" # TODO: clean up and enable
 too_many_lines = "allow"

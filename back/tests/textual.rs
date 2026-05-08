@@ -96,21 +96,24 @@ fn global_variable_enabled() {
                 foo: ::naga_rust_rt::Scalar<i32>,
             }
             impl Globals {
-                const fn new() -> Self { Self {
-                    foo: ::naga_rust_rt::Scalar(1i32),
-                }}
+                const fn new() -> Self {
+                    Self { foo: ::naga_rust_rt::Scalar(1i32) }
+                }
             }
-            impl Default for Globals { fn default() -> Self { Self::new() } }
+            impl ::naga_rust_rt::Default for Globals {
+                fn default() -> Self {
+                    <Self>::new()
+                }
+            }
             impl Globals {
-            fn get_global(&self, ) -> i32 {
-                self.v_get_global().into()
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_get_global(&self, ) -> ::naga_rust_rt::Scalar<i32> {
-                let _e1 = self.foo;
-                return _e1;
-            }
-
+                fn get_global(&self) -> i32 {
+                    self.v_get_global().into()
+                }
+                #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+                fn v_get_global(&self) -> ::naga_rust_rt::Scalar<i32> {
+                    let _e1 = self.foo;
+                    return _e1;
+                }
             }
             "
         }
@@ -138,19 +141,18 @@ fn resources_enabled() {
         indoc::indoc! {
             "
             struct Resources {
-                // group(0) binding(0)
+                #[doc = \"group(0) binding(0)\"]
                 foo: ::naga_rust_rt::Scalar<i32>,
             }
             impl Resources {
-            fn get_uniform(&self, ) -> i32 {
-                self.v_get_uniform().into()
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_get_uniform(&self, ) -> ::naga_rust_rt::Scalar<i32> {
-                let _e1 = self.foo;
-                return _e1;
-            }
-
+                fn get_uniform(&self) -> i32 {
+                    self.v_get_uniform().into()
+                }
+                #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+                fn v_get_uniform(&self) -> ::naga_rust_rt::Scalar<i32> {
+                    let _e1 = self.foo;
+                    return _e1;
+                }
             }
             "
         }
@@ -177,8 +179,8 @@ fn globals_and_resources_enabled_and_visibility() {
         @group(0) @binding(0) var<uniform> foo: i32;
         @group(0) @binding(1) var texture: texture_2d<f32>;
         var<private> bar: i32 = 1;
-        fn combine() -> i32 {
-            return foo + bar;
+        fn combine(baz: i32, qux: i32) -> i32 {
+            return foo + bar + baz + qux;
         } 
     ";
 
@@ -193,9 +195,9 @@ fn globals_and_resources_enabled_and_visibility() {
         indoc::indoc! {
             "
             struct Resources<'g> {
-                // group(0) binding(0)
+                #[doc = \"group(0) binding(0)\"]
                 foo: ::naga_rust_rt::Scalar<i32>,
-                // group(0) binding(1)
+                #[doc = \"group(0) binding(1)\"]
                 texture: &'g dyn ::naga_rust_rt::Texture<Dimensions = ::naga_rust_rt::Vec2<u32>,Coordinates = ::naga_rust_rt::Vec2<i32>,Scalar = f32,>,
             }
             struct Globals<'g> {
@@ -203,22 +205,28 @@ fn globals_and_resources_enabled_and_visibility() {
                 bar: ::naga_rust_rt::Scalar<i32>,
             }
             impl<'g> Globals<'g> {
-                const fn new(resources: &'g Resources<'g>) -> Self { Self {
-                    resources,
-                    bar: ::naga_rust_rt::Scalar(1i32),
-                }}
+                const fn new(resources: &'g Resources<'g>) -> Self {
+                    Self { resources, bar: ::naga_rust_rt::Scalar(1i32) }
+                }
             }
             impl<'g> Globals<'g> {
-            fn combine(&self, ) -> i32 {
-                self.v_combine().into()
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_combine(&self, ) -> ::naga_rust_rt::Scalar<i32> {
-                let _e1 = self.resources.foo;
-                let _e3 = self.bar;
-                return (_e1 + _e3);
-            }
-
+                fn combine(
+                    &self,
+                    baz: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>,
+                    qux: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>,
+                ) -> i32 {
+                    self.v_combine(baz.into(), qux.into()).into()
+                }
+                #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+                fn v_combine(
+                    &self,
+                    baz: ::naga_rust_rt::Scalar<i32>,
+                    qux: ::naga_rust_rt::Scalar<i32>,
+                ) -> ::naga_rust_rt::Scalar<i32> {
+                    let _e3 = self.resources.foo;
+                    let _e5 = self.bar;
+                    return (((_e3 + _e5) + baz) + qux);
+                }
             }
             "
         }
@@ -236,9 +244,9 @@ fn globals_and_resources_enabled_and_visibility() {
         indoc::indoc! {
             "
             struct Resources<'g> {
-                // group(0) binding(0)
+                #[doc = \"group(0) binding(0)\"]
                 pub foo: ::naga_rust_rt::Scalar<i32>,
-                // group(0) binding(1)
+                #[doc = \"group(0) binding(1)\"]
                 pub texture: &'g dyn ::naga_rust_rt::Texture<Dimensions = ::naga_rust_rt::Vec2<u32>,Coordinates = ::naga_rust_rt::Vec2<i32>,Scalar = f32,>,
             }
             struct Globals<'g> {
@@ -246,22 +254,28 @@ fn globals_and_resources_enabled_and_visibility() {
                 pub bar: ::naga_rust_rt::Scalar<i32>,
             }
             impl<'g> Globals<'g> {
-                pub const fn new(resources: &'g Resources<'g>) -> Self { Self {
-                    resources,
-                    bar: ::naga_rust_rt::Scalar(1i32),
-                }}
+                pub const fn new(resources: &'g Resources<'g>) -> Self {
+                    Self { resources, bar: ::naga_rust_rt::Scalar(1i32) }
+                }
             }
             impl<'g> Globals<'g> {
-            pub fn combine(&self, ) -> i32 {
-                self.v_combine().into()
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_combine(&self, ) -> ::naga_rust_rt::Scalar<i32> {
-                let _e1 = self.resources.foo;
-                let _e3 = self.bar;
-                return (_e1 + _e3);
-            }
-
+                pub fn combine(
+                    &self,
+                    baz: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>,
+                    qux: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>,
+                ) -> i32 {
+                    self.v_combine(baz.into(), qux.into()).into()
+                }
+                #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+                fn v_combine(
+                    &self,
+                    baz: ::naga_rust_rt::Scalar<i32>,
+                    qux: ::naga_rust_rt::Scalar<i32>,
+                ) -> ::naga_rust_rt::Scalar<i32> {
+                    let _e3 = self.resources.foo;
+                    let _e5 = self.bar;
+                    return (((_e3 + _e5) + baz) + qux);
+                }
             }
             "
         }
@@ -285,9 +299,9 @@ fn globals_and_resources_enabled_but_empty() {
                 resources: &'g Resources,
             }
             impl<'g> Globals<'g> {
-                const fn new(resources: &'g Resources) -> Self { Self {
-                    resources,
-                }}
+                const fn new(resources: &'g Resources) -> Self {
+                    Self { resources }
+                }
             }
             impl<'g> Globals<'g> {
             }
@@ -317,12 +331,10 @@ fn struct_decl_and_ctor() {
                 fn new(
                     x: impl ::naga_rust_rt::Into<i32>,
                     y: impl ::naga_rust_rt::Into<u32>,
-                ) -> Self { Self {
-                    x: x.into(),
-                    y: y.into(),
-                } }
+                ) -> Self {
+                    Self { x: x.into(), y: y.into() }
+                }
             }
-
             "
         }
     );
@@ -363,7 +375,6 @@ fn switch() {
                     }
                 }
             }
-
             "
         }
     );
@@ -386,7 +397,6 @@ fn array_type_sizes() {
                 x: [i32; 10],
                 y: [i32],
             }
-
             "
         }
     );
@@ -409,18 +419,17 @@ fn array_length() {
         indoc::indoc! {
             "
             struct Resources {
-                // group(0) binding(1)
+                #[doc = \"group(0) binding(1)\"]
                 arr: [::naga_rust_rt::Scalar<u32>],
             }
             impl Resources {
-            fn length(&self, ) -> u32 {
-                self.v_length().into()
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_length(&self, ) -> ::naga_rust_rt::Scalar<u32> {
-                return (&self.arr).len();
-            }
-
+                fn length(&self) -> u32 {
+                    self.v_length().into()
+                }
+                #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+                fn v_length(&self) -> ::naga_rust_rt::Scalar<u32> {
+                    return (&self.arr).len();
+                }
             }
             "
         }
@@ -441,7 +450,7 @@ fn atomic_type() {
         indoc::indoc! {
             "
             struct Resources {
-                // group(0) binding(0)
+                #[doc = \"group(0) binding(0)\"]
                 atomic_scalar: ::core::sync::atomic::AtomicU32,
             }
             impl Resources {
@@ -472,7 +481,6 @@ fn precedence_of_prefix_and_postfix() {
                 let _e2 = (*p)[2usize];
                 return (!_e2);
             }
-
             "
         }
     );
@@ -510,7 +518,6 @@ fn continuing() {
                 }
                 return;
             }
-
             "
         }
     );
@@ -549,11 +556,43 @@ fn continuing_break_if() {
                     let _e5 = i;
                     i = (_e5 + ::naga_rust_rt::Scalar(1i32));
                     let _e8 = i;
-                    if ::naga_rust_rt::Scalar::into_branch_condition(_e8.elementwise_ge(::naga_rust_rt::Scalar(10i32))) { break; }
+                    if ::naga_rust_rt::Scalar::into_branch_condition(_e8.elementwise_ge(::naga_rust_rt::Scalar(10i32))) {
+                        break 'naga_break;
+                    }
                 }
                 return;
             }
+            "
+        }
+    );
+}
 
+#[test]
+fn if_else() {
+    assert_eq!(
+        translate(
+            Config::new(),
+            r"fn foo(x: i32) -> i32 {
+                if x > 0 {
+                    return 1;
+                } else {
+                    return -1;
+                }
+            }",
+        ),
+        indoc::indoc! {
+            "
+            fn foo(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
+                v_foo(x.into()).into()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_foo(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
+                if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
+                    return ::naga_rust_rt::Scalar(1i32);
+                } else {
+                    return ::naga_rust_rt::Scalar(-1i32);
+                }
+            }
             "
         }
     );
