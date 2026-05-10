@@ -1084,64 +1084,6 @@ impl Writer {
         ))
     }
 
-    /// Return the sort of indirection that `expr`'s plain form evaluates to.
-    ///
-    /// An expression's 'plain form' is the shortest rendition of that
-    /// expression's meaning into Rust, lacking `&` or `*` operators.
-    /// Therefore, it may not have a type which matches the Naga IR expression
-    /// type (because Naga does not have places, only pointers and non-pointer values).
-    ///
-    /// This function is in a sense a secondary return value from
-    /// [`Self::expr_ast_plain_form()`], but we need to have it available
-    /// *before* writing the expression itself. (TODO: That's no longer true now that
-    /// we generate an AST instead of writing directly.)
-    fn plain_form_indirection(
-        &self,
-        expr: Handle<Expression>,
-        expr_ctx: &ExpressionCtx<'_>,
-    ) -> Indirection {
-        use naga::Expression as Ex;
-
-        // Named expressions are `let` bindings.
-        // so if their type is a Naga pointer, then that must be a Rust pointer
-        // as well.
-        if self.named_expressions.contains_key(&expr) {
-            return Indirection::Ordinary;
-        }
-
-        match expr_ctx.expressions()[expr] {
-            // In Naga, a `LocalVariable(x)` expression produces a pointer,
-            // but our plain form is a variable name `x`,
-            // which means the caller must reference it if desired.
-            Ex::LocalVariable(_) => Indirection::Place,
-
-            // The plain form of `GlobalVariable(g)` is `self.g`, which is a
-            // Rust place. However, globals in the `Handle` address space are immutable,
-            // and `GlobalVariable` expressions for those produce the value directly,
-            // not a pointer to it. Therefore, such expressions have `Indirection::Place`.
-            // (Note that the exception for Handle is a fact about Naga IR, not this backend.)
-            Ex::GlobalVariable(handle) => {
-                let global = &expr_ctx.module().global_variables[handle];
-                match global.space {
-                    naga::AddressSpace::Handle => Indirection::Ordinary,
-                    _ => Indirection::Place,
-                }
-            }
-
-            // `Access` and `AccessIndex` pass through the pointer-ness of their `base` value.
-            Ex::Access { base, .. } | Ex::AccessIndex { base, .. } => {
-                let base_ty = expr_ctx.resolve_type(base);
-                match *base_ty {
-                    TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. } => {
-                        Indirection::Place
-                    }
-                    _ => Indirection::Ordinary,
-                }
-            }
-            _ => Indirection::Ordinary,
-        }
-    }
-
     /// Build a `let` statement. Helper for statement processing.
     fn let_ast(
         &self,
@@ -1206,8 +1148,8 @@ impl Writer {
     ) -> Result<ra::Expr, Error> {
         // If the plain form of the expression is not what we need, emit the
         // operator necessary to correct that.
-        let plain: Indirection = self.plain_form_indirection(expr, expr_ctx);
-        let plain_expr: ra::Expr = self.expr_ast_plain_form(expr, expr_ctx, plain)?;
+        let (plain_expr, plain): (ra::Expr, Indirection) =
+            self.expr_ast_plain_form(expr, expr_ctx)?;
         Ok(match (requested, plain) {
             // The plain form expression will be a place.
             // Convert it to a reference to match the Naga pointer type.
@@ -1232,28 +1174,59 @@ impl Writer {
     /// Therefore, it may not have a type which matches the Naga IR expression
     /// type (because Naga does not have places, only pointers and non-pointer values).
     ///
-    /// When it does not match, this is indicated by [`Self::plain_form_indirection()`].
+    /// When it does not match, this is indicated by the second part of the return value.
     /// It is the caller’s responsibility to adapt as needed, usually via
     /// [`Self::expr_ast_with_indirection()`].
     ///
     /// The return type of the written expression always follows [`TypeTranslation::Simd`] form.
     /// (We will need to refine that later.)
-    ///
-    /// TODO: explain the indirection parameter of *this* function.
     fn expr_ast_plain_form(
         &self,
         expr: Handle<Expression>,
         expr_ctx: &ExpressionCtx<'_>,
-        indirection: Indirection,
-    ) -> Result<ra::Expr, Error> {
+    ) -> Result<(ra::Expr, Indirection), Error> {
         if let Some(name) = self.named_expressions.get(&expr) {
-            return Ok(ra::Expr::Ident(name.clone()));
+            return Ok((ra::Expr::Ident(name.clone()), Indirection::Ordinary));
         }
 
         let expression = &expr_ctx.expressions()[expr];
         let module = expr_ctx.module();
 
-        Ok(match *expression {
+        // Determine Indirection of the expression we will produce.
+        // TODO: fold this into the main match.
+        let indirection = match *expression {
+            // In Naga, a `LocalVariable(x)` expression produces a pointer,
+            // but our plain form is a variable name `x`,
+            // which means the caller must reference it if desired.
+            Expression::LocalVariable(_) => Indirection::Place,
+
+            // The plain form of `GlobalVariable(g)` is `self.g`, which is a
+            // Rust place. However, globals in the `Handle` address space are immutable,
+            // and `GlobalVariable` expressions for those produce the value directly,
+            // not a pointer to it. Therefore, such expressions have `Indirection::Place`.
+            // (Note that the exception for Handle is a fact about Naga IR, not this backend.)
+            Expression::GlobalVariable(handle) => {
+                let global = &expr_ctx.module().global_variables[handle];
+                match global.space {
+                    naga::AddressSpace::Handle => Indirection::Ordinary,
+                    _ => Indirection::Place,
+                }
+            }
+
+            // `Access` and `AccessIndex` pass through the pointer-ness of their `base` value.
+            Expression::Access { base, .. } | Expression::AccessIndex { base, .. } => {
+                let base_ty = expr_ctx.resolve_type(base);
+                match *base_ty {
+                    TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. } => {
+                        Indirection::Place
+                    }
+                    _ => Indirection::Ordinary,
+                }
+            }
+            _ => Indirection::Ordinary,
+        };
+
+        let rust_expr = match *expression {
             Expression::Literal(literal) => {
                 let rust_literal = match literal {
                     // TODO: Should we use the `half` library for f16 support at run time
@@ -1623,7 +1596,9 @@ impl Writer {
             | Expression::WorkGroupUniformLoadResult { .. } => {
                 unreachable!("nothing to do here, since call expression already cached")
             }
-        })
+        };
+
+        Ok((rust_expr, indirection))
     }
 
     /// Translates [`Expression::Compose`].
