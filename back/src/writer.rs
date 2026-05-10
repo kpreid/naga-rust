@@ -1192,39 +1192,11 @@ impl Writer {
         let expression = &expr_ctx.expressions()[expr];
         let module = expr_ctx.module();
 
-        // Determine Indirection of the expression we will produce.
-        // TODO: fold this into the main match.
-        let indirection = match *expression {
-            // In Naga, a `LocalVariable(x)` expression produces a pointer,
-            // but our plain form is a variable name `x`,
-            // which means the caller must reference it if desired.
-            Expression::LocalVariable(_) => Indirection::Place,
-
-            // The plain form of `GlobalVariable(g)` is `self.g`, which is a
-            // Rust place. However, globals in the `Handle` address space are immutable,
-            // and `GlobalVariable` expressions for those produce the value directly,
-            // not a pointer to it. Therefore, such expressions have `Indirection::Place`.
-            // (Note that the exception for Handle is a fact about Naga IR, not this backend.)
-            Expression::GlobalVariable(handle) => {
-                let global = &expr_ctx.module().global_variables[handle];
-                match global.space {
-                    naga::AddressSpace::Handle => Indirection::Ordinary,
-                    _ => Indirection::Place,
-                }
-            }
-
-            // `Access` and `AccessIndex` pass through the pointer-ness of their `base` value.
-            Expression::Access { base, .. } | Expression::AccessIndex { base, .. } => {
-                let base_ty = expr_ctx.resolve_type(base);
-                match *base_ty {
-                    TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. } => {
-                        Indirection::Place
-                    }
-                    _ => Indirection::Ordinary,
-                }
-            }
-            _ => Indirection::Ordinary,
-        };
+        // How the indirection of the expression we produce relates to the indirection expected
+        // in the Naga IR. In particular, the below `match` will reset this to `Indirection::Place`
+        // whenever we produce a Rust expression that is a Rust place, in a case where the Naga IR
+        // is expecting the expression to yield a pointer value.
+        let mut indirection = Indirection::Ordinary;
 
         let rust_expr = match *expression {
             Expression::Literal(literal) => {
@@ -1303,6 +1275,14 @@ impl Writer {
                 }
             },
             Expression::Access { base, index } => {
+                // In the Naga IR, `Access` and `AccessIndex` pass through the pointer-ness of
+                // their `base` value, but in Rust, the result of `container[index]` is always
+                // a place, so we need to report `Indirection::Place` to counteract that.
+                let base_ty = expr_ctx.resolve_type(base);
+                if let TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. } = base_ty {
+                    indirection = Indirection::Place;
+                }
+
                 // TODO: when we support SIMD, this will need to change to not be a single indexing
                 // expression but a scatter/gather operation which isn’t a Rust place.
                 ra::Expr::Index(
@@ -1318,6 +1298,14 @@ impl Writer {
 
                 let base_ty_res = &expr_ctx.expect_func_ctx().info[base].ty;
                 let mut base_ty_resolved = base_ty_res.inner_with(&module.types);
+
+                // In the Naga IR, `Access` and `AccessIndex` pass through the pointer-ness of
+                // their `base` value, but in Rust, the result of `container[index]` is always
+                // a place, so we need to report `Indirection::Place` to counteract that.
+                if let TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. } = base_ty_resolved
+                {
+                    indirection = Indirection::Place;
+                }
 
                 // Find the type of container we are accessing, looking past the pointer if there
                 // is one.
@@ -1453,13 +1441,24 @@ impl Writer {
                     },
                 ],
             ),
-            Expression::GlobalVariable(handle) => ra::Expr::NamedField(
-                Box::new(
-                    self.config
-                        .global_field_access_expr(&module.global_variables[handle]),
-                ),
-                self.names[&NameKey::GlobalVariable(handle)].clone(),
-            ),
+            Expression::GlobalVariable(handle) => {
+                let global = &module.global_variables[handle];
+
+                // The plain form of `GlobalVariable(g)` is `self.g`, which is a
+                // Rust place. However, globals in the `Handle` address space are immutable,
+                // and `GlobalVariable` expressions for those produce the value directly,
+                // not a pointer to it. Therefore, such expressions have `Indirection::Place`.
+                // (Note that the exception for Handle is a fact about Naga IR, not this backend.)
+                indirection = match global.space {
+                    naga::AddressSpace::Handle => Indirection::Ordinary,
+                    _ => Indirection::Place,
+                };
+
+                ra::Expr::NamedField(
+                    Box::new(self.config.global_field_access_expr(global)),
+                    self.names[&NameKey::GlobalVariable(handle)].clone(),
+                )
+            }
 
             Expression::As {
                 expr,
@@ -1501,6 +1500,11 @@ impl Writer {
                 self.expr_ast_with_indirection(pointer, expr_ctx, Indirection::Place)?
             }
             Expression::LocalVariable(handle) => {
+                // In Naga, a `LocalVariable(x)` expression produces a pointer,
+                // but our plain form is a variable name `x`,
+                // which means the caller must reference it if desired.
+                indirection = Indirection::Place;
+
                 ra::Expr::Ident(self.names[&expr_ctx.expect_func_ctx().name_key(handle)].clone())
             }
             Expression::ArrayLength(expr) => ra::Expr::Method(
