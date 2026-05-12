@@ -355,6 +355,8 @@ impl<C: Copy + 'static, T: Component> Read for Constant<C, T> {
 /// Computes the dimensions of a specific mip level of a texture.
 ///
 /// The result is meaningless if the mip level is out of bounds.
+///
+/// As per WGSL [`textureDimensions`](https://www.w3.org/TR/2026/CRD-WGSL-20260507/#texturedimensions).
 //
 // Design note: The result is `u32`, not `NonZeroU32`, for the sake of the shader code which does
 // not have `NonZero` types.
