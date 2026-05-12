@@ -630,6 +630,21 @@ fn if_else_chain() {
     );
 }
 
+#[test]
+fn discard() {
+    assert_eq!(
+        translate_body(
+            Config::new(),
+            r"fn foo() {
+                discard;
+            }",
+        ),
+        indoc::indoc! {"{
+            ::naga_rust_rt::discard();
+        }"}
+    );
+}
+
 // -------------------------------------------------------------------------------------------------
 
 /// Formatting wrapper which prints an [`Error`] together with its `source()` chain.
