@@ -221,23 +221,37 @@ impl Writer {
     ///
     /// Returns an error if the module cannot be represented as Rust
     /// or if `out` returns an error.
-    #[expect(clippy::missing_panics_doc, reason = "TODO: unfinished")]
     pub fn write(
         &mut self,
         out: &mut dyn Write,
         module: &Module,
         info: &ModuleInfo,
     ) -> BackendResult {
+        let top_level_items = self.translate_module(module, info)?;
+
+        let print_ctx = ra::PrintCtx {
+            config: &self.config,
+            indent: back::Level(0),
+        };
+        for item in top_level_items {
+            item.write(out, print_ctx)?;
+        }
+
+        Ok(())
+    }
+
+    /// Converts `module` to a Rust AST.
+    ///
+    /// This function’s behavior is independent of prior uses of this [`Writer`].
+    ///
+    /// (It is not public because the AST is not public)
+    pub(crate) fn translate_module(
+        &mut self,
+        module: &Module,
+        info: &ModuleInfo,
+    ) -> Result<Vec<ra::Item>, Error> {
         if !module.overrides.is_empty() {
-            // TODO: using a statement here is wrong; we need a `compile_error!`
-            self.unimplemented_stmt("pipeline constants")?.write(
-                out,
-                ra::PrintCtx {
-                    config: &self.config,
-                    indent: back::Level(0),
-                },
-            )?;
-            return Ok(());
+            return Err(Error::Unimplemented("pipeline constants".into()));
         }
 
         self.reset(module);
@@ -473,15 +487,7 @@ impl Writer {
             top_level_items.extend(maybe_impl_items);
         }
 
-        let print_ctx = ra::PrintCtx {
-            config: &self.config,
-            indent: back::Level(0),
-        };
-        for item in top_level_items {
-            item.write(out, print_ctx)?;
-        }
-
-        Ok(())
+        Ok(top_level_items)
     }
 
     /// Translates a shader function to a pair of Rust functions.
