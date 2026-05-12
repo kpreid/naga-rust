@@ -69,7 +69,7 @@ fn entry_point() {
             r"
             #[::naga_rust_rt::fragment]
             fn main(position: impl ::naga_rust_rt::Into<::naga_rust_rt::Vec4<f32>>) -> ::naga_rust_rt::Vec4<f32> {
-                v_main(position.into()).into()
+                ::naga_rust_rt::into(v_main(::naga_rust_rt::into(position)))
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_main(position: ::naga_rust_rt::Vec4<f32>) -> ::naga_rust_rt::Vec4<f32> {
@@ -107,7 +107,7 @@ fn global_variable_enabled() {
             }
             impl Globals {
                 fn get_global(&self) -> i32 {
-                    self.v_get_global().into()
+                    ::naga_rust_rt::into(self.v_get_global())
                 }
                 #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
                 fn v_get_global(&self) -> ::naga_rust_rt::Scalar<i32> {
@@ -146,7 +146,7 @@ fn resources_enabled() {
             }
             impl Resources {
                 fn get_uniform(&self) -> i32 {
-                    self.v_get_uniform().into()
+                    ::naga_rust_rt::into(self.v_get_uniform())
                 }
                 #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
                 fn v_get_uniform(&self) -> ::naga_rust_rt::Scalar<i32> {
@@ -215,7 +215,7 @@ fn globals_and_resources_enabled_and_visibility() {
                     baz: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>,
                     qux: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>,
                 ) -> i32 {
-                    self.v_combine(baz.into(), qux.into()).into()
+                    ::naga_rust_rt::into(self.v_combine(::naga_rust_rt::into(baz), ::naga_rust_rt::into(qux)))
                 }
                 #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
                 fn v_combine(
@@ -264,7 +264,7 @@ fn globals_and_resources_enabled_and_visibility() {
                     baz: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>,
                     qux: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>,
                 ) -> i32 {
-                    self.v_combine(baz.into(), qux.into()).into()
+                    ::naga_rust_rt::into(self.v_combine(::naga_rust_rt::into(baz), ::naga_rust_rt::into(qux)))
                 }
                 #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
                 fn v_combine(
@@ -332,7 +332,7 @@ fn struct_decl_and_ctor() {
                     x: impl ::naga_rust_rt::Into<i32>,
                     y: impl ::naga_rust_rt::Into<u32>,
                 ) -> Self {
-                    Self { x: x.into(), y: y.into() }
+                    Self { x: ::naga_rust_rt::into(x), y: ::naga_rust_rt::into(y) }
                 }
             }
             "
@@ -359,7 +359,7 @@ fn switch() {
         indoc::indoc! {
             "
             fn switching(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
-                v_switching(x.into()).into()
+                ::naga_rust_rt::into(v_switching(::naga_rust_rt::into(x)))
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_switching(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
@@ -424,7 +424,7 @@ fn array_length() {
             }
             impl Resources {
                 fn length(&self) -> u32 {
-                    self.v_length().into()
+                    ::naga_rust_rt::into(self.v_length())
                 }
                 #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
                 fn v_length(&self) -> ::naga_rust_rt::Scalar<u32> {
@@ -474,7 +474,7 @@ fn precedence_of_prefix_and_postfix() {
         indoc::indoc! {
             "
             fn f(p: &mut [::naga_rust_rt::Scalar<i32>; 4]) -> i32 {
-                v_f(p).into()
+                ::naga_rust_rt::into(v_f(p))
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_f(p: &mut [::naga_rust_rt::Scalar<i32>; 4]) -> ::naga_rust_rt::Scalar<i32> {
@@ -502,7 +502,7 @@ fn continuing() {
         indoc::indoc! {
             "
             fn foo() {
-                v_foo().into()
+                ::naga_rust_rt::into(v_foo())
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_foo() {
@@ -542,7 +542,7 @@ fn continuing_break_if() {
         indoc::indoc! {
             "
             fn foo() {
-                v_foo().into()
+                ::naga_rust_rt::into(v_foo())
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_foo() {
@@ -582,7 +582,7 @@ fn if_without_else() {
         indoc::indoc! {
             "
             fn foo(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
-                v_foo(x.into()).into()
+                ::naga_rust_rt::into(v_foo(::naga_rust_rt::into(x)))
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_foo(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
@@ -612,7 +612,7 @@ fn if_else() {
         indoc::indoc! {
             "
             fn foo(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
-                v_foo(x.into()).into()
+                ::naga_rust_rt::into(v_foo(::naga_rust_rt::into(x)))
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_foo(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
@@ -645,7 +645,7 @@ fn if_else_chain() {
         indoc::indoc! {
             "
             fn signum(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
-                v_signum(x.into()).into()
+                ::naga_rust_rt::into(v_signum(::naga_rust_rt::into(x)))
             }
             #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
             fn v_signum(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {

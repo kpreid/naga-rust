@@ -289,6 +289,7 @@ pub(crate) enum RtItem {
     TextureNumLayers,
     TextureNumSamples,
     DiscardFn,
+    IntoFn,
     ZeroFn,
 }
 
@@ -779,6 +780,7 @@ impl fmt::Display for RtItem {
             RtItem::TextureNumLayers => "texture::Query::array_layers",
             RtItem::TextureNumSamples => "texture::Query::samples",
             RtItem::DiscardFn => "discard",
+            RtItem::IntoFn => "into",
             RtItem::ZeroFn => "zero",
         })
     }

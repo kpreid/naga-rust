@@ -592,11 +592,7 @@ impl Writer {
             for (index, arg) in func.arguments.iter().enumerate() {
                 let argument_name = &self.names[&func_ctx.argument_key(index.try_into().unwrap())];
                 let argument_expr = if use_into_for_arg(arg) {
-                    ra::Expr::Method(
-                        Box::new(ra::Expr::Ident(argument_name.clone())),
-                        "into".into(),
-                        vec![],
-                    )
+                    ra::Expr::call_rt(ra::RtItem::IntoFn, [ra::Expr::Ident(argument_name.clone())])
                 } else {
                     ra::Expr::Ident(argument_name.clone())
                 };
@@ -606,14 +602,13 @@ impl Writer {
             // The final into() converts from the internal `TypeTranslation::Simd`
             // type to the public `TypeTranslation::RustScalar` type.
             // TODO: calling into as a trait method can be ambiguous
-            ra::Block::expr(ra::Expr::Method(
-                Box::new(ra::Expr::call_maybe_self(
+            ra::Block::expr(ra::Expr::call_rt(
+                ra::RtItem::IntoFn,
+                [ra::Expr::call_maybe_self(
                     self.config.functions_are_methods(),
                     format!("{FN_INTERNAL_TYPES_PREFIX}{shader_func_name}"),
                     call_args,
-                )),
-                "into".into(),
-                vec![],
+                )],
             ))
         } else {
             let mut body_statements = Vec::new();
@@ -731,10 +726,9 @@ impl Writer {
                 ));
                 constructor_fields.push((
                     member_name.to_string(),
-                    ra::Expr::Method(
-                        Box::new(ra::Expr::Ident(member_name.to_string())),
-                        "into".into(),
-                        vec![],
+                    ra::Expr::call_rt(
+                        ra::RtItem::IntoFn,
+                        [ra::Expr::Ident(member_name.to_string())],
                     ),
                 ));
             }
