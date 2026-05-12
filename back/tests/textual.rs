@@ -568,6 +568,35 @@ fn continuing_break_if() {
 }
 
 #[test]
+fn if_without_else() {
+    assert_eq!(
+        translate(
+            Config::new(),
+            r"fn foo(x: i32) -> i32 {
+                if x > 0 {
+                    return 1;
+                }
+                return -1;
+            }",
+        ),
+        indoc::indoc! {
+            "
+            fn foo(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
+                v_foo(x.into()).into()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_foo(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
+                if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
+                    return ::naga_rust_rt::Scalar(1i32);
+                }
+                return ::naga_rust_rt::Scalar(-1i32);
+            }
+            "
+        }
+    );
+}
+
+#[test]
 fn if_else() {
     assert_eq!(
         translate(
@@ -591,6 +620,43 @@ fn if_else() {
                     return ::naga_rust_rt::Scalar(1i32);
                 } else {
                     return ::naga_rust_rt::Scalar(-1i32);
+                }
+            }
+            "
+        }
+    );
+}
+
+#[test]
+fn if_else_chain() {
+    assert_eq!(
+        translate(
+            Config::new(),
+            r"fn signum(x: i32) -> i32 {
+                if x > 0 {
+                    return 1;
+                } else if x < 0 {
+                    return -1;
+                } else {
+                    return 0;
+                }
+            }",
+        ),
+        indoc::indoc! {
+            "
+            fn signum(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
+                v_signum(x.into()).into()
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_signum(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
+                if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
+                    return ::naga_rust_rt::Scalar(1i32);
+                } else {
+                    if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_lt(::naga_rust_rt::Scalar(0i32))) {
+                        return ::naga_rust_rt::Scalar(-1i32);
+                    } else {
+                        return ::naga_rust_rt::Scalar(0i32);
+                    }
                 }
             }
             "
