@@ -1,7 +1,6 @@
 //! Tests of the exact source text produced by the Rust backend.
-//!
-//! TODO: Consider whether we want to rewrite some or all of these tests to use
-//! `syn` or another parser to match trees instead of exact text.
+
+#![allow(clippy::needless_pass_by_value)]
 
 use core::error::Error as ErrorTrait;
 use core::fmt;
@@ -10,22 +9,47 @@ use pretty_assertions::assert_eq;
 
 use naga_rust_back::Config;
 
+// -------------------------------------------------------------------------------------------------
+
+/// Run the Naga WGSL frontend in preparation for translation.
+fn frontend(
+    wgsl_source_text: &str,
+) -> Result<(naga::Module, naga::valid::ModuleInfo), Box<dyn ErrorTrait>> {
+    let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text)?;
+
+    let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .subgroup_stages(naga::valid::ShaderStages::all())
+    .subgroup_operations(naga::valid::SubgroupOperationSet::all())
+    .validate(&module)?;
+
+    Ok((module, module_info))
+}
+
+/// Translate a module, panicking on error.
 fn translate(config: Config, wgsl_source_text: &str) -> String {
     fn inner(config: Config, wgsl_source_text: &str) -> Result<String, Box<dyn ErrorTrait>> {
-        let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text)?;
+        let (module, module_info) = frontend(wgsl_source_text)?;
+        Ok(naga_rust_back::write_string(&module, &module_info, config)?)
+    }
 
-        let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .subgroup_stages(naga::valid::ShaderStages::all())
-        .subgroup_operations(naga::valid::SubgroupOperationSet::all())
-        .validate(&module)?;
+    match inner(config, wgsl_source_text) {
+        Ok(translated_source) => translated_source,
+        Err(e) => panic!("{}", ErrorChain(&*e)),
+    }
+}
 
-        let translated_source: String =
-            naga_rust_back::write_string(&module, &module_info, config)?;
-
-        Ok(translated_source)
+/// Translate a function body, panicking on error or if there is more than one function.
+fn translate_body(config: Config, wgsl_source_text: &str) -> String {
+    fn inner(config: Config, wgsl_source_text: &str) -> Result<String, Box<dyn ErrorTrait>> {
+        let (module, module_info) = frontend(wgsl_source_text)?;
+        Ok(naga_rust_back::translate_function_body_only_for_testing(
+            &module,
+            &module_info,
+            &config,
+        )?)
     }
 
     match inner(config, wgsl_source_text) {
@@ -344,39 +368,29 @@ fn struct_decl_and_ctor() {
 fn switch() {
     // TODO: we can’t fully exercise `fall_through` without using an input syntax other than WGSL
     assert_eq!(
-        translate(
+        translate_body(
             Config::new(),
-            r"
-            fn switching(x: i32) -> i32 {
+            r"fn switching(x: i32) -> i32 {
                 switch (x) {
                     case 0 { return 0; }
                     case 1, 2 { return 1; }
                     case default { return 2; }
                 }
-            }
-            "
+            }"
         ),
-        indoc::indoc! {
-            "
-            fn switching(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
-                ::naga_rust_rt::into(v_switching(::naga_rust_rt::into(x)))
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_switching(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
-                match ::naga_rust_rt::Scalar::into_inner(x) {
-                    0i32 => {
-                        return ::naga_rust_rt::Scalar(0i32);
-                    }
-                    1i32 | 2i32 => {
-                        return ::naga_rust_rt::Scalar(1i32);
-                    }
-                    _ => {
-                        return ::naga_rust_rt::Scalar(2i32);
-                    }
+        indoc::indoc! { "{
+            match ::naga_rust_rt::Scalar::into_inner(x) {
+                0i32 => {
+                    return ::naga_rust_rt::Scalar(0i32);
+                }
+                1i32 | 2i32 => {
+                    return ::naga_rust_rt::Scalar(1i32);
+                }
+                _ => {
+                    return ::naga_rust_rt::Scalar(2i32);
                 }
             }
-            "
-        }
+        }" }
     );
 }
 
@@ -465,31 +479,23 @@ fn atomic_type() {
 #[test]
 fn precedence_of_prefix_and_postfix() {
     assert_eq!(
-        translate(
+        translate_body(
             Config::new(),
             r"fn f(p: ptr<private, array<i32, 4>>) -> i32 {
                 return ~(*p)[2];
             }"
         ),
-        indoc::indoc! {
-            "
-            fn f(p: &mut [::naga_rust_rt::Scalar<i32>; 4]) -> i32 {
-                ::naga_rust_rt::into(v_f(p))
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_f(p: &mut [::naga_rust_rt::Scalar<i32>; 4]) -> ::naga_rust_rt::Scalar<i32> {
-                let _e2 = (*p)[2usize];
-                return (!_e2);
-            }
-            "
-        }
+        indoc::indoc! {"{
+            let _e2 = (*p)[2usize];
+            return (!_e2);
+        }"}
     );
 }
 
 #[test]
 fn continuing() {
     assert_eq!(
-        translate(
+        translate_body(
             Config::new(),
             r"fn foo() {
                 var i = 0;
@@ -499,34 +505,26 @@ fn continuing() {
                 }
             }",
         ),
-        indoc::indoc! {
-            "
-            fn foo() {
-                ::naga_rust_rt::into(v_foo())
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_foo() {
-                let mut i: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(0i32);
-            
-                'naga_break: loop {
-                    'naga_continue: {
-                        let _e2 = i;
-                        i = (_e2 + ::naga_rust_rt::Scalar(1i32));
-                    }
-                    let _e5 = i;
-                    i = (_e5 + ::naga_rust_rt::Scalar(1i32));
+        indoc::indoc! {"{
+            let mut i: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(0i32);
+        
+            'naga_break: loop {
+                'naga_continue: {
+                    let _e2 = i;
+                    i = (_e2 + ::naga_rust_rt::Scalar(1i32));
                 }
-                return;
+                let _e5 = i;
+                i = (_e5 + ::naga_rust_rt::Scalar(1i32));
             }
-            "
-        }
+            return;
+        }"}
     );
 }
 
 #[test]
 fn continuing_break_if() {
     assert_eq!(
-        translate(
+        translate_body(
             Config::new(),
             r"fn foo() {
                 var i = 0;
@@ -539,38 +537,30 @@ fn continuing_break_if() {
                 }
             }",
         ),
-        indoc::indoc! {
-            "
-            fn foo() {
-                ::naga_rust_rt::into(v_foo())
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_foo() {
-                let mut i: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(0i32);
-            
-                'naga_break: loop {
-                    'naga_continue: {
-                        let _e2 = i;
-                        i = (_e2 + ::naga_rust_rt::Scalar(1i32));
-                    }
-                    let _e5 = i;
-                    i = (_e5 + ::naga_rust_rt::Scalar(1i32));
-                    let _e8 = i;
-                    if ::naga_rust_rt::Scalar::into_branch_condition(_e8.elementwise_ge(::naga_rust_rt::Scalar(10i32))) {
-                        break 'naga_break;
-                    }
+        indoc::indoc! {"{
+            let mut i: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(0i32);
+        
+            'naga_break: loop {
+                'naga_continue: {
+                    let _e2 = i;
+                    i = (_e2 + ::naga_rust_rt::Scalar(1i32));
                 }
-                return;
+                let _e5 = i;
+                i = (_e5 + ::naga_rust_rt::Scalar(1i32));
+                let _e8 = i;
+                if ::naga_rust_rt::Scalar::into_branch_condition(_e8.elementwise_ge(::naga_rust_rt::Scalar(10i32))) {
+                    break 'naga_break;
+                }
             }
-            "
-        }
+            return;
+        }"}
     );
 }
 
 #[test]
 fn if_without_else() {
     assert_eq!(
-        translate(
+        translate_body(
             Config::new(),
             r"fn foo(x: i32) -> i32 {
                 if x > 0 {
@@ -579,27 +569,19 @@ fn if_without_else() {
                 return -1;
             }",
         ),
-        indoc::indoc! {
-            "
-            fn foo(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
-                ::naga_rust_rt::into(v_foo(::naga_rust_rt::into(x)))
+        indoc::indoc! {"{
+            if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
+                return ::naga_rust_rt::Scalar(1i32);
             }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_foo(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
-                if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
-                    return ::naga_rust_rt::Scalar(1i32);
-                }
-                return ::naga_rust_rt::Scalar(-1i32);
-            }
-            "
-        }
+            return ::naga_rust_rt::Scalar(-1i32);
+        }"}
     );
 }
 
 #[test]
 fn if_else() {
     assert_eq!(
-        translate(
+        translate_body(
             Config::new(),
             r"fn foo(x: i32) -> i32 {
                 if x > 0 {
@@ -609,28 +591,20 @@ fn if_else() {
                 }
             }",
         ),
-        indoc::indoc! {
-            "
-            fn foo(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
-                ::naga_rust_rt::into(v_foo(::naga_rust_rt::into(x)))
+        indoc::indoc! {"{
+            if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
+                return ::naga_rust_rt::Scalar(1i32);
+            } else {
+                return ::naga_rust_rt::Scalar(-1i32);
             }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_foo(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
-                if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
-                    return ::naga_rust_rt::Scalar(1i32);
-                } else {
-                    return ::naga_rust_rt::Scalar(-1i32);
-                }
-            }
-            "
-        }
+        }"}
     );
 }
 
 #[test]
 fn if_else_chain() {
     assert_eq!(
-        translate(
+        translate_body(
             Config::new(),
             r"fn signum(x: i32) -> i32 {
                 if x > 0 {
@@ -642,25 +616,17 @@ fn if_else_chain() {
                 }
             }",
         ),
-        indoc::indoc! {
-            "
-            fn signum(x: impl ::naga_rust_rt::Into<::naga_rust_rt::Scalar<i32>>) -> i32 {
-                ::naga_rust_rt::into(v_signum(::naga_rust_rt::into(x)))
-            }
-            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
-            fn v_signum(x: ::naga_rust_rt::Scalar<i32>) -> ::naga_rust_rt::Scalar<i32> {
-                if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
-                    return ::naga_rust_rt::Scalar(1i32);
+        indoc::indoc! {"{
+            if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_gt(::naga_rust_rt::Scalar(0i32))) {
+                return ::naga_rust_rt::Scalar(1i32);
+            } else {
+                if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_lt(::naga_rust_rt::Scalar(0i32))) {
+                    return ::naga_rust_rt::Scalar(-1i32);
                 } else {
-                    if ::naga_rust_rt::Scalar::into_branch_condition(x.elementwise_lt(::naga_rust_rt::Scalar(0i32))) {
-                        return ::naga_rust_rt::Scalar(-1i32);
-                    } else {
-                        return ::naga_rust_rt::Scalar(0i32);
-                    }
+                    return ::naga_rust_rt::Scalar(0i32);
                 }
             }
-            "
-        }
+        }"}
     );
 }
 
