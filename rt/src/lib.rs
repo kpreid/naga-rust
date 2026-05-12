@@ -28,8 +28,9 @@ pub use texture::{
 };
 pub use vector::*;
 
-// Traits the generated code refers to
+// The generated code may use Into trait bounds, so it needs to name the trait.
 pub use core::convert::Into;
+// The generated code may implement Default, so it needs to name the trait.
 pub use core::default::Default;
 
 // -------------------------------------------------------------------------------------------------
@@ -42,6 +43,17 @@ pub use core::default::Default;
 /// [WGSL zero value]: https://www.w3.org/TR/2026/CRD-WGSL-20260507/#zero-value
 pub fn zero<T: Default>() -> T {
     Default::default()
+}
+
+/// Equivalent to [`Into::into()`].
+///
+/// This function is provided for the use of the generated code in order to avoid the risk of
+/// method name clashes.
+pub fn into<T, U>(input: T) -> U
+where
+    T: Into<U>,
+{
+    input.into()
 }
 
 pub fn discard() {
