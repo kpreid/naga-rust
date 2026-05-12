@@ -9,7 +9,7 @@ use crate::util::GlobalKind;
 ///
 /// This configuration allows you to control syntactic characteristics of the output,
 /// and also Rust features that have no equivalent in shader languages.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub(crate) flags: WriterFlags,
     pub(crate) runtime_path: Cow<'static, str>,

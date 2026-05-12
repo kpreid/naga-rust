@@ -23,10 +23,14 @@
 
 extern crate alloc;
 
+use alloc::format;
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 use naga::valid::Capabilities;
+
+use crate::ra::PrintAst as _;
 
 // -------------------------------------------------------------------------------------------------
 
@@ -105,6 +109,8 @@ impl fmt::Display for Error {
 
 /// Converts `module` to a string of Rust code.
 ///
+/// This is a convenience wrapper around [`Writer::write()`].
+///
 /// # Errors
 ///
 /// Returns an error if the module cannot be represented as Rust.
@@ -116,5 +122,52 @@ pub fn write_string(
     let mut w = Writer::new(config);
     let mut output = String::new();
     w.write(&mut output, module, info)?;
+    Ok(output)
+}
+
+/// Converts `module` to Rust code, then throws away everything but the body of the single function.
+///
+/// This function is used to help test the translation of individual statements and expressions
+/// without having to reiterate the rest of the generated code.
+#[doc(hidden)] // test helper
+#[mutants::skip] // test helper, not code under test
+pub fn translate_function_body_only_for_testing(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    config: &Config,
+) -> Result<String, Error> {
+    let mut w = Writer::new(config.clone());
+    let items = w.translate_module(module, info)?;
+
+    let functions: Vec<ra::FunctionItem> = items
+        .into_iter()
+        .filter_map(|item| {
+            let ra::Item::Function(fn_item) = item else {
+                return None;
+            };
+            // Look for the internal/vectorized function rather than the wrapper function.
+            if !fn_item.name.starts_with("v_") {
+                return None;
+            }
+            Some(fn_item)
+        })
+        .collect();
+
+    if functions.len() != 1 {
+        return Err(Error::Unimplemented(format!(
+            "expected exactly one function; found {items:?}",
+            items = functions.into_iter().map(|f| f.name).collect::<Vec<_>>()
+        )));
+    }
+    let function = functions.into_iter().next().unwrap();
+
+    let mut output = String::new();
+    function.body.write(
+        &mut output,
+        ra::PrintCtx {
+            config,
+            indent: naga::back::Level(0),
+        },
+    )?;
     Ok(output)
 }
