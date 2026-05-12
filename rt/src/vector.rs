@@ -859,6 +859,7 @@ impl Scalar<bool> {
     ///
     /// This method only exists for `Scalar<bool>`.
     // (In the future when we support SIMD, this will be unavailable in the SIMD mode.)
+    #[mutants::skip] // causes infinite loops if mutated
     pub fn into_branch_condition(self) -> bool {
         self.0
     }
