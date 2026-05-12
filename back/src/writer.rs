@@ -1410,15 +1410,27 @@ impl Writer {
                             },
                         ],
                     ),
-                    naga::ImageQuery::NumLevels => {
-                        ra::Expr::call_rt(ra::RtItem::TextureNumLevels, [image_expr])
-                    }
-                    naga::ImageQuery::NumLayers => {
-                        ra::Expr::call_rt(ra::RtItem::TextureNumLayers, [image_expr])
-                    }
-                    naga::ImageQuery::NumSamples => {
-                        ra::Expr::call_rt(ra::RtItem::TextureNumSamples, [image_expr])
-                    }
+                    naga::ImageQuery::NumLevels => ra::Expr::call_rt(
+                        ra::RtItem::TextureNzToScalar,
+                        [ra::Expr::call_rt(
+                            ra::RtItem::TextureNumLevels,
+                            [image_expr],
+                        )],
+                    ),
+                    naga::ImageQuery::NumLayers => ra::Expr::call_rt(
+                        ra::RtItem::TextureNzToScalar,
+                        [ra::Expr::call_rt(
+                            ra::RtItem::TextureNumLayers,
+                            [image_expr],
+                        )],
+                    ),
+                    naga::ImageQuery::NumSamples => ra::Expr::call_rt(
+                        ra::RtItem::TextureNzToScalar,
+                        [ra::Expr::call_rt(
+                            ra::RtItem::TextureNumSamples,
+                            [image_expr],
+                        )],
+                    ),
                 }
             }
             Expression::ImageLoad {

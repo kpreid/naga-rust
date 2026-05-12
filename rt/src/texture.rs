@@ -367,6 +367,14 @@ where
     Dimensions::at_mip_level(texture.base_dimensions(), mip_level as u32)
 }
 
+/// Adapter for calling texture query functions.
+///
+/// TODO: This should probably be something more general, but it’s hard to say what.
+#[doc(hidden)]
+pub fn non_zero_to_scalar(input: NonZeroU32) -> Scalar<u32> {
+    Scalar(input.get())
+}
+
 use dim::Dimensions;
 mod dim {
     use super::*;

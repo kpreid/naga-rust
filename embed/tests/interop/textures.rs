@@ -50,8 +50,8 @@ fn query_and_load_1d() {
         resource_struct = Resources,
         r"
         @group(0) @binding(0) var my_texture: texture_1d<f32>;
-        fn dimensions() -> u32 {
-            return textureDimensions(my_texture, 0);
+        fn dimensions_and_mip_levels() -> vec2u {
+            return vec2(textureDimensions(my_texture, 0), textureNumLevels(my_texture));
         }
         fn load(position: i32) -> vec4f {
             return textureLoad(my_texture, position, 0);
@@ -74,7 +74,7 @@ fn query_and_load_1d() {
             data: &ts,
         },
     };
-    assert_eq!(res.dimensions(), 100);
+    assert_eq!(res.dimensions_and_mip_levels(), Vec2::new(100, 1));
     assert_eq!(res.load(Scalar::new(10)), Vec4::new(1.0, 2.0, 3.0, 4.0));
     assert_eq!(call_count, 1);
 }
@@ -85,8 +85,8 @@ fn query_and_load_2d() {
         resource_struct = Resources,
         r"
         @group(0) @binding(0) var my_texture: texture_2d<f32>;
-        fn dimensions() -> vec2u {
-            return textureDimensions(my_texture, 0);
+        fn dimensions_and_mip_levels() -> vec3u {
+            return vec3(textureDimensions(my_texture, 0), textureNumLevels(my_texture));
         }
         fn load(position: vec2i) -> vec4f {
             return textureLoad(my_texture, position, 0);
@@ -109,7 +109,81 @@ fn query_and_load_2d() {
             data: &ts,
         },
     };
-    assert_eq!(res.dimensions(), Vec2::new(100u32, 100));
+    assert_eq!(res.dimensions_and_mip_levels(), Vec3::new(100u32, 100, 1));
+    assert_eq!(res.load(Vec2::new(10, 20)), Vec4::new(1.0, 2.0, 3.0, 4.0));
+    assert_eq!(call_count, 1);
+}
+
+#[test]
+fn query_and_load_2d_array() {
+    wgsl!(
+        resource_struct = Resources,
+        r"
+        @group(0) @binding(0) var my_texture: texture_2d_array<f32>;
+        fn dimensions_and_layers() -> vec3u {
+            return vec3(textureDimensions(my_texture, 0), textureNumLayers(my_texture));
+        }
+        fn load(position: vec2i) -> vec4f {
+            return textureLoad(my_texture, position, 3, 0);
+        }"
+    );
+
+    let mut call_count = 0;
+
+    let ts = MockTextureStorage::new(|coordinates, array_layer, _s, mip_level| {
+        assert_eq!(coordinates, Vec2::new(10, 20));
+        assert_eq!(array_layer, 3);
+        assert_eq!(mip_level, 0);
+        call_count += 1;
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    });
+
+    let res = Resources {
+        my_texture: rt::Texture2dArray {
+            dimensions: Vec2::splat(NonZeroU32::new(100).unwrap()),
+            array_layers: NonZeroU32::new(7).unwrap(),
+            mip_levels: NonZeroU32::new(1).unwrap(),
+            data: &ts,
+        },
+    };
+    assert_eq!(res.dimensions_and_layers(), Vec3::new(100u32, 100, 7));
+    assert_eq!(res.load(Vec2::new(10, 20)), Vec4::new(1.0, 2.0, 3.0, 4.0));
+    assert_eq!(call_count, 1);
+}
+
+#[test]
+fn query_and_load_2d_multisampled() {
+    wgsl!(
+        resource_struct = Resources,
+        r"
+        @group(0) @binding(0) var my_texture: texture_multisampled_2d<f32>;
+        fn dimensions_and_layers() -> vec3u {
+            return vec3(textureDimensions(my_texture), textureNumSamples(my_texture));
+        }
+        fn load(position: vec2i) -> vec4f {
+            return textureLoad(my_texture, position, 3);
+        }"
+    );
+
+    let mut call_count = 0;
+
+    let ts = MockTextureStorage::new(|coordinates, array_layer, sample, mip_level| {
+        assert_eq!(coordinates, Vec2::new(10, 20));
+        assert_eq!(array_layer, 0);
+        assert_eq!(sample, 3);
+        assert_eq!(mip_level, 0);
+        call_count += 1;
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    });
+
+    let res = Resources {
+        my_texture: rt::TextureMultisampled2d {
+            dimensions: Vec2::splat(NonZeroU32::new(100).unwrap()),
+            samples: NonZeroU32::new(7).unwrap(),
+            data: &ts,
+        },
+    };
+    assert_eq!(res.dimensions_and_layers(), Vec3::new(100u32, 100, 7));
     assert_eq!(res.load(Vec2::new(10, 20)), Vec4::new(1.0, 2.0, 3.0, 4.0));
     assert_eq!(call_count, 1);
 }
@@ -120,8 +194,8 @@ fn query_and_load_3d() {
         resource_struct = Resources,
         r"
         @group(0) @binding(0) var my_texture: texture_3d<f32>;
-        fn dimensions() -> vec3u {
-            return textureDimensions(my_texture, 0);
+        fn dimensions_and_mip_levels() -> vec4u {
+            return vec4(textureDimensions(my_texture, 0), textureNumLevels(my_texture));
         }
         fn load(position: vec3i) -> vec4f {
             return textureLoad(my_texture, position, 0);
@@ -144,7 +218,10 @@ fn query_and_load_3d() {
             data: &ts,
         },
     };
-    assert_eq!(res.dimensions(), Vec3::new(100u32, 100, 100));
+    assert_eq!(
+        res.dimensions_and_mip_levels(),
+        Vec4::new(100u32, 100, 100, 1)
+    );
     assert_eq!(
         res.load(Vec3::new(10, 20, 30)),
         Vec4::new(1.0, 2.0, 3.0, 4.0)
@@ -152,7 +229,7 @@ fn query_and_load_3d() {
     assert_eq!(call_count, 1);
 }
 
-// TODO: test all texture types
+// TODO: test cube and cube_array types.
 
 // -------------------------------------------------------------------------------------------------
 
