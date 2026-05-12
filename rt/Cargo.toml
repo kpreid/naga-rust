@@ -28,6 +28,7 @@ alloc = []
 std = []
 
 [dependencies]
+mutants.workspace = true
 num-traits = { workspace = true, default-features = false, features = ["libm"] }
 naga-rust-macros.workspace = true
 paste.workspace = true

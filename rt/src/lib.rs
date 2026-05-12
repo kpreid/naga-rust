@@ -34,9 +34,14 @@ pub use core::default::Default;
 
 // -------------------------------------------------------------------------------------------------
 
-// TODO: should probably be num_traits::Zero or something custom
+/// Returns the [WGSL zero value] of a type.
+///
+/// Conveniently, all of the types for which this is defined also implement [`Default`] to return
+/// zero, so this is actually an alias for [`Default::default()`].
+///
+/// [WGSL zero value]: https://www.w3.org/TR/2026/CRD-WGSL-20260507/#zero-value
 pub fn zero<T: Default>() -> T {
-    T::default()
+    Default::default()
 }
 
 pub fn discard() {

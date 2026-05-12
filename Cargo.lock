@@ -826,6 +826,7 @@ dependencies = [
 name = "naga-rust-rt"
 version = "0.2.0"
 dependencies = [
+ "mutants",
  "naga-rust-macros",
  "num-traits",
  "paste",
