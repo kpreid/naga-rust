@@ -22,8 +22,7 @@ fn ripples(position: vec4f) -> f32 {
         + ripple(position.xy, vec2f(-0.7, -0.7), 3.0) * 0.4
         + ripple(position.xy, vec2f(-0.7, 0.7), 1.0) * 1.0;
 
-    // TODO: use saturate() instead of clamp() once it works
-    return 1.0 - clamp(ripples * 10.0, 0.0, 1.0) * 0.5;
+    return 1.0 - saturate(ripples * 10.0) * 0.5;
 }
 
 fn ripple(position: vec2f, vector: vec2f, time_scale: f32) -> f32 {
