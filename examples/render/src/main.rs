@@ -145,9 +145,10 @@ impl ApplicationHandler for App {
                         | wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => {
                             active.render(time, surface_texture)
                         }
-                        wgpu::CurrentSurfaceTexture::Occluded => {}
-                        //t => panic!("{t:?}"),
-                        wgpu::CurrentSurfaceTexture::Timeout => {}
+                        wgpu::CurrentSurfaceTexture::Occluded
+                        | wgpu::CurrentSurfaceTexture::Timeout => {
+                            // try again next time we get a redraw event
+                        }
                         wgpu::CurrentSurfaceTexture::Outdated => {
                             active.configure_surface();
                         }
@@ -173,6 +174,9 @@ impl ApplicationHandler for App {
 impl Active {
     fn configure_surface(&self) {
         let size = self.window.inner_size();
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
@@ -229,6 +233,7 @@ impl Active {
         // dummy submit to flush the write.
         self.queue.submit([]);
 
+        self.window.pre_present_notify();
         surface_texture.present();
     }
 }
