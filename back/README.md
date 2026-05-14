@@ -15,6 +15,7 @@ if you wish to use them. Broadly:
 * Simple mathematical functions will work.
 * Code involving pointers is likely to fail to compile.
 * Textures are supported but texture filtering is not.
+* Storage buffers are not supported.
 * Atomics, derivatives, and workgroup operations are not supported.
 * Pipelines involving multiple shaders (e.g. passing data from vertex to fragment)
   are not automatically executed but you can build that yourself.

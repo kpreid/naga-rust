@@ -1,12 +1,14 @@
 `naga-rust-embed`: embed WGSL code in your Rust code
 ====================================================
 
-Translates WGSL shader code to Rust embedded in your crate via macros.
+`naga-rust-embed` translates WGSL shader code to Rust embedded in your crate via macros.
+You can use this to **share constants and functions between your GPU and CPU code**,
+or to unit test your shader functions without setting up a pipeline or requiring a GPU device
+in the tests.
 
-This does not necessarily mean you can run your compute or render pipelines in Rust
-on your CPU unchanged; this is *not* a full “software renderer”. Rather, the primary goal
-of the library is to allow you to share simple functions between CPU and GPU code, so
-that the two parts of your code can agree on definitions.
+You cannot use this to run your compute or render pipelines in Rust on your CPU unchanged;
+this is not a full “software rendering” library and does not provide pipeline execution or 
+triangle rasterization.
 
 If you need additional control over the translation or to use a different source language,
 use the [`naga-rust-back`] library directly instead.
@@ -18,9 +20,10 @@ if you wish to use them. Broadly:
 * Simple mathematical functions will work.
 * Code involving pointers is likely to fail to compile.
 * Textures are supported but texture filtering is not.
+* Storage buffers are not supported.
 * Atomics, derivatives, and workgroup operations are not supported.
 * Pipelines involving multiple shaders (e.g. passing data from vertex to fragment)
-  are not automatically executed but you can build that yourself.
+  are not automatically executed but you can, in principle, build that yourself.
 
 [`naga`]: https://crates.io/crates/naga
 [`naga-rust-back`]: https://crates.io/crates/naga-rust-back
