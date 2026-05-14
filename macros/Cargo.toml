@@ -1,6 +1,6 @@
 [package]
 name = "naga-rust-macros"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version.workspace = true
 description = "Macros for the `naga-rust-embed` library."
