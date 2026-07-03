@@ -181,8 +181,9 @@ impl Active {
             &self.device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::COPY_DST,
-                // guaranteed to work per https://docs.rs/wgpu/29.0.3/wgpu/type.SurfaceConfiguration.html#structfield.format
+                // guaranteed to work per https://docs.rs/wgpu/latest/wgpu/type.SurfaceConfiguration.html#structfield.format
                 format: wgpu::TextureFormat::Bgra8Unorm,
+                color_space: wgpu::SurfaceColorSpace::Auto,
                 width: size.width,
                 height: size.height,
                 present_mode: wgpu::PresentMode::AutoVsync,
@@ -234,6 +235,6 @@ impl Active {
         self.queue.submit([]);
 
         self.window.pre_present_notify();
-        surface_texture.present();
+        self.queue.present(surface_texture);
     }
 }
