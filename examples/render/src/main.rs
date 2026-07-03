@@ -181,7 +181,7 @@ impl Active {
             &self.device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::COPY_DST,
-                // guaranteed to work per https://docs.rs/wgpu/latest/wgpu/type.SurfaceConfiguration.html#structfield.format
+                // guaranteed to work per https://docs.rs/wgpu/30.0.0/wgpu/type.SurfaceConfiguration.html#structfield.format
                 format: wgpu::TextureFormat::Bgra8Unorm,
                 color_space: wgpu::SurfaceColorSpace::Auto,
                 width: size.width,
