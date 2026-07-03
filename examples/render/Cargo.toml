@@ -15,7 +15,7 @@ naga-rust-embed = { path = "../../embed" }
 pollster.workspace = true
 rayon = "1.10.0"
 # We use wgpu for delivering the image to the window, *not* for executing the shader!
-wgpu = "29.0.3"
+wgpu = "30.0.0"
 winit = "0.30.0"
 
 [lints]

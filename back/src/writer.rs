@@ -1221,7 +1221,9 @@ impl Writer {
                     // instead of only allowing it as a Rust unstable feature?
                     naga::Literal::F16(value) => ra::Expr::LitF16(value),
                     naga::Literal::F32(value) => ra::Expr::LitF32(value),
+                    naga::Literal::U16(value) => ra::Expr::LitU16(value),
                     naga::Literal::U32(value) => ra::Expr::LitU32(value),
+                    naga::Literal::I16(value) => ra::Expr::LitI16(value),
                     naga::Literal::I32(value) => ra::Expr::LitI32(value),
                     naga::Literal::Bool(value) => ra::Expr::LitBool(value),
                     naga::Literal::F64(value) => ra::Expr::LitF64(value),
