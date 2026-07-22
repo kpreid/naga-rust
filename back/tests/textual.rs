@@ -146,9 +146,11 @@ fn global_variable_enabled() {
 
 #[test]
 fn global_variable_disabled() {
+    // TODO: When MSRV ≥ 1.87, use `assert_matches!`
     assert!(matches!(
         expect_error(Config::new(), r"var<private> foo: i32 = 1;"),
-        naga_rust_back::Error::GlobalVariablesNotEnabled { example: _, .. }
+        naga_rust_back::Error::GlobalVariablesNotEnabled { example, .. }
+        if example == "foo"
     ));
 }
 
@@ -185,12 +187,14 @@ fn resources_enabled() {
 
 #[test]
 fn resources_disabled() {
+    // TODO: When MSRV ≥ 1.87, use `assert_matches!`
     assert!(matches!(
         expect_error(
             Config::new(),
             r"@group(0) @binding(0) var<uniform> foo: i32;"
         ),
-        naga_rust_back::Error::ResourcesNotEnabled { example: _, .. }
+        naga_rust_back::Error::ResourcesNotEnabled { example, .. }
+        if example == "foo"
     ));
 }
 
