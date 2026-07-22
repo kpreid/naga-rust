@@ -29,7 +29,9 @@ jobs:
     continue-on-error: ${{ matrix.toolchain != 'stable' }}
 
     steps:
-    - uses: actions/checkout@v7.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Install Rust toolchain
       # Install exactly what we need: compiler, Cargo, clippy, rustfmt
@@ -39,7 +41,7 @@ jobs:
           rustup override set "${{ matrix.toolchain }}"
 
     # Load cache before doing any Rust builds
-    - uses: Swatinem/rust-cache@v2.9.1
+    - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
     # The repository does not have a versioned Cargo.lock file.
     # As a substitute, we always test on minimal and maximal versions.
@@ -55,13 +57,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v7.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
-    - uses: Swatinem/rust-cache@v2.9.1
+    - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
     - run: rustup toolchain install nightly --component miri
 
-    - uses: taiki-e/install-action@v2
+    - uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2.84.1
       with:
         tool: nextest@0.9
 
@@ -91,14 +95,16 @@ jobs:
       RUSTDOCFLAGS: '-Dbroken_intra_doc_links'
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Install Rust toolchain
       run: |
           rustup toolchain install "${{ matrix.toolchain }}" --profile=minimal --component=clippy
           rustup override set "${{ matrix.toolchain }}"
 
-    - uses: Swatinem/rust-cache@v2.9.1
+    - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       with:
         # Job's likely to fail and yet have useful cache material.
         cache-on-failure: true
@@ -117,7 +123,7 @@ jobs:
   
     - name: Save cargo --timings output
       if: ${{ always() }}
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: cargo-timings lint ${{ matrix.toolchain }}
         path: |
@@ -126,7 +132,9 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: cargo fmt --check
 
   # Run mutation testing against the changed code
@@ -136,12 +144,13 @@ jobs:
     # Running on push would require more work to determine the base revision
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Needed to ensure `main` branch is needed
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: Swatinem/rust-cache@v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           # Job's likely to fail and yet have useful cache material.
           cache-on-failure: true
@@ -153,12 +162,12 @@ jobs:
       - name: Relative diff
         run: |
           git branch -av
-          git diff origin/${{ github.base_ref }}.. | tee git.diff
+          git diff origin/${GITHUB_BASE_REF}.. | tee git.diff
       
       - name: Mutants
         run: cargo mutants --in-diff=git.diff --test-workspace=true -- --all-features
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ always() }}
         with:
           name: mutants-incremental.out
@@ -168,12 +177,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v7.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
-    - uses: Swatinem/rust-cache@v2.9.1
+    - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
     - name: Check semver
-      uses: obi1kenobi/cargo-semver-checks-action@v2.9
+      uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
       # Use workspace target dir for cargo install's build, so that the build will be cached.
       env:
         CARGO_TARGET_DIR: target/
