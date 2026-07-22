@@ -43,8 +43,16 @@ fn ctor() {
     );
 
     assert_eq!(make_struct(123, 456.0), StructTest { a: 123, b: 456.0 });
-    // each such struct also has a Rust-style new() function, with `Into` flexibility
-    assert_eq!(StructTest::new(123, 456.0), StructTest { a: 123, b: 456.0 });
+
+    // Each such struct also has a Rust-style new() function, with `Into` flexibility
+    //
+    // TODO: We will need to use a narrower trait than `Into` to avoid ambiguity when `f16` exists.
+    // When we do, this `f32` prefix can go away, and the comments here should stop mentioning
+    // `Into`. <https://github.com/kpreid/naga-rust/issues/108>
+    assert_eq!(
+        StructTest::new(123, 456.0f32),
+        StructTest { a: 123, b: 456.0 }
+    );
     assert_eq!(
         StructTest::new(Scalar(123), Scalar(456.0)),
         StructTest { a: 123, b: 456.0 }
