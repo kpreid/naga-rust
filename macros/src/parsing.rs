@@ -1,4 +1,9 @@
 use proc_macro2::Delimiter;
+use proc_macro2::Group;
+use proc_macro2::Ident;
+use proc_macro2::Punct;
+use proc_macro2::Spacing;
+use proc_macro2::Span;
 use proc_macro2::TokenTree;
 
 // -------------------------------------------------------------------------------------------------
@@ -6,7 +11,7 @@ use proc_macro2::TokenTree;
 /// Wrapper around a token stream iterator which provides help with parsing.
 /// Performs a similar function to `syn::ParseStream`.
 pub(crate) struct Parser {
-    previous_token_span: Option<proc_macro2::Span>,
+    previous_token_span: Option<Span>,
     iter: proc_macro2::token_stream::IntoIter,
 }
 
@@ -36,7 +41,7 @@ impl Parser {
                 )
             } else {
                 MacroError::new(
-                    proc_macro2::Span::call_site(),
+                    Span::call_site(),
                     format!("expected {expected_thing}; found empty input"),
                 )
             }),
@@ -90,12 +95,12 @@ pub fn unwrap_invisible_groups(mut token: TokenTree) -> TokenTree {
 /// Error that can be converted to a [`compile_error!`] invocation.
 #[derive(Debug)]
 pub(crate) struct MacroError {
-    pub span: proc_macro2::Span,
+    pub span: Span,
     pub message: String,
 }
 
 impl MacroError {
-    pub fn new(span: proc_macro2::Span, message: String) -> Self {
+    pub fn new(span: Span, message: String) -> Self {
         Self { span, message }
     }
 
@@ -118,9 +123,36 @@ impl MacroError {
     pub fn to_compile_error(&self) -> proc_macro::TokenStream {
         // TODO: There are no tests which demonstrate that this does its job properly.
         let Self { span, ref message } = *self;
-        quote::quote_spanned! {
-            span => ::core::compile_error!(#message);
-        }
+
+        proc_macro2::TokenStream::from_iter(
+            simple_path_to_tokens(span, &["core", "compile_error"])
+                .chain([
+                    TokenTree::Punct(Punct::new('!', Spacing::Alone)),
+                    TokenTree::Group(Group::new(
+                        Delimiter::Parenthesis,
+                        proc_macro2::TokenStream::from(TokenTree::Literal(
+                            proc_macro2::Literal::string(message),
+                        )),
+                    )),
+                    TokenTree::Punct(Punct::new(';', Spacing::Alone)),
+                ])
+                .map(|mut token| {
+                    token.set_span(span);
+                    token
+                }),
+        )
         .into()
     }
+}
+
+// -------------------------------------------------------------------------------------------------
+
+pub(crate) fn simple_path_to_tokens(span: Span, path: &[&str]) -> impl Iterator<Item = TokenTree> {
+    path.iter().flat_map(move |segment| {
+        [
+            TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+            TokenTree::Ident(Ident::new(segment, span)),
+        ]
+    })
 }

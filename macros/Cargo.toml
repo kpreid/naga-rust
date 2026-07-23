@@ -24,6 +24,8 @@ litrs = { version = "1.0.0", features = ["proc-macro2"] }
 naga = { workspace = true, features = ["wgsl-in"] }
 naga-rust-back.workspace = true
 proc-macro2.workspace = true
+
+[dev-dependencies]
 quote = "1.0.37"
 
 [lints]
