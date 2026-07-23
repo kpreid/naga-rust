@@ -10,7 +10,9 @@ use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 
-use proc_macro2::TokenTree as TokenTree2;
+use proc_macro2::Span;
+use proc_macro2::TokenStream;
+use proc_macro2::TokenTree;
 use quote::quote;
 
 use naga_rust_back::Config;
@@ -72,19 +74,19 @@ pub fn dummy_attribute(
 #[derive(Debug)]
 struct ConfigAndStr {
     config: Config,
-    string_span: proc_macro2::Span,
+    string_span: Span,
     string: String,
 }
 
 impl ConfigAndStr {
-    fn parse(input: proc_macro2::TokenStream) -> Result<Self, MacroError> {
+    fn parse(input: TokenStream) -> Result<Self, MacroError> {
         const EXPECT_TOP_LEVEL: &str = "a string literal or configuration option";
         let mut config = macro_default_config();
         let mut input = Parser::from_token_stream(input);
         loop {
             match unwrap_invisible_groups(input.next_expect(EXPECT_TOP_LEVEL)?) {
                 // A literal must be the final string.
-                ref tt @ TokenTree2::Literal(ref literal_token) => {
+                ref tt @ TokenTree::Literal(ref literal_token) => {
                     let quoted: String = literal_token.to_string();
                     let unquoted: String = match litrs::StringLit::try_from(literal_token) {
                         Ok(sl) => sl.into_value(),
@@ -103,7 +105,7 @@ impl ConfigAndStr {
 
                     // Accept a final optional comma after the string.
                     match input.next() {
-                        Some(TokenTree2::Punct(punct)) if punct.as_char() == ',' => {}
+                        Some(TokenTree::Punct(punct)) if punct.as_char() == ',' => {}
                         None => {}
                         Some(other) => {
                             return Err(MacroError::unexpected_token(&other, "comma or nothing"));
@@ -118,11 +120,11 @@ impl ConfigAndStr {
                 }
 
                 // An identifier must be the name of a configuration option.
-                TokenTree2::Ident(option_name_ident) => {
+                TokenTree::Ident(option_name_ident) => {
                     let option_name = option_name_ident.to_string();
 
                     match input.next_expect("`=`")? {
-                        TokenTree2::Punct(punct) if punct.as_char() == '=' => {}
+                        TokenTree::Punct(punct) if punct.as_char() == '=' => {}
                         other => {
                             return Err(MacroError::unexpected_token(&other, "`=`"));
                         }
@@ -163,7 +165,7 @@ impl ConfigAndStr {
                     }
 
                     match input.next_expect("comma")? {
-                        TokenTree2::Punct(punct) if punct.as_char() == ',' => {}
+                        TokenTree::Punct(punct) if punct.as_char() == ',' => {}
                         other => {
                             return Err(MacroError::unexpected_token(&other, "comma"));
                         }
@@ -190,9 +192,9 @@ fn macro_default_config() -> Config {
 
 fn include_wgsl_mr_impl(
     config: Config,
-    path_span: proc_macro2::Span,
+    path_span: Span,
     path_text: &str,
-) -> Result<proc_macro2::TokenStream, MacroError> {
+) -> Result<TokenStream, MacroError> {
     // We use manifest-relative paths because currently, there is no way to arrange for
     // source-file-relative paths.
     let mut absolute_path: PathBuf = PathBuf::from(
@@ -231,9 +233,9 @@ fn include_wgsl_mr_impl(
 
 fn parse_and_translate(
     config: Config,
-    wgsl_source_span: proc_macro2::Span,
+    wgsl_source_span: Span,
     wgsl_source_text: &str,
-) -> Result<proc_macro2::TokenStream, MacroError> {
+) -> Result<TokenStream, MacroError> {
     let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text).map_err(|error| {
         MacroError::new(
             wgsl_source_span,
@@ -265,16 +267,15 @@ fn parse_and_translate(
             )
         })?;
 
-    let translated_tokens: proc_macro2::TokenStream =
-        translated_source.parse().map_err(|error| {
-            MacroError::new(
-                wgsl_source_span,
-                format!(
-                    "internal error: translator did not produce valid Rust: {}",
-                    ErrorChain(&error)
-                ),
-            )
-        })?;
+    let translated_tokens: TokenStream = translated_source.parse().map_err(|error| {
+        MacroError::new(
+            wgsl_source_span,
+            format!(
+                "internal error: translator did not produce valid Rust: {}",
+                ErrorChain(&error)
+            ),
+        )
+    })?;
 
     Ok(translated_tokens)
 }

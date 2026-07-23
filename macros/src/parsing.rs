@@ -1,4 +1,5 @@
-use proc_macro2::TokenTree as TokenTree2;
+use proc_macro2::Delimiter;
+use proc_macro2::TokenTree;
 
 // -------------------------------------------------------------------------------------------------
 
@@ -18,14 +19,14 @@ impl Parser {
     }
 
     /// Consume the next token, if there is one.
-    pub fn next(&mut self) -> Option<TokenTree2> {
+    pub fn next(&mut self) -> Option<TokenTree> {
         self.iter
             .next()
             .inspect(|token| self.previous_token_span = Some(token.span()))
     }
 
     /// Consume the next token, and return an error if there isn’t one.
-    pub fn next_expect(&mut self, expected_thing: &'static str) -> Result<TokenTree2, MacroError> {
+    pub fn next_expect(&mut self, expected_thing: &'static str) -> Result<TokenTree, MacroError> {
         match self.next() {
             Some(token) => Ok(token),
             None => Err(if let Some(span) = self.previous_token_span {
@@ -48,7 +49,7 @@ impl Parser {
 
     pub fn expect_ident(&mut self) -> Result<String, MacroError> {
         match unwrap_invisible_groups(self.next_expect("identifier")?) {
-            TokenTree2::Ident(ident) => Ok(ident.to_string()),
+            TokenTree::Ident(ident) => Ok(ident.to_string()),
             other => Err(MacroError::unexpected_token(&other, "an identifier")),
         }
     }
@@ -64,10 +65,10 @@ impl Parser {
 
 /// Removes invisible groups, which may occur if our input tokens were partially produced by a
 /// `macro_rules!` macro.
-pub fn unwrap_invisible_groups(mut token: TokenTree2) -> TokenTree2 {
+pub fn unwrap_invisible_groups(mut token: TokenTree) -> TokenTree {
     loop {
         match token {
-            TokenTree2::Group(ref group) if group.delimiter() == proc_macro2::Delimiter::None => {
+            TokenTree::Group(ref group) if group.delimiter() == Delimiter::None => {
                 let mut it = group.stream().into_iter();
                 let Some(inner_token) = it.next() else {
                     // no inner token
@@ -98,9 +99,9 @@ impl MacroError {
         Self { span, message }
     }
 
-    pub fn unexpected_token(found: &proc_macro2::TokenTree, expected_thing: &'static str) -> Self {
+    pub fn unexpected_token(found: &TokenTree, expected_thing: &'static str) -> Self {
         match found {
-            TokenTree2::Group(group) => {
+            TokenTree::Group(group) => {
                 // Special error case to not print the entire group, which might be long.
                 Self::new(
                     group.span(),
