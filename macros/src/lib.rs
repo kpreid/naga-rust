@@ -10,13 +10,16 @@ use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 
+use proc_macro2::TokenTree as TokenTree2;
 use quote::quote;
-use syn::Token;
 
 use naga_rust_back::Config;
 use naga_rust_back::naga;
 
 // -------------------------------------------------------------------------------------------------
+
+mod parsing;
+use parsing::{MacroError, Parser, unwrap_invisible_groups};
 
 #[cfg(test)]
 mod tests;
@@ -25,27 +28,31 @@ mod tests;
 
 #[proc_macro]
 pub fn include_wgsl_mr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ConfigAndStr {
-        config,
-        string: path_literal,
-    } = syn::parse_macro_input!(input as ConfigAndStr);
-
-    match include_wgsl_mr_impl(config, &path_literal) {
-        Ok(expansion) => expansion.into(),
-        Err(error) => error.to_compile_error().into(),
+    match ConfigAndStr::parse(input.into()) {
+        Ok(ConfigAndStr {
+            config,
+            string_span: path_span,
+            string: path_literal,
+        }) => match include_wgsl_mr_impl(config, path_span, &path_literal) {
+            Ok(expansion) => expansion.into(),
+            Err(error) => error.to_compile_error(),
+        },
+        Err(e) => e.to_compile_error(),
     }
 }
 
 #[proc_macro]
 pub fn wgsl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ConfigAndStr {
-        config,
-        string: source_literal,
-    } = syn::parse_macro_input!(input as ConfigAndStr);
-
-    match parse_and_translate(config, source_literal.span(), &source_literal.value()) {
-        Ok(expansion) => expansion.into(),
-        Err(error) => error.to_compile_error().into(),
+    match ConfigAndStr::parse(input.into()) {
+        Ok(ConfigAndStr {
+            config,
+            string_span: source_span,
+            string: source_literal,
+        }) => match parse_and_translate(config, source_span, &source_literal) {
+            Ok(expansion) => expansion.into(),
+            Err(error) => error.to_compile_error(),
+        },
+        Err(e) => e.to_compile_error(),
     }
 }
 
@@ -62,62 +69,111 @@ pub fn dummy_attribute(
 
 /// Parsed syntax for the [`wgsl`] or [`include_wgsl_mr`] macros, which consist of configuration
 /// options `name = value_expr` followed by a string literal which is either source code or a path.
+#[derive(Debug)]
 struct ConfigAndStr {
     config: Config,
-    string: syn::LitStr,
+    string_span: proc_macro2::Span,
+    string: String,
 }
 
-impl syn::parse::Parse for ConfigAndStr {
-    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+impl ConfigAndStr {
+    fn parse(input: proc_macro2::TokenStream) -> Result<Self, MacroError> {
+        const EXPECT_TOP_LEVEL: &str = "a string literal or configuration option";
         let mut config = macro_default_config();
+        let mut input = Parser::from_token_stream(input);
         loop {
-            // Try parsing the final string literal.
-            let not_a_string_error = match input.parse::<syn::LitStr>() {
-                Ok(string) => {
-                    // Accept a final optional comma after the string.
-                    if !input.is_empty() {
-                        input.parse::<Token![,]>()?;
-                    }
-                    return Ok(Self { config, string });
-                }
-                Err(e) => e,
-            };
+            match unwrap_invisible_groups(input.next_expect(EXPECT_TOP_LEVEL)?) {
+                // A literal must be the final string.
+                ref tt @ TokenTree2::Literal(ref literal_token) => {
+                    let quoted: String = literal_token.to_string();
+                    let unquoted: String = match litrs::StringLit::try_from(literal_token) {
+                        Ok(sl) => sl.into_value(),
+                        Err(e) => {
+                            return Err(if quoted.starts_with('"') {
+                                // It's probably a string literal but doesn’t parse.
+                                MacroError::new(literal_token.span(), e.to_string())
+                            } else {
+                                // It's probably a non-string literal.
+                                // Use our own error message so that we mention the possibility
+                                // of a configuration option.
+                                MacroError::unexpected_token(tt, EXPECT_TOP_LEVEL)
+                            });
+                        }
+                    };
 
-            let option_name = input.parse::<syn::Ident>().map_err(|mut e| {
-                e.combine(not_a_string_error);
-                e
-            })?;
-            input.parse::<Token![=]>()?;
-            match &*option_name.to_string() {
-                // The options parsed by this match should also be documented in
-                // `embed/src/configuration_syntax.md`.
-                "allow_unimplemented" => {
-                    config = config.allow_unimplemented(input.parse::<syn::LitBool>()?.value);
+                    // Accept a final optional comma after the string.
+                    match input.next() {
+                        Some(TokenTree2::Punct(punct)) if punct.as_char() == ',' => {}
+                        None => {}
+                        Some(other) => {
+                            return Err(MacroError::unexpected_token(&other, "comma or nothing"));
+                        }
+                    }
+
+                    return Ok(Self {
+                        config,
+                        string_span: literal_token.span(),
+                        string: unquoted,
+                    });
                 }
-                "explicit_types" => {
-                    config = config.explicit_types(input.parse::<syn::LitBool>()?.value);
+
+                // An identifier must be the name of a configuration option.
+                TokenTree2::Ident(option_name_ident) => {
+                    let option_name = option_name_ident.to_string();
+
+                    match input.next_expect("`=`")? {
+                        TokenTree2::Punct(punct) if punct.as_char() == '=' => {}
+                        other => {
+                            return Err(MacroError::unexpected_token(&other, "`=`"));
+                        }
+                    }
+
+                    match &*option_name {
+                        // The options parsed by this match should also be documented in
+                        // `embed/src/configuration_syntax.md`.
+                        "allow_unimplemented" => {
+                            config = config.allow_unimplemented(input.expect_bool()?);
+                        }
+                        "explicit_types" => {
+                            config = config.explicit_types(input.expect_bool()?);
+                        }
+                        "public_items" => {
+                            config = config.public_items(input.expect_bool()?);
+                        }
+                        // TODO: raw_pointers doesn’t actually work, and will need to be marked unsafe
+                        // when it is implemented. So, we don’t offer it yet.
+                        //
+                        // "raw_pointers" => {
+                        //     config = config.raw_pointers(input.expect_bool()?);
+                        // }
+                        "global_struct" => {
+                            config = config.global_struct(input.expect_ident()?);
+                        }
+                        "resource_struct" => {
+                            config = config.resource_struct(input.expect_ident()?);
+                        }
+                        _ => {
+                            return Err(MacroError::new(
+                                option_name_ident.span(),
+                                format!(
+                                    "`{option_name}` is not the name of a configuration option"
+                                ),
+                            ));
+                        }
+                    }
+
+                    match input.next_expect("comma")? {
+                        TokenTree2::Punct(punct) if punct.as_char() == ',' => {}
+                        other => {
+                            return Err(MacroError::unexpected_token(&other, "comma"));
+                        }
+                    }
                 }
-                "public_items" => {
-                    config = config.public_items(input.parse::<syn::LitBool>()?.value);
-                }
-                // TODO: raw_pointers doesn’t actually work, and will need to be marked unsafe
-                // when it is implemented. So, we don’t offer it yet.
-                //
-                // "raw_pointers" => {
-                //     config = config.raw_pointers(input.parse::<syn::LitBool>()?.value);
-                // }
-                "global_struct" => {
-                    config = config.global_struct(input.parse::<syn::Ident>()?.to_string());
-                }
-                "resource_struct" => {
-                    config = config.resource_struct(input.parse::<syn::Ident>()?.to_string());
-                }
-                _ => {
-                    let msg = format!("`{option_name}` is not the name of a configuration option");
-                    return Err(syn::Error::new_spanned(option_name, msg));
+
+                other => {
+                    return Err(MacroError::unexpected_token(&other, EXPECT_TOP_LEVEL));
                 }
             }
-            input.parse::<Token![,]>()?;
         }
     }
 }
@@ -134,20 +190,21 @@ fn macro_default_config() -> Config {
 
 fn include_wgsl_mr_impl(
     config: Config,
-    path_literal: &syn::LitStr,
-) -> Result<proc_macro2::TokenStream, syn::Error> {
+    path_span: proc_macro2::Span,
+    path_text: &str,
+) -> Result<proc_macro2::TokenStream, MacroError> {
     // We use manifest-relative paths because currently, there is no way to arrange for
     // source-file-relative paths.
     let mut absolute_path: PathBuf = PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo"),
     );
-    absolute_path.push(path_literal.value());
+    absolute_path.push(path_text);
 
     // If this fails then we can't generate the `include_str!` we must generate.
     let absolute_path_str = absolute_path.to_str().ok_or_else(|| {
-        syn::Error::new_spanned(
-            path_literal,
-            format_args!(
+        MacroError::new(
+            path_span,
+            format!(
                 "absolute path “{p:?}” must be UTF-8",
                 p = absolute_path.display()
             ),
@@ -155,13 +212,13 @@ fn include_wgsl_mr_impl(
     })?;
 
     let wgsl_source_text: String = fs::read_to_string(&absolute_path).map_err(|error| {
-        syn::Error::new_spanned(
-            path_literal,
-            format_args!("failed to read “{absolute_path_str}”: {error}"),
+        MacroError::new(
+            path_span,
+            format!("failed to read “{absolute_path_str}”: {error}"),
         )
     })?;
 
-    let translated_tokens = parse_and_translate(config, path_literal.span(), &wgsl_source_text)?;
+    let translated_tokens = parse_and_translate(config, path_span, &wgsl_source_text)?;
 
     Ok(quote! {
         // Dummy include_str! call tells the compiler that we depend on this file,
@@ -176,11 +233,11 @@ fn parse_and_translate(
     config: Config,
     wgsl_source_span: proc_macro2::Span,
     wgsl_source_text: &str,
-) -> Result<proc_macro2::TokenStream, syn::Error> {
+) -> Result<proc_macro2::TokenStream, MacroError> {
     let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text).map_err(|error| {
-        syn::Error::new(
+        MacroError::new(
             wgsl_source_span,
-            format_args!("failed to parse WGSL text: {}", ErrorChain(&error)),
+            format!("failed to parse WGSL text: {}", ErrorChain(&error)),
         )
     })?;
 
@@ -194,25 +251,25 @@ fn parse_and_translate(
     .subgroup_operations(naga::valid::SubgroupOperationSet::empty())
     .validate(&module)
     .map_err(|error| {
-        syn::Error::new(
+        MacroError::new(
             wgsl_source_span,
-            format_args!("failed to validate WGSL: {}", ErrorChain(&error)),
+            format!("failed to validate WGSL: {}", ErrorChain(&error)),
         )
     })?;
 
     let translated_source: String = naga_rust_back::write_string(&module, &module_info, config)
         .map_err(|error| {
-            syn::Error::new(
+            MacroError::new(
                 wgsl_source_span,
-                format_args!("failed to translate shader to Rust: {}", ErrorChain(&error)),
+                format!("failed to translate shader to Rust: {}", ErrorChain(&error)),
             )
         })?;
 
     let translated_tokens: proc_macro2::TokenStream =
         translated_source.parse().map_err(|error| {
-            syn::Error::new(
+            MacroError::new(
                 wgsl_source_span,
-                format_args!(
+                format!(
                     "internal error: translator did not produce valid Rust: {}",
                     ErrorChain(&error)
                 ),

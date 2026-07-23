@@ -1,5 +1,12 @@
 # Changelog for `naga-rust-embed`
 
+## Unreleased
+
+### Changed
+
+* The macros’ parsing code has been rewritten.
+  It no longer depends on the `syn` library, and has more specific error messages in several cases.
+
 ## 0.2.0 (2026-05-14)
 
 ### Added
