@@ -10,53 +10,52 @@ use crate::ConfigAndStr;
 // -------------------------------------------------------------------------------------------------
 
 fn expect_error(input: proc_macro2::TokenStream) -> String {
-    match syn::parse2::<ConfigAndStr>(input) {
-        Ok(_) => panic!("no error"),
-        Err(e) => e.to_string(),
-    }
+    ConfigAndStr::parse(input).unwrap_err().message
 }
 
 #[test]
 fn success_without_config() {
     let input = quote! { r#"foo("bar");"# };
-    let parsed = syn::parse2::<ConfigAndStr>(input).unwrap();
-    assert_eq!(parsed.string.value(), r#"foo("bar");"#);
+    let parsed = ConfigAndStr::parse(input).unwrap();
+    assert_eq!(parsed.string, r#"foo("bar");"#);
 }
 
 #[test]
 fn success_with_comma() {
     let input = quote! { r#"foo("bar");"#, };
-    let parsed = syn::parse2::<ConfigAndStr>(input).unwrap();
-    assert_eq!(parsed.string.value(), r#"foo("bar");"#);
+    let parsed = ConfigAndStr::parse(input).unwrap();
+    assert_eq!(parsed.string, r#"foo("bar");"#);
 }
 
 #[test]
 fn success_with_config() {
     let input = quote! { allow_unimplemented = true, r#"foo("bar");"#, };
-    let parsed = syn::parse2::<ConfigAndStr>(input).unwrap();
+    let parsed = ConfigAndStr::parse(input).unwrap();
     // TODO: add an escape hatch so we can check the result of config parsing here
-    assert_eq!(parsed.string.value(), r#"foo("bar");"#);
+    assert_eq!(parsed.string, r#"foo("bar");"#);
 }
 
 #[test]
 fn empty() {
     assert_eq!(
         expect_error(quote! {}),
-        "unexpected end of input, expected identifier"
+        "expected a string literal or configuration option; found empty input"
     );
 }
 
 #[test]
 fn wrong_first_token() {
-    assert_eq!(expect_error(quote! { ! }), "expected identifier");
+    assert_eq!(
+        expect_error(quote! { ! }),
+        "expected a string literal or configuration option; found `!`"
+    );
 }
 
 #[test]
 fn wrong_literal() {
     assert_eq!(
         expect_error(quote! { 3.0 }),
-        // TODO: this is not a good error.
-        "unexpected end of input, expected identifier"
+        "expected a string literal or configuration option; found `3.0`"
     );
 }
 
@@ -72,7 +71,7 @@ fn unrecognized_config() {
 fn config_without_comma() {
     assert_eq!(
         expect_error(quote! { allow_unimplemented = true "" }),
-        "expected `,`"
+        r#"expected comma; found `""`"#
     );
 }
 
@@ -80,7 +79,7 @@ fn config_without_comma() {
 fn config_non_boolean() {
     assert_eq!(
         expect_error(quote! { allow_unimplemented = 3, "" }),
-        "expected boolean literal"
+        "expected a boolean literal; found `3`"
     );
 }
 
@@ -88,11 +87,14 @@ fn config_non_boolean() {
 fn config_non_ident() {
     assert_eq!(
         expect_error(quote! { global_struct = 3, "" }),
-        "expected identifier"
+        "expected an identifier; found `3`"
     );
 }
 
 #[test]
 fn non_comma_after_input() {
-    assert_eq!(expect_error(quote! { ""+ }), "expected `,`");
+    assert_eq!(
+        expect_error(quote! { ""+ }),
+        "expected comma or nothing; found `+`"
+    );
 }

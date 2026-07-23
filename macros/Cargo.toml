@@ -18,11 +18,13 @@ test = true # syntax error tests only
 doctest = false
 
 [dependencies]
+# We can get rid of this dependency if `Literal::str_value()` stabilizes.
+# <https://github.com/rust-lang/rust/issues/136652>
+litrs = { version = "1.0.0", features = ["proc-macro2"] }
 naga = { workspace = true, features = ["wgsl-in"] }
 naga-rust-back.workspace = true
 proc-macro2.workspace = true
 quote = "1.0.37"
-syn = { version = "2.0.100", default-features = false, features = ["parsing"] }
 
 [lints]
 workspace = true
