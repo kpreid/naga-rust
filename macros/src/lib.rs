@@ -10,10 +10,15 @@ use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 
+use proc_macro2::Delimiter;
+use proc_macro2::Group;
+use proc_macro2::Ident;
+use proc_macro2::Literal;
+use proc_macro2::Punct;
+use proc_macro2::Spacing;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use proc_macro2::TokenTree;
-use quote::quote;
 
 use naga_rust_back::Config;
 use naga_rust_back::naga;
@@ -21,7 +26,7 @@ use naga_rust_back::naga;
 // -------------------------------------------------------------------------------------------------
 
 mod parsing;
-use parsing::{MacroError, Parser, unwrap_invisible_groups};
+use parsing::{MacroError, Parser, simple_path_to_tokens, unwrap_invisible_groups};
 
 #[cfg(test)]
 mod tests;
@@ -222,13 +227,40 @@ fn include_wgsl_mr_impl(
 
     let translated_tokens = parse_and_translate(config, path_span, &wgsl_source_text)?;
 
-    Ok(quote! {
-        // Dummy include_str! call tells the compiler that we depend on this file,
-        // which it would not notice otherwise.
-        const _: &str = include_str!(#absolute_path_str);
-
-        #translated_tokens
-    })
+    // Dummy include_str! call tells the compiler that we depend on this file,
+    // which it would not notice otherwise.
+    let generated_span = Span::mixed_site(); // ideally would be def_site
+    Ok(TokenStream::from_iter(
+        [
+            TokenTree::Ident(Ident::new("const", generated_span)),
+            TokenTree::Ident(Ident::new("_", generated_span)),
+            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+            TokenTree::Punct(Punct::new('&', Spacing::Alone)),
+        ]
+        .into_iter()
+        .chain(simple_path_to_tokens(
+            generated_span,
+            &["core", "primitive", "str"],
+        ))
+        .chain([TokenTree::Punct(Punct::new('=', Spacing::Alone))])
+        .chain(simple_path_to_tokens(
+            generated_span,
+            &["core", "include_str"],
+        ))
+        .chain([
+            TokenTree::Punct(Punct::new('!', Spacing::Alone)),
+            TokenTree::Group(Group::new(
+                Delimiter::Parenthesis,
+                TokenStream::from(TokenTree::Literal({
+                    let mut lit = Literal::string(absolute_path_str);
+                    lit.set_span(path_span);
+                    lit
+                })),
+            )),
+            TokenTree::Punct(Punct::new(';', Spacing::Alone)),
+        ])
+        .chain(translated_tokens),
+    ))
 }
 
 fn parse_and_translate(
