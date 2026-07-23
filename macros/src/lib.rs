@@ -16,6 +16,13 @@ use syn::Token;
 use naga_rust_back::Config;
 use naga_rust_back::naga;
 
+// -------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests;
+
+// -------------------------------------------------------------------------------------------------
+
 #[proc_macro]
 pub fn include_wgsl_mr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ConfigAndStr {
@@ -106,10 +113,8 @@ impl syn::parse::Parse for ConfigAndStr {
                     config = config.resource_struct(input.parse::<syn::Ident>()?.to_string());
                 }
                 _ => {
-                    return Err(syn::Error::new_spanned(
-                        option_name,
-                        "unrecognized configuration option name",
-                    ));
+                    let msg = format!("`{option_name}` is not the name of a configuration option");
+                    return Err(syn::Error::new_spanned(option_name, msg));
                 }
             }
             input.parse::<Token![,]>()?;
