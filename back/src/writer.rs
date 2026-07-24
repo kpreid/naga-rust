@@ -299,9 +299,13 @@ impl Writer {
 
                 top_level_items.push(ra::Item::Struct(resource_struct_ast));
             } else if let Some((_, example)) = resource_iter.next() {
-                return Err(Error::ResourcesNotEnabled {
-                    example: example.name.clone().unwrap_or_default(),
-                });
+                if self.config.flags.contains(WriterFlags::INCLUDE_FUNCTIONS) {
+                    return Err(Error::ResourcesNotEnabled {
+                        example: example.name.clone().unwrap_or_default(),
+                    });
+                } else {
+                    // Not generating functions, so the resource struct is not mandatory.
+                }
             }
         }
 
@@ -415,76 +419,82 @@ impl Writer {
                     ));
                 }
             } else if let Some((_, example)) = global_variable_iter.next() {
-                return Err(Error::GlobalVariablesNotEnabled {
-                    example: example.name.clone().unwrap_or_default(),
-                });
+                if self.config.flags.contains(WriterFlags::INCLUDE_FUNCTIONS) {
+                    return Err(Error::GlobalVariablesNotEnabled {
+                        example: example.name.clone().unwrap_or_default(),
+                    });
+                } else {
+                    // Not generating functions, so the global struct is not mandatory.
+                }
             }
         }
 
         // Collects all items that go in the `impl Globals` if there is one.
         let mut maybe_impl_items: Vec<ra::Item> = Vec::new();
 
-        // Translate all regular functions (which may or may not go in an `impl` block).
-        for (handle, function) in module.functions.iter() {
-            let fun_info = &info[handle];
+        if self.config.flags.contains(WriterFlags::INCLUDE_FUNCTIONS) {
+            // Translate all regular functions (which may or may not go in an `impl` block).
+            for (handle, function) in module.functions.iter() {
+                let fun_info = &info[handle];
 
-            let func_ctx = back::FunctionCtx {
-                ty: back::FunctionType::Function(handle),
-                info: fun_info,
-                expressions: &function.expressions,
-                named_expressions: &function.named_expressions,
-            };
+                let func_ctx = back::FunctionCtx {
+                    ty: back::FunctionType::Function(handle),
+                    info: fun_info,
+                    expressions: &function.expressions,
+                    named_expressions: &function.named_expressions,
+                };
 
-            // Translate the function
-            maybe_impl_items.extend(self.translate_function(
-                module,
-                function,
-                &func_ctx,
-                vec![],
-            )?);
-        }
+                // Translate the function
+                maybe_impl_items.extend(self.translate_function(
+                    module,
+                    function,
+                    &func_ctx,
+                    vec![],
+                )?);
+            }
 
-        // Translate all entry points
-        for (index, ep) in module.entry_points.iter().enumerate() {
-            let entry_point_attributes = match ep.stage {
-                ShaderStage::Vertex
-                | ShaderStage::Fragment
-                | ShaderStage::Task
-                | ShaderStage::Mesh
-                | ShaderStage::RayGeneration
-                | ShaderStage::Miss
-                | ShaderStage::AnyHit
-                | ShaderStage::ClosestHit => vec![ra::Attribute::Stage(ep.stage)],
-                ShaderStage::Compute => vec![
-                    ra::Attribute::Stage(ShaderStage::Compute),
-                    ra::Attribute::WorkGroupSize(ep.workgroup_size),
-                ],
-            };
+            // Translate all entry points
+            for (index, ep) in module.entry_points.iter().enumerate() {
+                let entry_point_attributes = match ep.stage {
+                    ShaderStage::Vertex
+                    | ShaderStage::Fragment
+                    | ShaderStage::Task
+                    | ShaderStage::Mesh
+                    | ShaderStage::RayGeneration
+                    | ShaderStage::Miss
+                    | ShaderStage::AnyHit
+                    | ShaderStage::ClosestHit => vec![ra::Attribute::Stage(ep.stage)],
+                    ShaderStage::Compute => vec![
+                        ra::Attribute::Stage(ShaderStage::Compute),
+                        ra::Attribute::WorkGroupSize(ep.workgroup_size),
+                    ],
+                };
 
-            let func_ctx = back::FunctionCtx {
-                ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
-                info: info.get_entry_point(index),
-                expressions: &ep.function.expressions,
-                named_expressions: &ep.function.named_expressions,
-            };
-            maybe_impl_items.extend(self.translate_function(
-                module,
-                &ep.function,
-                &func_ctx,
-                entry_point_attributes,
-            )?);
-        }
+                let func_ctx = back::FunctionCtx {
+                    ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
+                    info: info.get_entry_point(index),
+                    expressions: &ep.function.expressions,
+                    named_expressions: &ep.function.named_expressions,
+                };
+                maybe_impl_items.extend(self.translate_function(
+                    module,
+                    &ep.function,
+                    &func_ctx,
+                    entry_point_attributes,
+                )?);
+            }
 
-        // If we are making methods rather than free functions, start the `impl` block
-        if let Some(name) = self.config.impl_type() {
-            top_level_items.push(ra::Item::Impl(
-                global_lifetime_generics,
-                None,
-                ra::Type::User(name.to_string(), global_lifetime_generics),
-                maybe_impl_items,
-            ))
-        } else {
-            top_level_items.extend(maybe_impl_items);
+            // If we are making methods rather than free functions, put them in an `impl` block
+            if let Some(name) = self.config.impl_type() {
+                top_level_items.push(ra::Item::Impl(
+                    global_lifetime_generics,
+                    None,
+                    ra::Type::User(name.to_string(), global_lifetime_generics),
+                    maybe_impl_items,
+                ))
+            } else {
+                top_level_items.extend(maybe_impl_items);
+            }
         }
 
         Ok(top_level_items)

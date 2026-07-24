@@ -138,11 +138,18 @@ impl ConfigAndStr {
                     match &*option_name {
                         // The options parsed by this match should also be documented in
                         // `embed/src/configuration_syntax.md`.
+                        // The ordering here is alphabetical.
                         "allow_unimplemented" => {
                             config = config.allow_unimplemented(input.expect_bool()?);
                         }
                         "explicit_types" => {
                             config = config.explicit_types(input.expect_bool()?);
+                        }
+                        "global_struct" => {
+                            config = config.global_struct(input.expect_ident()?);
+                        }
+                        "include_functions" => {
+                            config = config.include_functions(input.expect_bool()?);
                         }
                         "public_items" => {
                             config = config.public_items(input.expect_bool()?);
@@ -153,9 +160,6 @@ impl ConfigAndStr {
                         // "raw_pointers" => {
                         //     config = config.raw_pointers(input.expect_bool()?);
                         // }
-                        "global_struct" => {
-                            config = config.global_struct(input.expect_ident()?);
-                        }
                         "resource_struct" => {
                             config = config.resource_struct(input.expect_ident()?);
                         }

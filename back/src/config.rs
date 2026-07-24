@@ -34,12 +34,25 @@ impl Config {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            flags: WriterFlags::empty(),
+            flags: WriterFlags::INCLUDE_FUNCTIONS,
             runtime_path: Cow::Borrowed("::naga_rust_rt"),
             global_struct: None,
             resource_struct: None,
             edition: Edition::Rust2024,
         }
+    }
+
+    /// Sets whether to translate functions, rather than ignoring them.
+    ///
+    /// This may be disabled to produce an output containing only `struct`s and `const`s,
+    /// and remove any requirement to specify a [`global_struct`][Self::global_struct] or
+    /// [`resource_struct`][Self::resource_struct].
+    ///
+    /// The default is `true`.
+    #[must_use]
+    pub fn include_functions(mut self, value: bool) -> Self {
+        self.flags.set(WriterFlags::INCLUDE_FUNCTIONS, value);
+        self
     }
 
     /// Sets whether the generated code contains explicit types when they could be omitted.
@@ -181,20 +194,25 @@ bitflags::bitflags! {
     /// Options for what Rust code is generated.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) struct WriterFlags: u32 {
+        /// Include translated function definitions rather than omitting them.
+        ///
+        /// If this is not set, only `struct` and `const` items are produced.
+        const INCLUDE_FUNCTIONS = 1 << 0;
+
         /// Always annotate the type information instead of inferring.
-        const EXPLICIT_TYPES = 0x1;
+        const EXPLICIT_TYPES = 1 << 1;
 
         /// Generate code using raw pointers instead of references.
         /// The resulting code is `unsafe` and may be unsound if the input module
         /// uses pointers incorrectly.
-        const RAW_POINTERS = 0x2;
+        const RAW_POINTERS = 1 << 2;
 
         /// Generate items with `pub` visibility instead of private.
-        const PUBLIC = 0x4;
+        const PUBLIC = 1 << 3;
 
         /// Allow the generated code to panic on entering code that cannot be
         /// translated, rather than failing generation.
-        const ALLOW_UNIMPLEMENTED = 0x8;
+        const ALLOW_UNIMPLEMENTED = 1 << 4;
     }
 }
 

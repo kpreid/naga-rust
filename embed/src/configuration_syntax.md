@@ -2,18 +2,23 @@ The available configuration options are:
 
 * `allow_unimplemented = true | false` (default: `false`):
 
-  Whether to allow the generated code to panic on entering code that cannot be
-  translated, rather than failing generation.
+  Whether to allow the translated code to panic on entering code that cannot be
+  translated, rather than failing the entire translation.
 
 * `explicit_types = true | false` (default: `true`):
 
-  Whether the generated code contains explicit types when they could be omitted.
+  Whether the translated code contains explicit types when they could be omitted.
+
+* `include_functions = true | false` (default: `true`):
+
+  Whether the translated code includes functions.
+  When this is false, only `struct`s and `const`s are translated.
 
 * `public_items = true | false` (default: `false`):
 
-  Whether generated items have `pub` visibility instead of private.
+  Whether translated items have `pub` visibility instead of private.
   
-  This option applies to all functions or methods, and all fields of generated structs.
+  This option applies to all functions or methods, and all fields of translated structs.
 
 * `global_struct = StructNameHere`:
 
