@@ -2,8 +2,13 @@
 
 ## Unreleased
 
-### Changed
+## Added
 
+* Configuration `include_functions`, if disabled, allows translating only `struct`s and `const`s.
+
+## Changed
+
+* The `naga` version is now 30.
 * The macros’ parsing code has been rewritten.
   It no longer depends on the `syn` library, and has more specific error messages in several cases.
 

@@ -102,3 +102,37 @@ fn both_globals_and_resources() {
 
     assert_eq!(Globals::new(&Resources { foo: Scalar(100) }).combine(), 101);
 }
+
+/// If `include_functions` is disabled, then the checks for a missing `global_struct`
+/// should also be disabled.
+#[test]
+fn omitting_functions_also_allows_omitting_globals() {
+    wgsl!(
+        include_functions = false,
+        r"
+        const FOO_INIT: i32 = 1;
+        var<private> foo: i32 = FOO_INIT;
+        fn get_global() -> i32 { return foo; }
+        "
+    );
+
+    assert_eq!(FOO_INIT, Scalar(1));
+}
+
+/// If `include_functions` is disabled, then the checks for a missing `resource_struct`
+/// should also be disabled.
+#[test]
+fn omitting_functions_also_allows_omitting_resources() {
+    wgsl!(
+        include_functions = false,
+        r"
+        struct Uniforms {
+            foo: i32,
+        }
+        @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+        fn get_uniform() -> i32 { return uniforms.foo; }
+        "
+    );
+
+    type _Exists = Uniforms;
+}

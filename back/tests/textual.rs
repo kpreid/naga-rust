@@ -368,6 +368,98 @@ fn struct_decl_and_ctor() {
     );
 }
 
+/// Compares output with `include_functions` on and off.
+#[test]
+fn omitting_functions() {
+    let source = r"
+        struct Struct { field: f32 }
+        const CONSTANT: f32 = 1.0;
+        fn function() {}
+    ";
+    let output_without_functions = indoc::indoc! {r"
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        #[repr(C)]
+        struct Struct {
+            field: f32,
+        }
+        impl Struct {
+            fn new(field: impl ::naga_rust_rt::Into<f32>) -> Self {
+                Self { field: ::naga_rust_rt::into(field) }
+            }
+        }
+        #[allow(non_upper_case_globals)]
+        const CONSTANT: ::naga_rust_rt::Scalar<f32> = ::naga_rust_rt::Scalar(1f32);
+    "};
+    let output_with_functions = output_without_functions.to_owned()
+        + indoc::indoc! {r"
+            fn function() {
+                ::naga_rust_rt::into(v_function())
+            }
+            #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
+            fn v_function() {
+                return;
+            }
+        "};
+    assert_eq!(
+        translate(Config::new().include_functions(true), source),
+        output_with_functions
+    );
+    assert_eq!(
+        translate(Config::new().include_functions(false), source),
+        output_without_functions
+    );
+}
+
+/// If `include_functions` is disabled, then the checks for a missing `global_struct`
+/// should also be disabled.
+#[test]
+fn omitting_functions_also_allows_omitting_globals() {
+    assert_eq!(
+        translate(
+            Config::new().include_functions(false),
+            r"
+            const FOO_INIT: i32 = 1;
+            var<private> foo: i32 = FOO_INIT;
+            fn get_global() -> i32 { return foo; }
+            "
+        ),
+        indoc::indoc! {"
+            #[allow(non_upper_case_globals)]
+            const FOO_INIT: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(1i32);
+        "}
+    );
+}
+
+/// If `include_functions` is disabled, then the checks for a missing `resource_struct`
+/// should also be disabled.
+#[test]
+fn omitting_functions_also_allows_omitting_resources() {
+    assert_eq!(
+        translate(
+            Config::new().include_functions(false),
+            r"
+            struct Uniforms {
+                foo: i32,
+            }
+            @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+            fn get_uniform() -> i32 { return uniforms.foo; }
+            "
+        ),
+        indoc::indoc! {"
+            #[derive(Clone, Copy, Debug, PartialEq)]
+            #[repr(C)]
+            struct Uniforms {
+                foo: i32,
+            }
+            impl Uniforms {
+                fn new(foo: impl ::naga_rust_rt::Into<i32>) -> Self {
+                    Self { foo: ::naga_rust_rt::into(foo) }
+                }
+            }
+        "}
+    );
+}
+
 #[test]
 fn switch() {
     // TODO: we can’t fully exercise `fall_through` without using an input syntax other than WGSL

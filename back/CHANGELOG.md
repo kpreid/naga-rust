@@ -1,5 +1,15 @@
 # Changelog for `naga-rust-back`
 
+## Unreleased
+
+## Added
+
+* `Config::include_functions`, if disabled, allows translating only `struct`s and `const`s.
+
+## Changed
+
+* The `naga` version is now 30.
+
 ## 0.2.0 (2026-05-14)
 
 ### Added
