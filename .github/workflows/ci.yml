@@ -42,6 +42,11 @@ jobs:
 
     # Load cache before doing any Rust builds
     - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      with:
+        # Don’t save caches specific to PR branches.
+        # This greatly reduces cache usage without significantly reducing the benefits, because
+        # the default branch’s cache will be still be loaded.
+        save-if: ${{ github.event_name != 'pull_request' }}
 
     # The repository does not have a versioned Cargo.lock file.
     # As a substitute, we always test on minimal and maximal versions.
@@ -62,6 +67,8 @@ jobs:
         persist-credentials: false
 
     - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      with:
+        save-if: ${{ github.event_name != 'pull_request' }}
 
     - run: rustup toolchain install nightly --component miri
 
@@ -106,6 +113,7 @@ jobs:
 
     - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       with:
+        save-if: ${{ github.event_name != 'pull_request' }}
         # Job's likely to fail and yet have useful cache material.
         cache-on-failure: true
 
@@ -152,6 +160,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.event_name != 'pull_request' }}
           # Job's likely to fail and yet have useful cache material.
           cache-on-failure: true
 
@@ -182,6 +191,8 @@ jobs:
         persist-credentials: false
 
     - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      with:
+        save-if: ${{ github.event_name != 'pull_request' }}
 
     - name: Check semver
       uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
