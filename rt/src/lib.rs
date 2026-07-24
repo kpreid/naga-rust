@@ -28,10 +28,17 @@ pub use texture::{
 };
 pub use vector::*;
 
-// The generated code may use Into trait bounds, so it needs to name the trait.
-pub use core::convert::Into;
-// The generated code may implement Default, so it needs to name the trait.
-pub use core::default::Default;
+// The generated code may use these items, so it needs to be able to name them unambiguously.
+pub use core::{
+    clone::Clone,
+    cmp::PartialEq,
+    convert::Into,
+    default::Default,
+    fmt::Debug,
+    marker::Copy,
+    // TODO: When MSRV ≥ 1.86, change this to just core::derive.
+    prelude::v1::derive,
+};
 
 // -------------------------------------------------------------------------------------------------
 
