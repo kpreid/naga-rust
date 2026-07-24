@@ -349,7 +349,7 @@ fn struct_decl_and_ctor() {
             }"
         ),
         indoc::indoc! {
-            "#[derive(Clone, Copy, Debug, PartialEq)]
+            "#[::naga_rust_rt::derive(::naga_rust_rt::Clone, ::naga_rust_rt::Copy, ::naga_rust_rt::Debug, ::naga_rust_rt::PartialEq)]
             #[repr(C)]
             struct Foo {
                 x: i32,
@@ -377,7 +377,7 @@ fn omitting_functions() {
         fn function() {}
     ";
     let output_without_functions = indoc::indoc! {r"
-        #[derive(Clone, Copy, Debug, PartialEq)]
+        #[::naga_rust_rt::derive(::naga_rust_rt::Clone, ::naga_rust_rt::Copy, ::naga_rust_rt::Debug, ::naga_rust_rt::PartialEq)]
         #[repr(C)]
         struct Struct {
             field: f32,
@@ -446,7 +446,7 @@ fn omitting_functions_also_allows_omitting_resources() {
             "
         ),
         indoc::indoc! {"
-            #[derive(Clone, Copy, Debug, PartialEq)]
+            #[::naga_rust_rt::derive(::naga_rust_rt::Clone, ::naga_rust_rt::Copy, ::naga_rust_rt::Debug, ::naga_rust_rt::PartialEq)]
             #[repr(C)]
             struct Uniforms {
                 foo: i32,
@@ -501,7 +501,7 @@ fn array_type_sizes() {
             }"
         ),
         indoc::indoc! {
-            "#[derive(Clone, Copy, Debug, PartialEq)]
+            "#[::naga_rust_rt::derive(::naga_rust_rt::Clone, ::naga_rust_rt::Copy, ::naga_rust_rt::Debug, ::naga_rust_rt::PartialEq)]
             #[repr(C)]
             struct Foo {
                 x: [i32; 10],

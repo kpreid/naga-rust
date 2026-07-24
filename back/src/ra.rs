@@ -76,10 +76,17 @@ pub(crate) enum Type {
     ImplInto(Box<Type>),
 }
 
-/// A Rust trait name.
-#[derive(Clone, Copy)]
+/// A Rust trait or derive macro name.
+#[derive(Clone)]
 pub(crate) enum Trait {
+    Clone,
+    Copy,
+    Debug,
     Default,
+    PartialEq,
+    /// User-provided path.
+    #[expect(dead_code, reason = "TODO: add user-specified derives")]
+    User(String),
 }
 
 /// A Rust pointer type, except for the pointee type.
@@ -357,8 +364,8 @@ pub(crate) enum Attribute {
     /// `allow(non_upper_case_globals)`
     AllowNonUpperCaseGlobals,
 
-    /// `derive(...)` with the traits every shader struct type implements.
-    DeriveStructTraits,
+    /// `derive(...)`
+    Derive(Cow<'static, [Trait]>),
 
     /// `repr(C)`
     ReprC,
@@ -551,11 +558,19 @@ impl PrintAst for Type {
 
 impl PrintAst for Trait {
     fn write(&self, out: &mut dyn fmt::Write, ctx: PrintCtx<'_>) -> fmt::Result {
-        let runtime_path = &ctx.config.runtime_path;
-        let trait_name = match *self {
+        let local_name = match self {
+            Trait::Clone => "Clone",
+            Trait::Copy => "Copy",
+            Trait::Debug => "Debug",
             Trait::Default => "Default",
+            Trait::PartialEq => "PartialEq",
+            Trait::User(name) => {
+                // Write the name literally with no path prefix.
+                return out.write_str(name);
+            }
         };
-        write!(out, "{runtime_path}::{trait_name}")
+        let runtime_path = &ctx.config.runtime_path;
+        write!(out, "{runtime_path}::{local_name}")
     }
 }
 
@@ -943,9 +958,16 @@ impl PrintAst for Attribute {
             Attribute::AllowNonUpperCaseGlobals => {
                 out.write_str("allow(non_upper_case_globals)")?;
             }
-            Attribute::DeriveStructTraits => {
-                // TODO: all of these names could be shadowed, and we should be robust against that
-                out.write_str("derive(Clone, Copy, Debug, PartialEq)")?;
+            Attribute::Derive(ref macro_paths) => {
+                out.write_str(runtime_path)?;
+                out.write_str("::derive(")?;
+                for (i, derive) in macro_paths.iter().enumerate() {
+                    if i > 0 {
+                        out.write_str(", ")?;
+                    }
+                    derive.write(out, ctx)?;
+                }
+                out.write_str(")")?;
             }
             Attribute::ReprC => {
                 out.write_str("repr(C)")?;
