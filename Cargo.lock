@@ -883,10 +883,12 @@ dependencies = [
 name = "naga-rust-rt"
 version = "0.2.0"
 dependencies = [
+ "bytemuck",
  "mutants",
  "naga-rust-macros",
  "num-traits",
  "paste",
+ "static_assertions",
 ]
 
 [[package]]

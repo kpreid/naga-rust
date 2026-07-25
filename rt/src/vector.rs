@@ -1005,3 +1005,31 @@ impl<T: Copy> Vec4<T> {
     swizzle_fn!(wzxy Vec4(w z x y));
     swizzle_fn!(wzyx Vec4(w z y x));
 }
+
+// -------------------------------------------------------------------------------------------------
+
+#[cfg(feature = "bytemuck")]
+mod impl_bytemuck {
+    use super::*;
+
+    // SAFETY: All of these types have layout equivalent to `[T; N]`,
+    // which is sufficient for `AnyBitPattern`, `NoUninit`, and `Zeroable` to be correct.
+    // in particular, each vector will never have padding that `T` does not.
+    //
+    // We are not using `bytemuck` derives because they do not support generic types.
+
+    unsafe impl<T: bytemuck::AnyBitPattern> bytemuck::AnyBitPattern for Scalar<T> {}
+    unsafe impl<T: bytemuck::AnyBitPattern> bytemuck::AnyBitPattern for Vec2<T> {}
+    unsafe impl<T: bytemuck::AnyBitPattern> bytemuck::AnyBitPattern for Vec3<T> {}
+    unsafe impl<T: bytemuck::AnyBitPattern> bytemuck::AnyBitPattern for Vec4<T> {}
+
+    unsafe impl<T: bytemuck::NoUninit> bytemuck::NoUninit for Scalar<T> {}
+    unsafe impl<T: bytemuck::NoUninit> bytemuck::NoUninit for Vec2<T> {}
+    unsafe impl<T: bytemuck::NoUninit> bytemuck::NoUninit for Vec3<T> {}
+    unsafe impl<T: bytemuck::NoUninit> bytemuck::NoUninit for Vec4<T> {}
+
+    unsafe impl<T: bytemuck::Zeroable> bytemuck::Zeroable for Scalar<T> {}
+    unsafe impl<T: bytemuck::Zeroable> bytemuck::Zeroable for Vec2<T> {}
+    unsafe impl<T: bytemuck::Zeroable> bytemuck::Zeroable for Vec3<T> {}
+    unsafe impl<T: bytemuck::Zeroable> bytemuck::Zeroable for Vec4<T> {}
+}
