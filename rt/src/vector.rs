@@ -599,6 +599,16 @@ macro_rules! impl_vector_regular_fns {
             }
 
             #[inline]
+            pub const fn to_array(self) -> [T; $component_count]
+            where
+                // Note: Copy bound is solely due to otherwise needing
+                // `feature(const_precise_live_drops)`.
+                T: Copy
+            {
+                [$( self.$component, )* ]
+            }
+
+            #[inline]
             fn as_array_ref(&self) -> &[Scalar<T>; $component_count] {
                 // Reinterpret the reference to self as a reference to an array.
                 // SAFETY: Vectors are `repr(C)` and have the same elements as the array.
@@ -715,6 +725,7 @@ macro_rules! impl_vector_regular_fns {
 
         // Conversion in and out
         impl<T> From<$ty<T>> for [T; $component_count] {
+            #[inline]
             fn from(value: $ty<T>) -> Self {
                 [$( value.$component ),*]
             }
@@ -757,6 +768,14 @@ macro_rules! impl_vector_not_scalar_fns {
         impl<T> $ty<T> {
             // User-friendly constructor, not used by translated code.
             pub const fn new($( $component: T, )*) -> Self {
+                Self { $( $component, )* }
+            }
+
+            pub const fn from_array(values: [T; $component_count]) -> Self
+            where
+                T: Copy
+            {
+                let [$( $component ),*] = values;
                 Self { $( $component, )* }
             }
 

@@ -71,8 +71,22 @@ macro_rules! matrix_struct {
             }
 
             impl<T> [< Mat $columns x $rows >] <T> {
-                pub fn new($([< $column_field _column >]: $column_type<T>,)*) -> Self {
+                pub const fn new($([< $column_field _column >]: $column_type<T>,)*) -> Self {
                     Self { $($column_field: [< $column_field _column >],)* }
+                }
+
+                pub const fn from_column_arrays(columns: [[T; $rows]; $columns]) -> Self
+                where
+                    // Note: Copy bound is solely due to otherwise needing
+                    // `feature(const_precise_live_drops)`.
+                    T: Copy
+                {
+                    let [$( $column_field ),*] = columns;
+                    Self {
+                        $(
+                            $column_field: $column_type::from_array($column_field),
+                        )*
+                    }
                 }
 
                 pub fn transpose(self) -> [< Mat $rows x $columns >] <T> {
@@ -83,6 +97,20 @@ macro_rules! matrix_struct {
                         [$($row_field),*],
                         [$($column_field),*]
                     )
+                }
+
+                /// Convert the matrix into an array of column vectors as arrays.
+                ///
+                /// This function may be useful for interoperation with other vector libraries.
+                /// If a flat array is desired, call `transpose()` on it.
+                #[inline]
+                pub fn to_column_arrays(self) -> [[T; $rows]; $columns]
+                where
+                    // Note: Copy bound is solely due to otherwise needing
+                    // `feature(const_precise_live_drops)`.
+                    T: Copy
+                 {
+                    [$( self.$column_field.to_array() ),*]
                 }
 
                 #[inline]
