@@ -20,18 +20,29 @@ license.workspace = true
 test = false
 doctest = false
 
+[[test]]
+name = "bytemuck"
+required-features = ["bytemuck"]
+
 [features]
 default = []
 # If enabled, implement texture access traits for `Box`, `Rc`, and `Arc`
 alloc = []
 # If enabled, use `std`’s math functions instead of `libm`’s
 std = []
+# Implement `bytemuck` traits for our types.
+bytemuck = ["dep:bytemuck"]
 
 [dependencies]
+bytemuck = { workspace = true, optional = true }
 mutants.workspace = true
 num-traits = { workspace = true, default-features = false, features = ["libm"] }
 naga-rust-macros.workspace = true
 paste.workspace = true
+
+[dev-dependencies]
+bytemuck = { workspace = true, features = ["must_cast"] }
+static_assertions.workspace = true
 
 [lints.clippy]
 std_instead_of_alloc = "warn"

@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-## Added
+### Added
 
 * Configuration `include_functions`, if disabled, allows translating only `struct`s and `const`s.
+* Implementations of [`bytemuck` v1](https://docs.rs/bytemuck/1/bytemuck/)’s traits for our scalar, vector, and matrix types, with `features = ["bytemuck"]`.
+  Note that this does not implemented the traits on translated `struct` types.
 
-## Changed
+### Changed
 
 * The `naga` version is now 30.
 * The macros’ parsing code has been rewritten.

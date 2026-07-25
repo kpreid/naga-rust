@@ -1,5 +1,11 @@
 # Changelog for `naga-rust-rt`
 
+## Unreleased
+
+### Added
+
+* Implementations of [`bytemuck` v1](https://docs.rs/bytemuck/1/bytemuck/)’s traits for our scalar, vector, and matrix types, with `features = ["bytemuck"]`.
+
 ## 0.2.0 (2026-05-14)
 
 ### Added

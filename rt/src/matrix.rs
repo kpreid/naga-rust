@@ -2,6 +2,9 @@ use core::ops;
 
 use crate::{Scalar, Vec2, Vec3, Vec4};
 
+#[cfg(feature = "bytemuck")]
+use ::bytemuck as bm;
+
 // -------------------------------------------------------------------------------------------------
 
 /// Generate a row vector from a matrix.
@@ -198,6 +201,18 @@ macro_rules! matrix_struct {
                     )
                 }
             }
+
+            // SAFETY: This type has a layout equivalent to `[T; N]`, which is
+            // sufficient for `AnyBitPattern`, `NoUninit`, and `Zeroable` to be correct;
+            // in particular, the matrix will never have padding that `T` does not.
+            //
+            // We are not using `bytemuck` derives because they do not support generic types.
+            #[cfg(feature = "bytemuck")]
+            unsafe impl<T: bm::AnyBitPattern> bm::AnyBitPattern for [< Mat $columns x $rows >]<T> {}
+            #[cfg(feature = "bytemuck")]
+            unsafe impl<T: bm::NoUninit> bm::NoUninit for [< Mat $columns x $rows >]<T> {}
+            #[cfg(feature = "bytemuck")]
+            unsafe impl<T: bm::Zeroable> bm::Zeroable for [< Mat $columns x $rows >]<T> {}
         }
     }
 }

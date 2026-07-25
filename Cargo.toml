@@ -28,6 +28,7 @@ naga-rust-rt = { version = "0.2.0", path = "rt" }
 
 arrayvec = { version = "0.7.6", default-features = false }
 bitflags = "2.9"
+bytemuck = { version = "1.25.0", default-features = false }
 exhaust = { version = "0.2.0", default-features = false }
 half = { version = "2.5" } # must agree with version used by naga version
 indoc = { version = "2.0.1", default-features = false }
@@ -39,6 +40,7 @@ paste = {version = "1.0.15", default-features = false }
 pollster = { version = "1.0.0", default-features = false }
 pretty_assertions = { version = "1.2.0" }
 proc-macro2 = { version = "1.0.91", default-features = false }
+static_assertions = { version = "1.1.0", default-features = false }
 
 [workspace.lints.rust]
 # rustc lints that are set to deny

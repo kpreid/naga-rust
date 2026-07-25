@@ -19,6 +19,9 @@ keywords = [
 
 [features]
 default = []
+# Implement `bytemuck` traits for `naga_rust_embed::rt` types.
+# This does not affect generated code; that must be configured separately.
+bytemuck = ["naga-rust-rt/bytemuck"]
 
 [dependencies]
 naga-rust-macros.workspace = true
