@@ -24,6 +24,7 @@ jobs:
     strategy:
       matrix:
         toolchain: ["stable", "beta", "nightly", "1.87.0"]
+        features: ["--all-features", "--no-default-features"]
 
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.toolchain != 'stable' }}
@@ -52,11 +53,11 @@ jobs:
     # As a substitute, we always test on minimal and maximal versions.
     - run: cargo +nightly update -Zdirect-minimal-versions
 
-    - run: cargo test --all-features
+    - run: cargo test ${{ matrix.features }}
 
     - run: cargo update
 
-    - run: cargo test --all-features
+    - run: cargo test ${{ matrix.features }}
 
   miri:
     runs-on: ubuntu-latest
