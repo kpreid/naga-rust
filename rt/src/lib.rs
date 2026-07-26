@@ -57,6 +57,12 @@ where
     input.into()
 }
 
+/// As per WGSL [`arrayLength`](https://www.w3.org/TR/2026/CRD-WGSL-20260716/#arrayLength-builtin).
+pub fn array_length<T>(arr: &[T]) -> Scalar<u32> {
+    // TODO: What should the behavior on overflow be?
+    Scalar(u32::try_from(arr.len()).unwrap())
+}
+
 pub fn discard() {
     // Best we can do for now, until we implement a codegen option to return Result instead.
     // TODO: This should be (when possible) `panic_any` with a recognizable payload.
