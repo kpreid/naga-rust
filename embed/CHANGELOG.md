@@ -2,9 +2,16 @@
 
 ## Unreleased
 
+This release focuses on expanding to a new use case: sharing declarations between Rust and shaders, without actually executing shader functions as Rust.
+You can now ask for structs and constants, but not functions, to be translated, and derive traits on those Rust structs.
+
+**Caveat:** We do not yet ensure that the layout of structs containing `vec3`s is correct.
+
 ### Added
 
 * Configuration `include_functions`, if disabled, allows translating only `struct`s and `const`s.
+* Configuration `rule`s allow customizing the translation of specific parts of the shader code.
+  The first available customization is to add `#[derive]` to selected `struct`s.
 * Implementations of [`bytemuck` v1](https://docs.rs/bytemuck/1/bytemuck/)’s traits for our scalar, vector, and matrix types, with `features = ["bytemuck"]`.
   Note that this does not implemented the traits on translated `struct` types.
 
