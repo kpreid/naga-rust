@@ -368,11 +368,6 @@ pub(crate) enum Attribute {
 
     /// `repr(C)`
     ReprC,
-
-    /// Entry point function’s stage. Ignored.
-    Stage(naga::ShaderStage),
-    /// Compute entry point function’s workgroup size. Ignored.
-    WorkGroupSize([u32; 3]),
 }
 
 #[derive(Clone, Copy)]
@@ -970,27 +965,6 @@ impl PrintAst for Attribute {
             }
             Attribute::ReprC => {
                 out.write_str("repr(C)")?;
-            }
-            Attribute::Stage(shader_stage) => {
-                let stage_str = match shader_stage {
-                    naga::ShaderStage::Vertex => "vertex",
-                    naga::ShaderStage::Fragment => "fragment",
-                    naga::ShaderStage::Compute => "compute",
-                    naga::ShaderStage::Task => "task",
-                    naga::ShaderStage::Mesh => "mesh",
-                    naga::ShaderStage::RayGeneration => "ray_generation",
-                    naga::ShaderStage::Miss => "miss",
-                    naga::ShaderStage::AnyHit => "any_hit",
-                    naga::ShaderStage::ClosestHit => "closest_hit",
-                };
-                write!(out, "{runtime_path}::{stage_str}")?;
-            }
-            Attribute::WorkGroupSize(size) => {
-                write!(
-                    out,
-                    "{runtime_path}::workgroup_size({}, {}, {})",
-                    size[0], size[1], size[2]
-                )?;
             }
         }
         Ok(())

@@ -90,8 +90,8 @@ fn entry_point() {
             }"
         ),
         indoc::indoc! {
-            r"
-            #[::naga_rust_rt::fragment]
+            r#"
+            #[doc = "Entry point for stage `fragment`."]
             fn main(position: impl ::naga_rust_rt::Into<::naga_rust_rt::Vec4<f32>>) -> ::naga_rust_rt::Vec4<f32> {
                 ::naga_rust_rt::into(v_main(::naga_rust_rt::into(position)))
             }
@@ -99,7 +99,7 @@ fn entry_point() {
             fn v_main(position: ::naga_rust_rt::Vec4<f32>) -> ::naga_rust_rt::Vec4<f32> {
                 return ::naga_rust_rt::Vec4::splat_from_scalar(::naga_rust_rt::Scalar(1f32));
             }
-            "
+            "#
         }
     );
 }

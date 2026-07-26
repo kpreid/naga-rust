@@ -59,12 +59,6 @@ where
 
 pub fn discard() {
     // Best we can do for now, until we implement a codegen option to return Result instead.
+    // TODO: This should be (when possible) `panic_any` with a recognizable payload.
     panic!("shader reached discard instruction");
 }
-
-// Attributes which naga_rust_back emits that are currently for documentation purposes only,
-// and don’t actually transform the item.
-pub use naga_rust_macros::dummy_attribute as compute;
-pub use naga_rust_macros::dummy_attribute as fragment;
-pub use naga_rust_macros::dummy_attribute as vertex;
-pub use naga_rust_macros::dummy_attribute as workgroup_size;

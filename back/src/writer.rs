@@ -456,20 +456,20 @@ impl Writer {
 
             // Translate all entry points
             for (index, ep) in module.entry_points.iter().enumerate() {
-                let entry_point_attributes = match ep.stage {
-                    ShaderStage::Vertex
-                    | ShaderStage::Fragment
-                    | ShaderStage::Task
-                    | ShaderStage::Mesh
-                    | ShaderStage::RayGeneration
-                    | ShaderStage::Miss
-                    | ShaderStage::AnyHit
-                    | ShaderStage::ClosestHit => vec![ra::Attribute::Stage(ep.stage)],
-                    ShaderStage::Compute => vec![
-                        ra::Attribute::Stage(ShaderStage::Compute),
-                        ra::Attribute::WorkGroupSize(ep.workgroup_size),
-                    ],
-                };
+                let entry_point_attributes = vec![ra::Attribute::Doc(format!(
+                    "Entry point for stage `{}`.",
+                    match ep.stage {
+                        ShaderStage::Vertex => "vertex",
+                        ShaderStage::Fragment => "fragment",
+                        ShaderStage::Compute => "compute",
+                        ShaderStage::Task => "task",
+                        ShaderStage::Mesh => "mesh",
+                        ShaderStage::RayGeneration => "ray_generation",
+                        ShaderStage::Miss => "miss",
+                        ShaderStage::AnyHit => "any_hit",
+                        ShaderStage::ClosestHit => "closest_hit",
+                    },
+                ))];
 
                 let func_ctx = back::FunctionCtx {
                     ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
