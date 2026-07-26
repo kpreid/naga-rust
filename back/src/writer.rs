@@ -1430,10 +1430,9 @@ impl Writer {
 
                 ra::Expr::Ident(self.names[&expr_ctx.expect_func_ctx().name_key(handle)].clone())
             }
-            Expression::ArrayLength(expr) => ra::Expr::Method(
-                Box::new(self.translate_expr(expr, expr_ctx)?),
-                Cow::Borrowed("len"),
-                vec![],
+            Expression::ArrayLength(expr) => ra::Expr::call_rt(
+                ra::RtItem::ArrayLengthFn,
+                [self.expr_ast_with_indirection(expr, expr_ctx, Indirection::Ref)?],
             ),
 
             Expression::Math {

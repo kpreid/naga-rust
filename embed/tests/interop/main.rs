@@ -8,6 +8,7 @@ mod math_functions;
 mod matrices;
 mod operators;
 mod rules;
+mod storage;
 mod structs;
 mod textures;
 mod vector_construction;

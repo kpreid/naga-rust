@@ -576,7 +576,7 @@ fn array_length() {
                 }
                 #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
                 fn v_length(&self) -> ::naga_rust_rt::Scalar<u32> {
-                    return (*self.arr).len();
+                    return ::naga_rust_rt::array_length(self.arr);
                 }
             }
             "
