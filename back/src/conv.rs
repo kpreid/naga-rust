@@ -164,30 +164,6 @@ pub(crate) fn math_function_to_method(f: naga::MathFunction) -> &'static str {
     }
 }
 
-// TODO: This code won't be used until we support textures
-//
-// impl ToRust for naga::Interpolation {
-//     fn to_rust(self) -> &'static str {
-//         match self {
-//             naga::Interpolation::Perspective => "perspective",
-//             naga::Interpolation::Linear => "linear",
-//             naga::Interpolation::Flat => "flat",
-//         }
-//     }
-// }
-//
-// impl ToRust for naga::Sampling {
-//     fn to_rust(self) -> &'static str {
-//         match self {
-//             naga::Sampling::Center => "center",
-//             naga::Sampling::Centroid => "centroid",
-//             naga::Sampling::Sample => "sample",
-//             naga::Sampling::First => "first",
-//             naga::Sampling::Either => "either",
-//         }
-//     }
-// }
-
 /// Grouping binary operators into categories which determine what kind of Rust code
 /// must be generated for them.
 ///
