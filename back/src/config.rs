@@ -4,8 +4,8 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use crate::logic::{GlobalLocation, GlobalTranslation};
 use crate::ra;
-use crate::util::GlobalKind;
 
 // -------------------------------------------------------------------------------------------------
 
@@ -192,15 +192,21 @@ impl Config {
 
     /// Returns the expression for the struct whose fields are the translation of
     /// shader global variables.
-    pub(crate) fn global_field_access_expr(&self, variable: &naga::GlobalVariable) -> ra::Expr {
-        match (GlobalKind::of_variable(variable), &self.global_struct) {
+    pub(crate) fn global_field_access_expr(
+        &self,
+        module: &naga::Module,
+        variable: &naga::GlobalVariable,
+    ) -> ra::Expr {
+        match (
+            GlobalTranslation::get(module, variable).location,
+            &self.global_struct,
+        ) {
             // If we have both resource struct and global struct, the resource struct is
             // nested inside the global struct.
-            (Some(GlobalKind::Resource), Some(_)) => {
+            (GlobalLocation::Resource, Some(_)) => {
                 ra::Expr::NamedField(Box::new(ra::Expr::Self_), "resources".into())
             }
-            (Some(GlobalKind::Resource), None) | (Some(GlobalKind::Variable), _) => ra::Expr::Self_,
-            _ => unreachable!(),
+            (GlobalLocation::Resource, None) | (GlobalLocation::Variable, _) => ra::Expr::Self_,
         }
     }
 
