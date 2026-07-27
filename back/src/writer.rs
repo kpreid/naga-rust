@@ -16,7 +16,7 @@ use naga::{
 use crate::Effect;
 use crate::config::{RuleInput, WriterFlags};
 use crate::conv::{self, BinOpClassified};
-use crate::logic::{Indirection, TypeTranslation};
+use crate::logic::{Indirection, TypeTranslation, VarTranslation};
 use crate::ra::{self, PrintAst as _};
 use crate::util::{Gensym, GlobalKind};
 use crate::{Config, Error};
@@ -148,7 +148,9 @@ impl Writer {
         // If we are using resources, write the `struct` that contains them.
         let any_resource_requires_lifetime = GlobalKind::Resource
             .filter(&module.global_variables)
-            .any(|(_, global)| matches!(module.types[global.ty].inner, TypeInner::Image { .. }));
+            .any(|(_, global)| {
+                VarTranslation::get(module, global).requires_resource_struct_lifetime
+            });
         let resource_lifetime_generics = if any_resource_requires_lifetime {
             ra::Generics::LtG
         } else {
@@ -1372,15 +1374,8 @@ impl Writer {
             Expression::GlobalVariable(handle) => {
                 let global = &module.global_variables[handle];
 
-                // The plain form of `GlobalVariable(g)` is `self.g`, which is a
-                // Rust place. However, globals in the `Handle` address space are immutable,
-                // and `GlobalVariable` expressions for those produce the value directly,
-                // not a pointer to it. Therefore, such expressions have `Indirection::Place`.
-                // (Note that the exception for Handle is a fact about Naga IR, not this backend.)
-                indirection = match global.space {
-                    naga::AddressSpace::Handle => Indirection::Ordinary,
-                    _ => Indirection::Place,
-                };
+                // The indirection varies depending on the address space and type of the global.
+                indirection = VarTranslation::get(module, global).global_expr_indirection;
 
                 ra::Expr::NamedField(
                     Box::new(self.config.global_field_access_expr(global)),
@@ -1763,6 +1758,11 @@ impl Writer {
             memory_decorations: _, // TODO: probably need to do things with this
         } = global;
 
+        let mut ty = self.type_ast(module, ty, TypeTranslation::from(space))?;
+        if let Some(indirection) = VarTranslation::get(module, global).declaration_indirection {
+            ty = ra::Type::Ptr(indirection, Box::new(ty));
+        }
+
         Ok(ra::Field {
             attributes: if let Some(naga::ResourceBinding { group, binding }) = global.binding {
                 vec![ra::Attribute::Doc(format!(
@@ -1773,7 +1773,7 @@ impl Writer {
             },
             visibility: self.visibility(),
             name: self.names[&NameKey::GlobalVariable(handle)].clone(),
-            ty: self.type_ast(module, ty, TypeTranslation::from(space))?,
+            ty,
         })
     }
     fn global_variable_as_field_initializer_expr(

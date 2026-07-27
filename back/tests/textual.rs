@@ -566,17 +566,17 @@ fn array_length() {
         ),
         indoc::indoc! {
             "
-            struct Resources {
+            struct Resources<'g> {
                 #[doc = \"group(0) binding(1)\"]
-                arr: [::naga_rust_rt::Scalar<u32>],
+                arr: &'g [::naga_rust_rt::Scalar<u32>],
             }
-            impl Resources {
+            impl<'g> Resources<'g> {
                 fn length(&self) -> u32 {
                     ::naga_rust_rt::into(self.v_length())
                 }
                 #[allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery)]
                 fn v_length(&self) -> ::naga_rust_rt::Scalar<u32> {
-                    return (&self.arr).len();
+                    return (*self.arr).len();
                 }
             }
             "
@@ -585,6 +585,9 @@ fn array_length() {
 }
 
 /// Interim test for atomic types while we don't support atomic statements.
+///
+/// TODO: This test is wrong because the atomic scalar should not be `&mut`, but further
+/// work will be needed to implement that.
 #[test]
 fn atomic_type() {
     assert_eq!(
@@ -597,11 +600,11 @@ fn atomic_type() {
         ),
         indoc::indoc! {
             "
-            struct Resources {
+            struct Resources<'g> {
                 #[doc = \"group(0) binding(0)\"]
-                atomic_scalar: ::core::sync::atomic::AtomicU32,
+                atomic_scalar: &'g mut ::core::sync::atomic::AtomicU32,
             }
-            impl Resources {
+            impl<'g> Resources<'g> {
             }
             "
         }
