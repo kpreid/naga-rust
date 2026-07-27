@@ -46,8 +46,10 @@ The available configuration options are:
 
   The available **conditions** are:
 
+  * `function(function_name_here)`: matches a single function according to its name in the shader code.
   * `struct(StructNameHere)`: matches a single struct according to its name in the shader code.
 
   The available **effects** are:
 
   * `derive(DeriveMacroNameHere)`: Adds `#[derive(DeriveMacroNameHere)]` to the translated struct.
+  * `inline()` | `inline(always)` | `inline(never)`: Adds `#[inline]` to the translated function.
