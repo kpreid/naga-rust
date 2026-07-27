@@ -1218,27 +1218,35 @@ impl Writer {
                 let result_ty = expr_ctx.resolve_type(expr);
 
                 let base_ty_res = &expr_ctx.expect_func_ctx().info[base].ty;
-                let mut base_ty_resolved = base_ty_res.inner_with(&module.types);
+                let base_ty_resolved = base_ty_res.inner_with(&module.types);
 
-                // In the Naga IR, `Access` and `AccessIndex` pass through the pointer-ness of
-                // their `base` value, but in Rust, the result of `container[index]` is always
-                // a place, so we need to report `Indirection::Place` to counteract that.
-                if let TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. } = base_ty_resolved
+                // TODO: address space should be used but isn’t; see below.
+                let _address_space_of_data = if let TypeInner::Pointer { space, .. }
+                | TypeInner::ValuePointer { space, .. } =
+                    *base_ty_resolved
                 {
+                    // In the Naga IR, `Access` and `AccessIndex` pass through the pointer-ness of
+                    // their `base` value, but in Rust, the result of `container[index]` is always
+                    // a place, so we need to report `Indirection::Place` to counteract that.
                     indirection = Indirection::Place;
-                }
+
+                    space
+                } else {
+                    // If base isn’t a pointer, then it must be a function local value.
+                    naga::AddressSpace::Function
+                };
 
                 // Find the type of container we are accessing, looking past the pointer if there
                 // is one.
-                let (base_container_ty_handle, base_is_pointer) = match *base_ty_resolved {
-                    TypeInner::Pointer { base, space: _ } => {
-                        base_ty_resolved = &module.types[base].inner;
-                        (Some(base), true)
-                    }
-                    _ => (base_ty_res.handle(), false),
-                };
+                let (base_container_ty_handle, base_container_ty_resolved, base_is_pointer) =
+                    match *base_ty_resolved {
+                        TypeInner::Pointer { base, space: _ } => {
+                            (Some(base), &module.types[base].inner, true)
+                        }
+                        _ => (base_ty_res.handle(), base_ty_resolved, false),
+                    };
 
-                match *base_ty_resolved {
+                let access_expr_without_conversion = match *base_container_ty_resolved {
                     TypeInner::Vector { .. } => ra::Expr::Method(
                         Box::new(self.expr_ast_with_indirection(base, expr_ctx, indirection)?),
                         Cow::Borrowed(["x", "y", "z", "w"][index as usize]),
@@ -1253,10 +1261,33 @@ impl Writer {
                     ),
 
                     TypeInner::Struct { .. } => {
-                        // TODO: This is a horrible "make the tests pass" kludge which should be
-                        // replaced with more general implementation of conversion between different
-                        // `TypeTranslation`s (struct contents are `TypeTranslation::RustScalar`
-                        // and our result needs to be `TypeTranslation::Simd`).
+                        // This will never panic in case the type is a `Struct`; this is not so
+                        // for other types, so we can only check while inside this match arm
+                        let ty = base_container_ty_handle.unwrap();
+                        ra::Expr::NamedField(
+                            Box::new(self.expr_ast_with_indirection(
+                                base,
+                                expr_ctx,
+                                indirection,
+                            )?),
+                            self.names[&NameKey::StructMember(ty, index)].clone(),
+                        )
+                    }
+                    ref other => unreachable!("cannot index into a {other:?}"),
+                };
+
+                // Wrap the expression to convert the type as needed.
+                //
+                // TODO: This is a horrible "make the tests pass" kludge which should be
+                // replaced with more general implementation of conversion between different
+                // `TypeTranslation`s (struct contents are `TypeTranslation::RustScalar`
+                // and our result needs to be `TypeTranslation::Simd`).
+                //
+                // That is, this `match` should be matching a pair of `TypeTranslation`s
+                // rather than the container type.
+                // let type_translation_of_data = TypeTranslation::from(address_space_of_data);
+                match *base_container_ty_resolved {
+                    TypeInner::Struct { .. } => {
                         let element_type_is_scalar = if base_is_pointer {
                             // In Naga IR, if the base is a pointer type then so is the result.
                             result_ty.pointer_base_type().is_some_and(|res| {
@@ -1265,33 +1296,13 @@ impl Writer {
                         } else {
                             matches!(result_ty, TypeInner::Scalar(_))
                         };
-                        // This will never panic in case the type is a `Struct`; this is not so
-                        // for other types, so we can only check while inside this match arm
-                        let ty = base_container_ty_handle.unwrap();
                         if element_type_is_scalar {
-                            ra::Expr::call_rt(
-                                ra::RtItem::Scalar,
-                                [ra::Expr::NamedField(
-                                    Box::new(self.expr_ast_with_indirection(
-                                        base,
-                                        expr_ctx,
-                                        indirection,
-                                    )?),
-                                    self.names[&NameKey::StructMember(ty, index)].clone(),
-                                )],
-                            )
+                            ra::Expr::call_rt(ra::RtItem::Scalar, [access_expr_without_conversion])
                         } else {
-                            ra::Expr::NamedField(
-                                Box::new(self.expr_ast_with_indirection(
-                                    base,
-                                    expr_ctx,
-                                    indirection,
-                                )?),
-                                self.names[&NameKey::StructMember(ty, index)].clone(),
-                            )
+                            access_expr_without_conversion
                         }
                     }
-                    ref other => unreachable!("cannot index into a {other:?}"),
+                    _ => access_expr_without_conversion,
                 }
             }
             Expression::ImageSample { .. } => {
