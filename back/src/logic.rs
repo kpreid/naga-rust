@@ -4,6 +4,8 @@
 //! data types and functions which assist in performing the translation *consistently*;
 //! that is, in a way which will not result in the generated code having a type mismatch.
 
+use crate::ra;
+
 #[cfg(doc)]
 use crate::writer::Writer;
 
@@ -86,6 +88,80 @@ impl From<naga::AddressSpace> for TypeTranslation {
             | naga::AddressSpace::IncomingRayPayload => {
                 unimplemented!("mesh and raytracing shaders are not supported")
             }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+
+/// Information about how a global variable declaration should be translated.
+pub(crate) struct VarTranslation {
+    /// Will the translation of this variable require the resource struct to borrow things?
+    /// This is used for textures and storage buffers.
+    pub requires_resource_struct_lifetime: bool,
+
+    /// Should the translation of this variable have an additional indirection when put in the
+    /// resource struct?
+    pub declaration_indirection: Option<ra::PtrKind>,
+
+    /// Indirection used when translating a [`naga::Expression::GlobalVariable`].
+    pub global_expr_indirection: Indirection,
+}
+
+impl VarTranslation {
+    pub fn get(module: &naga::Module, global: &naga::GlobalVariable) -> Self {
+        let (declaration_indirection, global_expr_indirection): (Option<ra::PtrKind>, Indirection) =
+            match global.space {
+                // These globals are stored by value in the global_struct.
+                // `GlobalVariable` expressions should produce pointers to them (references, in WGSL
+                // terms), so we use `Indirection::Place` to signal that we will produce a Rust place
+                // corresponding to a WGSL reference.
+                naga::AddressSpace::Private => (None, Indirection::Place),
+                naga::AddressSpace::WorkGroup => (None, Indirection::Place),
+                naga::AddressSpace::Uniform => (None, Indirection::Place),
+
+                // `GlobalVariable` expressions in the `Handle` address space are shallow-immutable
+                // and produce the value, not a pointer to it. (This is a fact about Naga IR.)
+                //  Therefore, such expressions have `Indirection::Ordinary` to copy the value
+                // from the global struct.
+                naga::AddressSpace::Handle => (None, Indirection::Ordinary),
+
+                // Storage buffers are variable-length, so they are referenced in the
+                // resource_struct, so they are `Ordinary` (they match the Naga IR typing).
+                naga::AddressSpace::Storage { access } => (
+                    Some(
+                        // TODO: Checking for ATOMIC isn't helping us make the decision we actually
+                        // want (not to use &mut for values accessed atomically). Figure out whether
+                        // we should be doing this at all, and what the right thing is.
+                        if access.contains(naga::StorageAccess::STORE)
+                            && !access.contains(naga::StorageAccess::ATOMIC)
+                        {
+                            ra::PtrKind::Exclusive(Some("g"))
+                        } else {
+                            ra::PtrKind::Shared(Some("g"))
+                        },
+                    ),
+                    Indirection::Ref,
+                ),
+
+                // Not actually supported.
+                naga::AddressSpace::Immediate => todo!(),
+                naga::AddressSpace::TaskPayload => todo!(),
+                naga::AddressSpace::RayPayload => todo!(),
+                naga::AddressSpace::IncomingRayPayload => todo!(),
+
+                // Never appears as a global.
+                naga::AddressSpace::Function => unreachable!(),
+            };
+
+        let type_is_image = matches!(module.types[global.ty].inner, naga::TypeInner::Image { .. });
+
+        let requires_resource_struct_lifetime = type_is_image || declaration_indirection.is_some();
+
+        Self {
+            requires_resource_struct_lifetime,
+            declaration_indirection,
+            global_expr_indirection,
         }
     }
 }
