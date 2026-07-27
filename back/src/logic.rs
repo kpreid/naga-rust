@@ -95,7 +95,9 @@ impl From<naga::AddressSpace> for TypeTranslation {
 // -------------------------------------------------------------------------------------------------
 
 /// Information about how a global variable declaration should be translated.
-pub(crate) struct VarTranslation {
+pub(crate) struct GlobalTranslation {
+    pub location: GlobalLocation,
+
     /// Will the translation of this variable require the resource struct to borrow things?
     /// This is used for textures and storage buffers.
     pub requires_resource_struct_lifetime: bool,
@@ -108,60 +110,100 @@ pub(crate) struct VarTranslation {
     pub global_expr_indirection: Indirection,
 }
 
-impl VarTranslation {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GlobalLocation {
+    /// Goes in our `global_struct`.
+    Variable,
+    /// Goes in our `resource_struct`.
+    Resource,
+}
+
+impl GlobalTranslation {
     pub fn get(module: &naga::Module, global: &naga::GlobalVariable) -> Self {
-        let (declaration_indirection, global_expr_indirection): (Option<ra::PtrKind>, Indirection) =
-            match global.space {
-                // These globals are stored by value in the global_struct.
-                // `GlobalVariable` expressions should produce pointers to them (references, in WGSL
-                // terms), so we use `Indirection::Place` to signal that we will produce a Rust place
-                // corresponding to a WGSL reference.
-                naga::AddressSpace::Private => (None, Indirection::Place),
-                naga::AddressSpace::WorkGroup => (None, Indirection::Place),
-                naga::AddressSpace::Uniform => (None, Indirection::Place),
+        let (declaration_indirection, global_expr_indirection, location): (
+            Option<ra::PtrKind>,
+            Indirection,
+            GlobalLocation,
+        ) = match global.space {
+            // These globals are stored by value in the global_struct.
+            // `GlobalVariable` expressions should produce pointers to them (references, in WGSL
+            // terms), so we use `Indirection::Place` to signal that we will produce a Rust place
+            // corresponding to a WGSL reference.
+            naga::AddressSpace::Private => (None, Indirection::Place, GlobalLocation::Variable),
+            naga::AddressSpace::WorkGroup => (None, Indirection::Place, GlobalLocation::Variable),
 
-                // `GlobalVariable` expressions in the `Handle` address space are shallow-immutable
-                // and produce the value, not a pointer to it. (This is a fact about Naga IR.)
-                //  Therefore, such expressions have `Indirection::Ordinary` to copy the value
-                // from the global struct.
-                naga::AddressSpace::Handle => (None, Indirection::Ordinary),
+            naga::AddressSpace::Uniform => (None, Indirection::Place, GlobalLocation::Resource),
 
-                // Storage buffers are variable-length, so they are referenced in the
-                // resource_struct, so they are `Ordinary` (they match the Naga IR typing).
-                naga::AddressSpace::Storage { access } => (
-                    Some(
-                        // TODO: Checking for ATOMIC isn't helping us make the decision we actually
-                        // want (not to use &mut for values accessed atomically). Figure out whether
-                        // we should be doing this at all, and what the right thing is.
-                        if access.contains(naga::StorageAccess::STORE)
-                            && !access.contains(naga::StorageAccess::ATOMIC)
-                        {
-                            ra::PtrKind::Exclusive(Some("g"))
-                        } else {
-                            ra::PtrKind::Shared(Some("g"))
-                        },
-                    ),
-                    Indirection::Ref,
+            // `GlobalVariable` expressions in the `Handle` address space are shallow-immutable
+            // and produce the value, not a pointer to it. (This is a fact about Naga IR.)
+            //  Therefore, such expressions have `Indirection::Ordinary` to copy the value
+            // from the global struct.
+            naga::AddressSpace::Handle => (None, Indirection::Ordinary, GlobalLocation::Resource),
+
+            // Storage buffers are variable-length, so they are referenced in the
+            // resource_struct, so they are `Ordinary` (they match the Naga IR typing).
+            naga::AddressSpace::Storage { access } => (
+                Some(
+                    // TODO: Checking for ATOMIC isn't helping us make the decision we actually
+                    // want (not to use &mut for values accessed atomically). Figure out whether
+                    // we should be doing this at all, and what the right thing is.
+                    if access.contains(naga::StorageAccess::STORE)
+                        && !access.contains(naga::StorageAccess::ATOMIC)
+                    {
+                        ra::PtrKind::Exclusive(Some("g"))
+                    } else {
+                        ra::PtrKind::Shared(Some("g"))
+                    },
                 ),
+                Indirection::Ref,
+                GlobalLocation::Resource,
+            ),
 
-                // Not actually supported.
-                naga::AddressSpace::Immediate => todo!(),
-                naga::AddressSpace::TaskPayload => todo!(),
-                naga::AddressSpace::RayPayload => todo!(),
-                naga::AddressSpace::IncomingRayPayload => todo!(),
+            // Not actually supported.
+            naga::AddressSpace::Immediate => todo!(),
+            naga::AddressSpace::TaskPayload => todo!(),
+            naga::AddressSpace::RayPayload => todo!(),
+            naga::AddressSpace::IncomingRayPayload => todo!(),
 
-                // Never appears as a global.
-                naga::AddressSpace::Function => unreachable!(),
-            };
+            // Never appears as a global.
+            naga::AddressSpace::Function => unreachable!(),
+        };
 
         let type_is_image = matches!(module.types[global.ty].inner, naga::TypeInner::Image { .. });
 
         let requires_resource_struct_lifetime = type_is_image || declaration_indirection.is_some();
 
         Self {
+            location,
             requires_resource_struct_lifetime,
             declaration_indirection,
             global_expr_indirection,
         }
+    }
+}
+
+impl GlobalLocation {
+    /// Iterate over all global variables in `module` which have this location.
+    pub fn filter(
+        self,
+        module: &naga::Module,
+    ) -> impl Iterator<
+        Item = (
+            naga::Handle<naga::GlobalVariable>,
+            &naga::GlobalVariable,
+            GlobalTranslation,
+        ),
+    > {
+        module
+            .global_variables
+            .iter()
+            .filter_map(move |(handle, global)| {
+                let var_translation = GlobalTranslation::get(module, global);
+                if var_translation.location == self {
+                    Some((handle, global, var_translation))
+                } else {
+                    None
+                }
+            })
     }
 }

@@ -16,9 +16,9 @@ use naga::{
 use crate::Effect;
 use crate::config::{RuleInput, WriterFlags};
 use crate::conv::{self, BinOpClassified};
-use crate::logic::{Indirection, TypeTranslation, VarTranslation};
+use crate::logic::{GlobalLocation, GlobalTranslation, Indirection, TypeTranslation};
 use crate::ra::{self, PrintAst as _};
-use crate::util::{Gensym, GlobalKind};
+use crate::util::Gensym;
 use crate::{Config, Error};
 
 // -------------------------------------------------------------------------------------------------
@@ -146,18 +146,16 @@ impl Writer {
         }
 
         // If we are using resources, write the `struct` that contains them.
-        let any_resource_requires_lifetime = GlobalKind::Resource
-            .filter(&module.global_variables)
-            .any(|(_, global)| {
-                VarTranslation::get(module, global).requires_resource_struct_lifetime
-            });
+        let any_resource_requires_lifetime = GlobalLocation::Resource
+            .filter(module)
+            .any(|(_, _, translation)| translation.requires_resource_struct_lifetime);
         let resource_lifetime_generics = if any_resource_requires_lifetime {
             ra::Generics::LtG
         } else {
             ra::Generics::None
         };
         {
-            let mut resource_iter = GlobalKind::Resource.filter(&module.global_variables);
+            let mut resource_iter = GlobalLocation::Resource.filter(module);
             if let Some(ref resource_struct_name) = self.config.resource_struct {
                 let resource_struct_ast = ra::StructItem {
                     attributes: vec![],
@@ -165,14 +163,19 @@ impl Writer {
                     name: resource_struct_name.clone(),
                     generics: resource_lifetime_generics,
                     fields: resource_iter
-                        .map(|(handle, global)| {
-                            self.translate_global_variable_to_struct_field(module, global, handle)
+                        .map(|(handle, global, translation)| {
+                            self.translate_global_variable_to_struct_field(
+                                module,
+                                global,
+                                handle,
+                                &translation,
+                            )
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                 };
 
                 top_level_items.push(ra::Item::Struct(resource_struct_ast));
-            } else if let Some((_, example)) = resource_iter.next() {
+            } else if let Some((_, example, _)) = resource_iter.next() {
                 if self.config.flags.contains(WriterFlags::INCLUDE_FUNCTIONS) {
                     return Err(Error::ResourcesNotEnabled {
                         example: example.name.clone().unwrap_or_default(),
@@ -200,7 +203,7 @@ impl Writer {
                 resource_lifetime_generics
             };
         {
-            let mut global_variable_iter = GlobalKind::Variable.filter(&module.global_variables);
+            let mut global_variable_iter = GlobalLocation::Variable.filter(module);
             if let Some(ref global_struct_name) = self.config.global_struct {
                 let mut global_struct_fields = Vec::new();
                 if let Some(ref ref_to_resources_ty) = ref_to_resources_ty {
@@ -211,10 +214,13 @@ impl Writer {
                         ty: ref_to_resources_ty.clone(),
                     });
                 }
-                for (handle, global) in global_variable_iter {
-                    global_struct_fields.push(
-                        self.translate_global_variable_to_struct_field(module, global, handle)?,
-                    );
+                for (handle, global, translation) in global_variable_iter {
+                    global_struct_fields.push(self.translate_global_variable_to_struct_field(
+                        module,
+                        global,
+                        handle,
+                        &translation,
+                    )?);
                 }
 
                 let global_struct_item = ra::StructItem {
@@ -249,9 +255,7 @@ impl Writer {
                             // Note that we reserve the name “resources” using the keyword set.
                             fields.push(("resources".into(), ra::Expr::Ident("resources".into())));
                         }
-                        for (handle, global) in
-                            GlobalKind::Variable.filter(&module.global_variables)
-                        {
+                        for (handle, global, _) in GlobalLocation::Variable.filter(module) {
                             fields.push((
                                 self.names[&NameKey::GlobalVariable(handle)].clone(),
                                 self.global_variable_as_field_initializer_expr(
@@ -292,7 +296,7 @@ impl Writer {
                         })],
                     ));
                 }
-            } else if let Some((_, example)) = global_variable_iter.next() {
+            } else if let Some((_, example, _)) = global_variable_iter.next() {
                 if self.config.flags.contains(WriterFlags::INCLUDE_FUNCTIONS) {
                     return Err(Error::GlobalVariablesNotEnabled {
                         example: example.name.clone().unwrap_or_default(),
@@ -1375,10 +1379,10 @@ impl Writer {
                 let global = &module.global_variables[handle];
 
                 // The indirection varies depending on the address space and type of the global.
-                indirection = VarTranslation::get(module, global).global_expr_indirection;
+                indirection = GlobalTranslation::get(module, global).global_expr_indirection;
 
                 ra::Expr::NamedField(
-                    Box::new(self.config.global_field_access_expr(global)),
+                    Box::new(self.config.global_field_access_expr(module, global)),
                     self.names[&NameKey::GlobalVariable(handle)].clone(),
                 )
             }
@@ -1747,6 +1751,7 @@ impl Writer {
         module: &Module,
         global: &naga::GlobalVariable,
         handle: Handle<naga::GlobalVariable>,
+        translation: &GlobalTranslation,
     ) -> Result<ra::Field, Error> {
         let &naga::GlobalVariable {
             name: _, // renamed instead
@@ -1758,7 +1763,7 @@ impl Writer {
         } = global;
 
         let mut ty = self.type_ast(module, ty, TypeTranslation::from(space))?;
-        if let Some(indirection) = VarTranslation::get(module, global).declaration_indirection {
+        if let Some(indirection) = translation.declaration_indirection {
             ty = ra::Type::Ptr(indirection, Box::new(ty));
         }
 
