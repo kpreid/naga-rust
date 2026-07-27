@@ -25,6 +25,9 @@ pub(crate) struct ConfigAndStr {
 
 impl ConfigAndStr {
     pub(crate) fn parse(input: TokenStream) -> Result<Self, MacroError> {
+        // When modifying this grammar, always update the documentation in
+        // `naga-rust-embed/src/configuration_syntax.md` as well.
+
         const EXPECT_TOP_LEVEL: &str = "a string literal or configuration option";
         let mut config = macro_default_config();
         let mut input = Parser::from_token_stream(input);
@@ -123,6 +126,9 @@ impl ConfigAndStr {
 
 /// Returns the default configuration used by all shader translation macros.
 fn macro_default_config() -> Config {
+    // When modifying these defaults, always update the documentation in
+    // `naga-rust-embed/src/configuration_syntax.md` as well.
+
     Config::default()
         .runtime_path("::naga_rust_embed::rt")
         // Helps give better errors when the generated code is wrong.
@@ -133,6 +139,9 @@ fn macro_default_config() -> Config {
 // -------------------------------------------------------------------------------------------------
 
 pub(crate) fn parse_rule(input: &mut Parser) -> Result<Rule, MacroError> {
+    // When modifying this grammar, always update the documentation in
+    // `naga-rust-embed/src/configuration_syntax.md` as well.
+
     // The grammar of a rule is
     //   (condition '=>')? effect*
     // but for simplicity and error reporting, the implementation is more like

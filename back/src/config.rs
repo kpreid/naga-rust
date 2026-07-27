@@ -292,6 +292,7 @@ pub enum Condition {
     Function(String),
     /// Applies to the struct with the given name (excluding resource and global structs).
     Struct(String),
+    // When adding a variant, update the parser and documentation in `naga-rust-embed` too.
 }
 
 /// Specifies the effect of a [`Rule`].
@@ -315,6 +316,7 @@ pub enum Effect {
     /// Caution: Using this attribute is not always necessary to obtain inlining,
     /// and inlining is not always beneficial. Usage should be guided by profiling and benchmarks.
     Inline(Inline),
+    // When adding a variant, update the parser and documentation in `naga-rust-embed` too.
 }
 
 /// What `#[inline]` attribute [`Effect::Inline`] produces.

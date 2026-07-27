@@ -12,7 +12,9 @@ You can now ask for structs and constants, but not functions, to be translated, 
 
 * `Config::include_functions()`, if disabled, allows translating only `struct`s and `const`s.
 * `Config::rule()` allows customizing the translation of specific parts of the shader code.
-  The first available customization is to add `#[derive]` to structs.
+  Currently available:
+  * Adding `#[derive]` to selected structs.
+  * Adding `#[inline]` to selected functions.
 
 ## Changed
 

@@ -11,7 +11,9 @@ You can now ask for structs and constants, but not functions, to be translated, 
 
 * Configuration `include_functions`, if disabled, allows translating only `struct`s and `const`s.
 * Configuration `rule`s allow customizing the translation of specific parts of the shader code.
-  The first available customization is to add `#[derive]` to selected `struct`s.
+  Currently available:
+  * Adding `#[derive]` to selected structs.
+  * Adding `#[inline]` to selected functions.
 * Implementations of [`bytemuck` v1](https://docs.rs/bytemuck/1/bytemuck/)’s traits for our scalar, vector, and matrix types, with `features = ["bytemuck"]`.
   Note that this does not implemented the traits on translated `struct` types.
 
