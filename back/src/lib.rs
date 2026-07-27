@@ -36,6 +36,7 @@ use crate::ra::PrintAst as _;
 
 mod config;
 mod conv;
+mod logic;
 mod ra;
 mod util;
 mod writer;
