@@ -1763,14 +1763,6 @@ impl Writer {
             memory_decorations: _, // TODO: probably need to do things with this
         } = global;
 
-        // TODO: reenable this
-        // // Note bindings.
-        // // These are not emitted as attributes because Rust does not allow macro attributes to be
-        // // placed on struct fields.
-        // if let Some(naga::ResourceBinding { group, binding }) = global.binding {
-        //     writeln!(out, "{INDENT}// group({group}) binding({binding})")?;
-        // }
-
         Ok(ra::Field {
             attributes: if let Some(naga::ResourceBinding { group, binding }) = global.binding {
                 vec![ra::Attribute::Doc(format!(
