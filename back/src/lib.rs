@@ -1,4 +1,4 @@
-//! [`naga`] backend allowing you to translate shader code in any language supported by Naga
+//! [`naga`] backend allowing you to translate shader (GPU) code in any language supported by Naga
 //! to Rust code.
 //!
 //! The generated code requires the [`naga_rust_rt`] library.
@@ -11,10 +11,11 @@
 //!
 //! * Simple mathematical functions will work.
 //! * Code involving pointers is likely to fail to compile.
-//! * Textures are supported but texture filtering is not.
+//! * Textures are supported but texture filtering (use of samplers) is not.
+//! * Storage buffers are not supported.
 //! * Atomics, derivatives, and workgroup operations are not supported.
-//! * Pipelines involving multiple shaders (e.g. passing data from vertex to fragment)
-//!   are not automatically executed but you can build that yourself.
+//! * Not only are whole pipelines not supported, there is no implementation of interpolation
+//!   (as would occur when passing data from a vertex shader to a fragment shader).
 //!
 //! [`naga_rust_rt`]: https://docs.rs/naga-rust-rt
 //! [`naga_rust_embed`]: https://docs.rs/naga-rust-embed
