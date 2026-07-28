@@ -2,16 +2,25 @@
 ====================================================
 
 `naga-rust-embed` translates WGSL shader code to Rust embedded in your crate via macros.
-You can use this to **share constants and functions between your GPU and CPU code**,
-or to unit test your shader functions without setting up a pipeline or requiring a GPU device
-in the tests.
+You can use this to **share individual functions, constants, and data types between CPU and GPU,**
+so that they can agree on definitions that might be executed in either place.
+Potential applications include:
+
+* Unit tests of shader code, written as simple, cheap Rust `#[test]`s.
+* Defining uniform buffer `struct`s in your shader, and then constructing them from Rust without
+  needing to write a separate Rust `struct`.
+* Sharing mathematical functions and constants which need to be used on both the CPU and GPU.
+* Fallback CPU execution of code written for GPU execution, when no GPU is available.
 
 You cannot use this to run your compute or render pipelines in Rust on your CPU unchanged;
-this is not a full “software rendering” library and does not provide pipeline execution or 
-triangle rasterization.
+this is not a full “software renderer” and does not provide pipeline execution,
+triangle rasterization, or even interpolation.
 
 If you need additional control over the translation or to use a different source language,
 use the [`naga-rust-back`] library directly instead.
+
+Development status
+------------------
 
 This library is in an early stage of development and many features do not work yet.
 Expect compilation failures, incorrect behaviors, and to have to tweak your code to fit,
@@ -19,11 +28,11 @@ if you wish to use them. Broadly:
 
 * Simple mathematical functions will work.
 * Code involving pointers is likely to fail to compile.
-* Textures are supported but texture filtering is not.
+* Textures are supported but texture filtering (use of samplers) is not.
 * Storage buffers are not supported.
 * Atomics, derivatives, and workgroup operations are not supported.
-* Pipelines involving multiple shaders (e.g. passing data from vertex to fragment)
-  are not automatically executed but you can, in principle, build that yourself.
+* Not only are whole pipelines not supported, there is no implementation of interpolation
+  (as would occur when passing data from a vertex shader to a fragment shader).
 
 [`naga`]: https://crates.io/crates/naga
 [`naga-rust-back`]: https://crates.io/crates/naga-rust-back
