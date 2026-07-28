@@ -1,6 +1,6 @@
 # Changelog for `naga-rust-back`
 
-## Unreleased
+## 0.3.0 (2026-07-27)
 
 This release focuses on expanding to a new use case: sharing declarations between Rust and shaders, without actually executing shader functions as Rust.
 You can now ask for structs and constants, but not functions, to be translated, and derive traits on those Rust structs.

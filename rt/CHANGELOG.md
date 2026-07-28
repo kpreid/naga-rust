@@ -1,6 +1,6 @@
 # Changelog for `naga-rust-rt`
 
-## Unreleased
+## 0.3.0 (2026-07-27)
 
 ### Added
 
