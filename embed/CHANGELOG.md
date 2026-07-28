@@ -1,6 +1,6 @@
 # Changelog for `naga-rust-embed`
 
-## Unreleased
+## 0.3.0 (2026-07-27)
 
 This release focuses on expanding to a new use case: sharing declarations between Rust and shaders, without actually executing shader functions as Rust.
 You can now ask for structs and constants, but not functions, to be translated, and derive traits on those Rust structs.
@@ -15,7 +15,7 @@ You can now ask for structs and constants, but not functions, to be translated, 
   * Adding `#[derive]` to selected structs.
   * Adding `#[inline]` to selected functions.
 * Implementations of [`bytemuck` v1](https://docs.rs/bytemuck/1/bytemuck/)’s traits for our scalar, vector, and matrix types, with `features = ["bytemuck"]`.
-  Note that this does not implemented the traits on translated `struct` types.
+  Note that this does not implement those traits on translated `struct` types; that may be done separately using the new `rule` feature.
 
 ### Changed
 
