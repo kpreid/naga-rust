@@ -14,11 +14,11 @@ if you wish to use them. Broadly:
 
 * Simple mathematical functions will work.
 * Code involving pointers is likely to fail to compile.
-* Textures are supported but texture filtering is not.
+* Textures are supported but texture filtering (use of samplers) is not.
 * Storage buffers are not supported.
 * Atomics, derivatives, and workgroup operations are not supported.
-* Pipelines involving multiple shaders (e.g. passing data from vertex to fragment)
-  are not automatically executed but you can build that yourself.
+* Not only are whole pipelines not supported, there is no implementation of interpolation
+  (as would occur when passing data from a vertex shader to a fragment shader).
 
 [`naga`]: https://crates.io/crates/naga
 [`naga-rust-rt`]: https://crates.io/crates/naga-rust-rt
