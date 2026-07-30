@@ -44,6 +44,10 @@ where
 
 // -------------------------------------------------------------------------------------------------
 
+// The `loadi` and `loadu` functions are due to the fact that, despite what [`naga::Expression`]
+// documentation currently says, `Expression::ImageLoad` appears with both `i32`s and `u32`s.
+// Therefore, Naga is not canonicalizing them for us and we must handle both in each case.
+
 #[test]
 fn query_and_load_1d() {
     wgsl!(
@@ -53,9 +57,13 @@ fn query_and_load_1d() {
         fn dimensions_and_mip_levels() -> vec2u {
             return vec2(textureDimensions(my_texture, 0), textureNumLevels(my_texture));
         }
-        fn load(position: i32) -> vec4f {
+        fn loadi(position: i32) -> vec4f {
             return textureLoad(my_texture, position, 0);
-        }"
+        }
+        fn loadu(position: u32) -> vec4f {
+            return textureLoad(my_texture, position, 0);
+        }
+        "
     );
 
     let mut call_count = 0;
@@ -75,8 +83,9 @@ fn query_and_load_1d() {
         },
     };
     assert_eq!(res.dimensions_and_mip_levels(), Vec2::new(100, 1));
-    assert_eq!(res.load(Scalar::new(10)), Vec4::new(1.0, 2.0, 3.0, 4.0));
-    assert_eq!(call_count, 1);
+    assert_eq!(res.loadi(Scalar::new(10i32)), Vec4::new(1.0, 2.0, 3.0, 4.0));
+    assert_eq!(res.loadu(Scalar::new(10u32)), Vec4::new(1.0, 2.0, 3.0, 4.0));
+    assert_eq!(call_count, 2);
 }
 
 #[test]
@@ -88,9 +97,13 @@ fn query_and_load_2d() {
         fn dimensions_and_mip_levels() -> vec3u {
             return vec3(textureDimensions(my_texture, 0), textureNumLevels(my_texture));
         }
-        fn load(position: vec2i) -> vec4f {
+        fn loadi(position: vec2i) -> vec4f {
             return textureLoad(my_texture, position, 0);
-        }"
+        }
+        fn loadu(position: vec2u) -> vec4f {
+            return textureLoad(my_texture, position, 0);
+        }
+        "
     );
 
     let mut call_count = 0;
@@ -110,8 +123,15 @@ fn query_and_load_2d() {
         },
     };
     assert_eq!(res.dimensions_and_mip_levels(), Vec3::new(100u32, 100, 1));
-    assert_eq!(res.load(Vec2::new(10, 20)), Vec4::new(1.0, 2.0, 3.0, 4.0));
-    assert_eq!(call_count, 1);
+    assert_eq!(
+        res.loadi(Vec2::new(10i32, 20)),
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    );
+    assert_eq!(
+        res.loadu(Vec2::new(10u32, 20)),
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    );
+    assert_eq!(call_count, 2);
 }
 
 #[test]
@@ -123,9 +143,13 @@ fn query_and_load_2d_array() {
         fn dimensions_and_layers() -> vec3u {
             return vec3(textureDimensions(my_texture, 0), textureNumLayers(my_texture));
         }
-        fn load(position: vec2i) -> vec4f {
+        fn loadi(position: vec2i) -> vec4f {
             return textureLoad(my_texture, position, 3, 0);
-        }"
+        }
+        fn loadu(position: vec2u) -> vec4f {
+            return textureLoad(my_texture, position, 3, 0);
+        }
+        "
     );
 
     let mut call_count = 0;
@@ -147,8 +171,15 @@ fn query_and_load_2d_array() {
         },
     };
     assert_eq!(res.dimensions_and_layers(), Vec3::new(100u32, 100, 7));
-    assert_eq!(res.load(Vec2::new(10, 20)), Vec4::new(1.0, 2.0, 3.0, 4.0));
-    assert_eq!(call_count, 1);
+    assert_eq!(
+        res.loadi(Vec2::new(10i32, 20)),
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    );
+    assert_eq!(
+        res.loadu(Vec2::new(10u32, 20)),
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    );
+    assert_eq!(call_count, 2);
 }
 
 #[test]
@@ -160,9 +191,13 @@ fn query_and_load_2d_multisampled() {
         fn dimensions_and_layers() -> vec3u {
             return vec3(textureDimensions(my_texture), textureNumSamples(my_texture));
         }
-        fn load(position: vec2i) -> vec4f {
+        fn loadi(position: vec2i) -> vec4f {
             return textureLoad(my_texture, position, 3);
-        }"
+        }
+        fn loadu(position: vec2u) -> vec4f {
+            return textureLoad(my_texture, position, 3);
+        }
+        "
     );
 
     let mut call_count = 0;
@@ -184,8 +219,15 @@ fn query_and_load_2d_multisampled() {
         },
     };
     assert_eq!(res.dimensions_and_layers(), Vec3::new(100u32, 100, 7));
-    assert_eq!(res.load(Vec2::new(10, 20)), Vec4::new(1.0, 2.0, 3.0, 4.0));
-    assert_eq!(call_count, 1);
+    assert_eq!(
+        res.loadi(Vec2::new(10i32, 20)),
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    );
+    assert_eq!(
+        res.loadu(Vec2::new(10u32, 20)),
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    );
+    assert_eq!(call_count, 2);
 }
 
 #[test]
@@ -197,9 +239,13 @@ fn query_and_load_3d() {
         fn dimensions_and_mip_levels() -> vec4u {
             return vec4(textureDimensions(my_texture, 0), textureNumLevels(my_texture));
         }
-        fn load(position: vec3i) -> vec4f {
+        fn loadi(position: vec3i) -> vec4f {
             return textureLoad(my_texture, position, 0);
-        }"
+        }
+        fn loadu(position: vec3u) -> vec4f {
+            return textureLoad(my_texture, position, 0);
+        }
+        "
     );
 
     let mut call_count = 0;
@@ -223,10 +269,14 @@ fn query_and_load_3d() {
         Vec4::new(100u32, 100, 100, 1)
     );
     assert_eq!(
-        res.load(Vec3::new(10, 20, 30)),
+        res.loadi(Vec3::new(10i32, 20, 30)),
         Vec4::new(1.0, 2.0, 3.0, 4.0)
     );
-    assert_eq!(call_count, 1);
+    assert_eq!(
+        res.loadu(Vec3::new(10u32, 20, 30)),
+        Vec4::new(1.0, 2.0, 3.0, 4.0)
+    );
+    assert_eq!(call_count, 2);
 }
 
 // TODO: test cube and cube_array types.
