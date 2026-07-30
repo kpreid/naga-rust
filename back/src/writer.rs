@@ -1372,7 +1372,35 @@ impl Writer {
                 ra::RtItem::TextureLoad,
                 [
                     self.expr_ast_with_indirection(image, expr_ctx, Indirection::Ref)?,
-                    self.translate_expr(coordinate, expr_ctx)?,
+                    // Kludge: `Expression::ImageLoad` documentation claims that `coordinate` always
+                    // has `Sint` component type, but the WGSL frontend may produce `Uint` and
+                    // validation does not reject this.
+                    //
+                    // TODO: File issue against Naga and get this inconsistency resolved.
+                    //
+                    // TODO: When we next make a breaking `naga-rust-rt` release, move this coercion
+                    // into its interface for texture loads?
+                    {
+                        let coordinate_expr_without_conversion =
+                            self.translate_expr(coordinate, expr_ctx)?;
+                        match expr_ctx.resolve_type(coordinate) {
+                            TypeInner::Scalar(naga::Scalar::U32)
+                            | TypeInner::Vector {
+                                size: _,
+                                scalar: naga::Scalar::U32,
+                            } => ra::Expr::Method(
+                                Box::new(coordinate_expr_without_conversion),
+                                Cow::Borrowed("cast_elem_as_i32"),
+                                vec![],
+                            ),
+                            TypeInner::Scalar(naga::Scalar::I32)
+                            | TypeInner::Vector {
+                                size: _,
+                                scalar: naga::Scalar::I32,
+                            } => coordinate_expr_without_conversion,
+                            ty => panic!("unhandled texture coordinate type {ty:?}"),
+                        }
+                    },
                     if let Some(array_index) = array_index {
                         ra::Expr::call_rt(
                             ra::RtItem::ScalarIntoInner,

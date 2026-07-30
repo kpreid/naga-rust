@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+## Added
+
 ## Fixed
 
+* `textureLoad()` with `u32` coordinates now succeeds instead of generating a type error.
 * The visibility of the `global_struct` and `resource_struct` is now controlled by `Config::public_items()` instead of always being private.
 
 ## 0.3.0 (2026-07-27)
