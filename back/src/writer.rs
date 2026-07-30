@@ -159,7 +159,7 @@ impl Writer {
             if let Some(ref resource_struct_name) = self.config.resource_struct {
                 let resource_struct_ast = ra::StructItem {
                     attributes: vec![],
-                    visibility: ra::Visibility::Private, // TODO: wrong visibility
+                    visibility,
                     name: resource_struct_name.clone(),
                     generics: resource_lifetime_generics,
                     fields: resource_iter
@@ -225,7 +225,7 @@ impl Writer {
 
                 let global_struct_item = ra::StructItem {
                     attributes: vec![],
-                    visibility: ra::Visibility::Private, // TODO: existing behavior but is it right?
+                    visibility,
                     name: global_struct_name.clone(),
                     generics: global_lifetime_generics,
                     fields: global_struct_fields,

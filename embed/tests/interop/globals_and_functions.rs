@@ -88,19 +88,28 @@ fn uniform_binding() {
 
 #[test]
 fn both_globals_and_resources() {
-    wgsl!(
-        global_struct = Globals,
-        resource_struct = Resources,
-        r"
-        @group(0) @binding(0) var<uniform> foo: i32;
-        var<private> bar: i32 = 1;
-        fn combine() -> i32 {
-            return foo + bar;
-        } 
-        "
-    );
+    // The additional module is as a proof that `public_items` works.
+    // Note that there is also a test for this in the textual tests, but that doesn’t help
+    // if the test is wrong.
+    mod stuff {
+        super::wgsl!(
+            global_struct = Globals,
+            resource_struct = Resources,
+            public_items = true,
+            r"
+            @group(0) @binding(0) var<uniform> foo: i32;
+            var<private> bar: i32 = 1;
+            fn combine() -> i32 {
+                return foo + bar;
+            } 
+            "
+        );
+    }
 
-    assert_eq!(Globals::new(&Resources { foo: Scalar(100) }).combine(), 101);
+    assert_eq!(
+        stuff::Globals::new(&stuff::Resources { foo: Scalar(100) }).combine(),
+        101
+    );
 }
 
 /// If `include_functions` is disabled, then the checks for a missing `global_struct`

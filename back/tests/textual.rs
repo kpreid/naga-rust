@@ -207,6 +207,7 @@ fn globals_and_resources_enabled_and_visibility() {
         @group(0) @binding(0) var<uniform> foo: i32;
         @group(0) @binding(1) var texture: texture_2d<f32>;
         var<private> bar: i32 = 1;
+        const A_CONSTANT: i32 = 2;
         fn combine(baz: i32, qux: i32) -> i32 {
             return foo + bar + baz + qux;
         } 
@@ -220,8 +221,9 @@ fn globals_and_resources_enabled_and_visibility() {
                 .resource_struct("Resources"),
             source
         ),
-        indoc::indoc! {
-            "
+        indoc::indoc! {"
+            #[allow(non_upper_case_globals)]
+            const A_CONSTANT: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(2i32);
             struct Resources<'g> {
                 #[doc = \"group(0) binding(0)\"]
                 foo: ::naga_rust_rt::Scalar<i32>,
@@ -256,8 +258,7 @@ fn globals_and_resources_enabled_and_visibility() {
                     return (((_e3 + _e5) + baz) + qux);
                 }
             }
-            "
-        }
+        "}
     );
 
     // With public items
@@ -269,15 +270,16 @@ fn globals_and_resources_enabled_and_visibility() {
                 .public_items(true),
             source
         ),
-        indoc::indoc! {
-            "
-            struct Resources<'g> {
+        indoc::indoc! {"
+            #[allow(non_upper_case_globals)]
+            pub const A_CONSTANT: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(2i32);
+            pub struct Resources<'g> {
                 #[doc = \"group(0) binding(0)\"]
                 pub foo: ::naga_rust_rt::Scalar<i32>,
                 #[doc = \"group(0) binding(1)\"]
                 pub texture: ::naga_rust_rt::texture::Texture2d<&'g dyn ::naga_rust_rt::texture::Read<Coordinates = ::naga_rust_rt::Vec2<i32>, Component = f32>>,
             }
-            struct Globals<'g> {
+            pub struct Globals<'g> {
                 pub resources: &'g Resources<'g>,
                 pub bar: ::naga_rust_rt::Scalar<i32>,
             }
@@ -305,8 +307,7 @@ fn globals_and_resources_enabled_and_visibility() {
                     return (((_e3 + _e5) + baz) + qux);
                 }
             }
-            "
-        }
+        "}
     );
 }
 
