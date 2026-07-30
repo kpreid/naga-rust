@@ -94,7 +94,11 @@ impl Config {
 
     /// Sets whether generated items have `pub` visibility instead of private.
     ///
-    /// This option applies to all functions or methods, and all fields of generated structs.
+    /// This option applies to all functions, methods, constants, and structs, and
+    /// all fields of generated structs.
+    /// It affects both structs translated from the shader code, and the
+    /// [`global_struct`][Self::global_struct] and [`resource_struct`][Self::resource_struct]
+    /// if present.
     ///
     /// The default is `false`.
     #[must_use]
