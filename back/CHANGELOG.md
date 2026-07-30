@@ -1,5 +1,11 @@
 # Changelog for `naga-rust-back`
 
+## Unreleased
+
+## Fixed
+
+* The visibility of the `global_struct` and `resource_struct` is now controlled by `Config::public_items()` instead of always being private.
+
 ## 0.3.0 (2026-07-27)
 
 This release focuses on expanding to a new use case: sharing declarations between Rust and shaders, without actually executing shader functions as Rust.

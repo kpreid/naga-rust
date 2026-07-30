@@ -20,9 +20,12 @@ The available configuration options are:
 
 * `public_items = true | false` (default: `false`):
 
-  Whether translated items have `pub` visibility instead of private.
+  Whether generated items have `pub` visibility instead of private.
   
-  This option applies to all functions or methods, and all fields of translated structs.
+  This option applies to all functions, methods, constants, and structs, and
+  all fields of generated structs.
+  It affects both structs translated from the shader code, and the
+  `global_struct` and `resource_struct` if present.
 
 * `global_struct = StructNameHere`:
 
