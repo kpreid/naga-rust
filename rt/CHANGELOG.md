@@ -1,5 +1,11 @@
 # Changelog for `naga-rust-rt`
 
+## Unreleased
+
+### Changed
+
+* `Vec*::mix()` has been replaced by two methods, `mix_vector()` and `mix_scalar()`.
+
 ## 0.3.0 (2026-07-27)
 
 ### Added

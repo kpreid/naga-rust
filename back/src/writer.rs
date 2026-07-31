@@ -4,8 +4,9 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use arrayvec::ArrayVec;
 use core::fmt::Write;
+
+use arrayvec::ArrayVec;
 
 use naga::{
     Expression, Handle, Module, ShaderStage, TypeInner, back,
@@ -1497,14 +1498,25 @@ impl Writer {
                 arg1,
                 arg2,
                 arg3,
-            } => ra::Expr::Method(
-                Box::new(self.translate_expr(first_arg, expr_ctx)?),
-                Cow::Borrowed(conv::math_function_to_method(fun)),
-                self.translate_exprs(
-                    expr_ctx,
-                    [arg1, arg2, arg3].into_iter().flatten(), // flatten options into nonexistence
-                )?,
-            ),
+            } => {
+                // Collect the types of the arguments, so that we can resolve overloads that can’t
+                // be resolved just by the first argument being used as a method receiver.
+                let types: ArrayVec<&TypeInner, 4> = ArrayVec::from_iter(
+                    [Some(first_arg), arg1, arg2, arg3]
+                        .into_iter()
+                        .flatten()
+                        .map(|arg| expr_ctx.resolve_type(arg)),
+                );
+
+                ra::Expr::Method(
+                    Box::new(self.translate_expr(first_arg, expr_ctx)?),
+                    Cow::Borrowed(conv::math_function_to_method(fun, &types)),
+                    self.translate_exprs(
+                        expr_ctx,
+                        [arg1, arg2, arg3].into_iter().flatten(), // flatten options into nonexistence
+                    )?,
+                )
+            }
 
             Expression::Swizzle {
                 size,

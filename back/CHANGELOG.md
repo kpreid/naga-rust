@@ -2,10 +2,9 @@
 
 ## Unreleased
 
-## Added
-
 ## Fixed
 
+* `mix()` with 3 vector arguments no longer fails to compile.
 * `textureLoad()` with `u32` coordinates now succeeds instead of generating a type error.
 * The visibility of the `global_struct` and `resource_struct` is now controlled by `Config::public_items()` instead of always being private.
 
