@@ -1,6 +1,4 @@
-/*!
-Conversion of Naga/shader vocabulary to Rust.
-*/
+//! Conversion of Naga/shader vocabulary to Rust.
 
 use alloc::boxed::Box;
 
@@ -77,9 +75,11 @@ pub(crate) fn keywords_2024() -> &'static KeywordSet {
 
 /// Converts a [`MathFunction`] to a Rust method name.
 ///
-/// These methods are implemented on `naga_rust_rt` vector types, and also overlap
-/// with Rust `std` functions on scalars.
-pub(crate) fn math_function_to_method(f: naga::MathFunction) -> &'static str {
+/// These methods are implemented on `naga_rust_rt` `Vec*` and `Scalar` types.
+pub(crate) fn math_function_to_method(
+    f: naga::MathFunction,
+    arg_types: &[&naga::TypeInner],
+) -> &'static str {
     use naga::MathFunction as Mf;
     match f {
         Mf::Abs => "abs",
@@ -127,7 +127,13 @@ pub(crate) fn math_function_to_method(f: naga::MathFunction) -> &'static str {
         Mf::Refract => "refract",
         Mf::Sign => "sign",
         Mf::Fma => "mul_add",
-        Mf::Mix => "mix",
+        Mf::Mix => match arg_types[2].components() {
+            None => "mix_scalar",
+            Some(2..) => "mix_vector",
+            Some(0 | 1) => unreachable!(
+                "third argument to mix() must be scalar or vector, but got {arg_types:?}"
+            ),
+        },
         Mf::Step => "step",
         Mf::SmoothStep => "smoothstep",
         Mf::Sqrt => "sqrt",

@@ -146,7 +146,60 @@ math_function_test!(
     [((1, 2), 1), ((2, 1), 1), ((1, 1), 1)]
 );
 
-// TODO: mix
+math_function_test!(
+    mix_scalar_scalar,
+    "fn shim(x: f32, y: f32, a: f32) -> f32 { return mix(x, y, a); }",
+    [
+        ((10.0, 20.0, 0.0), 10.0),
+        ((10.0, 20.0, 0.5), 15.0),
+        ((10.0, 20.0, 1.0), 20.0),
+    ]
+);
+
+math_function_test!(
+    mix_vector_scalar,
+    "fn shim(x: vec3f, y: vec3f, a: f32) -> vec3f { return mix(x, y, a); }",
+    [
+        (
+            (
+                Vec3::new(10.0, 10.0, 10.0),
+                Vec3::new(20.0, 30.0, 40.0),
+                0.0
+            ),
+            Vec3::new(10.0, 10.0, 10.0)
+        ),
+        (
+            (
+                Vec3::new(10.0, 10.0, 10.0),
+                Vec3::new(20.0, 30.0, 40.0),
+                0.5
+            ),
+            Vec3::new(15.0, 20.0, 25.0)
+        ),
+        (
+            (
+                Vec3::new(10.0, 10.0, 10.0),
+                Vec3::new(20.0, 30.0, 40.0),
+                1.0
+            ),
+            Vec3::new(20.0, 30.0, 40.0)
+        ),
+    ]
+);
+
+math_function_test!(
+    mix_vector_vector,
+    "fn shim(x: vec3f, y: vec3f, a: vec3f) -> vec3f { return mix(x, y, a); }",
+    [(
+        (
+            Vec3::new(10.0, 10.0, 10.0),
+            Vec3::new(20.0, 30.0, 40.0),
+            Vec3::new(0.0, 0.5, 1.0)
+        ),
+        Vec3::new(10.0, 20.0, 40.0)
+    ),]
+);
+
 // TODO: modf
 // TODO: normalize
 // TODO: MathFunction::Outer (not documented, not WGSL)

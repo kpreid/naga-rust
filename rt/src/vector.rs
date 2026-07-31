@@ -324,10 +324,22 @@ macro_rules! impl_vector_float_arithmetic {
             pub fn length(self) -> Scalar<$float> {
                 Scalar(self.dot(self).0.sqrt())
             }
-            /// As per WGSL [`mix()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#mix-builtin).
+            /// As per WGSL [`mix()`](https://www.w3.org/TR/2026/CRD-WGSL-20260716/#mix-builtin),
+            /// when the third argument is a scalar.
             #[inline]
-            pub const fn mix(self, rhs: Self, blend: Scalar<$float>) -> Self {
+            pub const fn mix_scalar(self, rhs: Self, blend: Scalar<$float>) -> Self {
                 $vec { $( $component: self.$component * (1.0 - blend.0) + rhs.$component * blend.0 ),*  }
+            }
+            /// As per WGSL [`mix()`](https://www.w3.org/TR/2026/CRD-WGSL-20260716/#mix-builtin),
+            /// when the third argument is a vector of the same number of components.
+            #[inline]
+            pub const fn mix_vector(self, rhs: Self, blend: Self) -> Self {
+                $vec {
+                    $(
+                        $component: self.$component * (1.0 - blend.$component)
+                            + rhs.$component * blend.$component
+                    ),*
+                }
             }
             /// As per WGSL [`fma()`](https://www.w3.org/TR/2025/CRD-WGSL-20250322/#fma-builtin).
             #[inline]

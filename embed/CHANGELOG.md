@@ -1,5 +1,13 @@
 # Changelog for `naga-rust-embed`
 
+## Unreleased
+
+## Fixed
+
+* `mix()` with 3 vector arguments no longer fails to compile.
+* `textureLoad()` with `u32` coordinates now succeeds instead of generating a type error.
+* The visibility of the `global_struct` and `resource_struct` is now controlled by the `public_items` configuration instead of always being private.
+
 ## 0.3.0 (2026-07-27)
 
 This release focuses on expanding to a new use case: sharing declarations between Rust and shaders, without actually executing shader functions as Rust.
