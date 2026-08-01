@@ -1,6 +1,6 @@
 # Changelog for `naga-rust-back`
 
-## 0.4.0 (Unreleased)
+## 0.4.0 (2026-07-31)
 
 ## Fixed
 

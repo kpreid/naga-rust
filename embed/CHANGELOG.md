@@ -1,6 +1,6 @@
 # Changelog for `naga-rust-embed`
 
-## 0.3.1 (Unreleased)
+## 0.3.1 (2026-07-31)
 
 ## Fixed
 
