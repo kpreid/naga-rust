@@ -73,7 +73,7 @@ jobs:
 
     - run: rustup toolchain install nightly --component miri
 
-    - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2.85.0
+    - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
       with:
         tool: nextest@0.9
 
