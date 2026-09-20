@@ -1,8 +1,19 @@
 # Changelog for `naga-rust-embed`
 
+## 0.3.2 (Unreleased)
+
+### Added
+
+* Doc comments (as recognized by Naga frontends) may now be translated to Rust by setting the `include_documentation` option.
+  For compatibility, to avoid generating broken doc-tests, this option defaults to `false`.
+
+### Removed
+
+* Entry point functions no longer receive automatically generated documentation stating that they are entry point.
+
 ## 0.3.1 (2026-07-31)
 
-## Fixed
+### Fixed
 
 * `mix()` with 3 vector arguments no longer fails to compile.
 * `textureLoad()` with `u32` coordinates now succeeds instead of generating a type error.

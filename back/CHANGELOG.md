@@ -1,8 +1,19 @@
 # Changelog for `naga-rust-back`
 
+## 0.4.1 (Unreleased)
+
+### Added
+
+* Doc comments (as recognized by Naga frontends) may now be translated to Rust by setting the `include_documentation` option.
+  For compatibility, to avoid generating broken doc-tests, this option defaults to `false`.
+
+### Removed
+
+* Entry point functions no longer receive automatically generated documentation stating that they are entry point.
+
 ## 0.4.0 (2026-07-31)
 
-## Fixed
+### Fixed
 
 * `mix()` with 3 vector arguments no longer fails to compile.
 * `textureLoad()` with `u32` coordinates now succeeds instead of generating a type error.
@@ -15,8 +26,7 @@ You can now ask for structs and constants, but not functions, to be translated, 
 
 **Caveat:** We do not yet ensure that the layout of structs containing `vec3`s is correct.
 
-
-## Added
+### Added
 
 * `Config::include_functions()`, if disabled, allows translating only `struct`s and `const`s.
 * `Config::rule()` allows customizing the translation of specific parts of the shader code.
@@ -24,7 +34,7 @@ You can now ask for structs and constants, but not functions, to be translated, 
   * Adding `#[derive]` to selected structs.
   * Adding `#[inline]` to selected functions.
 
-## Changed
+### Changed
 
 * The `naga` version is now 30.
 

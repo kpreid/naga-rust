@@ -154,12 +154,19 @@ fn parse_and_translate(
     wgsl_source_span: Span,
     wgsl_source_text: &str,
 ) -> Result<TokenStream, MacroError> {
-    let module: naga::Module = naga::front::wgsl::parse_str(wgsl_source_text).map_err(|error| {
-        MacroError::new(
-            wgsl_source_span,
-            format!("failed to parse WGSL text: {}", ErrorChain(&error)),
-        )
-    })?;
+    let options = naga::front::wgsl::Options {
+        parse_doc_comments: config.get_include_documentation(),
+        capabilities: naga_rust_back::CAPABILITIES,
+    };
+
+    let module: naga::Module = naga::front::wgsl::Frontend::new_with_options(options)
+        .parse(wgsl_source_text)
+        .map_err(|error| {
+            MacroError::new(
+                wgsl_source_span,
+                format!("failed to parse WGSL text: {}", ErrorChain(&error)),
+            )
+        })?;
 
     // TODO: allow the user of the macro to configure which validation is done.
     let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(

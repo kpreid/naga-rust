@@ -1,7 +1,7 @@
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::format;
-use alloc::string::{String, ToString};
+use alloc::string::{String, ToString as _};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Write;
@@ -9,7 +9,7 @@ use core::fmt::Write;
 use arrayvec::ArrayVec;
 
 use naga::{
-    Expression, Handle, Module, ShaderStage, TypeInner, back,
+    Expression, Handle, Module, TypeInner, back,
     proc::{self, NameKey},
     valid::ModuleInfo,
 };
@@ -328,27 +328,15 @@ impl Writer {
                     module,
                     function,
                     &func_ctx,
+                    |dc| dc.functions.get(&handle),
                     vec![],
                 )?);
             }
 
             // Translate all entry points
             for (index, ep) in module.entry_points.iter().enumerate() {
-                let entry_point_attributes = vec![ra::Attribute::Doc(format!(
-                    "Entry point for stage `{}`.",
-                    match ep.stage {
-                        ShaderStage::Vertex => "vertex",
-                        ShaderStage::Fragment => "fragment",
-                        ShaderStage::Compute => "compute",
-                        ShaderStage::Task => "task",
-                        ShaderStage::Mesh => "mesh",
-                        ShaderStage::RayGeneration => "ray_generation",
-                        ShaderStage::Miss => "miss",
-                        ShaderStage::AnyHit => "any_hit",
-                        ShaderStage::ClosestHit => "closest_hit",
-                    },
-                ))];
-
+                // Note: We are not remembering that this is an entry point.
+                // We might eventually want to carry over the workgroup_size in some form.
                 let func_ctx = back::FunctionCtx {
                     ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
                     info: info.get_entry_point(index),
@@ -359,7 +347,8 @@ impl Writer {
                     module,
                     &ep.function,
                     &func_ctx,
-                    entry_point_attributes,
+                    |dc| dc.entry_points.get(&index),
+                    vec![],
                 )?);
             }
 
@@ -387,11 +376,26 @@ impl Writer {
         module: &Module,
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
+        doc_comment_getter: impl Fn(&naga::DocComments) -> Option<&Vec<String>> + Copy,
         extra_attributes: Vec<ra::Attribute>,
     ) -> Result<[ra::Item; 2], Error> {
         Ok([
-            self.translate_function_inner(module, func, func_ctx, true, extra_attributes)?,
-            self.translate_function_inner(module, func, func_ctx, false, vec![])?,
+            self.translate_function_inner(
+                module,
+                func,
+                func_ctx,
+                true,
+                doc_comment_getter,
+                extra_attributes,
+            )?,
+            self.translate_function_inner(
+                module,
+                func,
+                func_ctx,
+                false,
+                doc_comment_getter,
+                vec![],
+            )?,
         ])
     }
 
@@ -401,6 +405,7 @@ impl Writer {
         func: &naga::Function,
         func_ctx: &back::FunctionCtx<'_>,
         is_public_shim: bool,
+        doc_comment_getter: impl Fn(&naga::DocComments) -> Option<&Vec<String>> + Copy,
         mut attributes: Vec<ra::Attribute>,
     ) -> Result<ra::Item, Error> {
         let signature_type_translation = if is_public_shim {
@@ -408,6 +413,8 @@ impl Writer {
         } else {
             TypeTranslation::Simd
         };
+
+        attributes.extend(self.translate_documentation(module, doc_comment_getter));
 
         let mut inlining = None;
         for effect in self.config.apply_rules(&RuleInput {
@@ -601,18 +608,21 @@ impl Writer {
                 derives.to_mut().push(ra::Trait::User(name.clone()));
             }
         }
-        let struct_attributes = vec![ra::Attribute::Derive(derives), ra::Attribute::ReprC];
+
+        let struct_attributes = Vec::from_iter(
+            self.translate_documentation(module, |dc| dc.types.get(&struct_handle))
+                .chain([ra::Attribute::Derive(derives), ra::Attribute::ReprC]),
+        );
 
         let mut fields: Vec<ra::Field> = Vec::with_capacity(members.len());
         let mut dyn_sized = false;
-        for (member_name, member) in self.iter_struct_members(struct_handle, members) {
-            // TODO: add bindings as doc-comments ?
-            // if let Some(ref binding) = member.binding {
-            //     map_binding_to_attribute(binding);
-            // }
-
+        for (field_index, (member_name, member)) in
+            self.iter_struct_members(struct_handle, members).enumerate()
+        {
             fields.push(ra::Field {
-                attributes: vec![],
+                attributes: Vec::from_iter(self.translate_documentation(module, |dc| {
+                    dc.struct_members.get(&(struct_handle, field_index))
+                })),
                 visibility,
                 name: member_name.to_string(),
                 ty: self.type_ast(module, member.ty, TypeTranslation::RustScalar)?,
@@ -1831,14 +1841,21 @@ impl Writer {
             ty = ra::Type::Ptr(indirection, Box::new(ty));
         }
 
+        let mut attributes = Vec::from_iter(
+            self.translate_documentation(module, |dc| dc.global_variables.get(&handle)),
+        );
+
+        if let Some(naga::ResourceBinding { group, binding }) = global.binding {
+            if !attributes.is_empty() {
+                attributes.push(ra::Attribute::Doc(String::new()));
+            }
+            attributes.push(ra::Attribute::Doc(format!(
+                "group({group}) binding({binding})"
+            )));
+        }
+
         Ok(ra::Field {
-            attributes: if let Some(naga::ResourceBinding { group, binding }) = global.binding {
-                vec![ra::Attribute::Doc(format!(
-                    "group({group}) binding({binding})"
-                ))]
-            } else {
-                vec![]
-            },
+            attributes,
             visibility: self.visibility(),
             name: self.names[&NameKey::GlobalVariable(handle)].clone(),
             ty,
@@ -1881,7 +1898,10 @@ impl Writer {
         let init = module.constants[handle].init;
 
         Ok(ra::ConstItem {
-            attributes: vec![ra::Attribute::AllowNonUpperCaseGlobals],
+            attributes: Vec::from_iter(
+                self.translate_documentation(module, |dc| dc.constants.get(&handle))
+                    .chain([ra::Attribute::AllowNonUpperCaseGlobals]),
+            ),
             visibility,
             name,
             ty,
@@ -1933,6 +1953,43 @@ impl Writer {
         } else {
             ra::Visibility::Private
         }
+    }
+
+    /// Extract the doc comments for a module element, with leading "/// " stripped because Naga doesn’t,
+    /// and convert to Rust doc attributes.
+    ///
+    /// Returns nothing if the configuration is set to disable doc comments.
+    fn translate_documentation(
+        &self,
+        module: &Module,
+        getter: impl FnOnce(&naga::DocComments) -> Option<&Vec<String>>,
+    ) -> impl Iterator<Item = ra::Attribute> {
+        let doc_comments: Option<&naga::DocComments> = if self
+            .config
+            .flags
+            .contains(WriterFlags::INCLUDE_DOCUMENTATION)
+        {
+            module.doc_comments.as_deref()
+        } else {
+            None
+        };
+        doc_comments
+            .and_then(getter)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .map(|original_string| {
+                /// Priority ordered list of prefixes to try removing.
+                /// No more than one prefix is removed.
+                const PREFIXES_TO_STRIP: &[&str] = &["/// ", "//! ", "///", "//!"];
+
+                let trimmed_string = PREFIXES_TO_STRIP
+                    .iter()
+                    .find_map(|prefix| original_string.strip_prefix(prefix))
+                    .unwrap_or(original_string);
+
+                ra::Attribute::Doc(trimmed_string.to_string())
+            })
     }
 }
 
