@@ -61,6 +61,18 @@ impl Config {
         self
     }
 
+    /// Sets whether to include documentation comments from the shader as Rust documentation.
+    ///
+    /// If the shader documentation has code blocks or indented text, this may result in
+    /// creating spurious failing Rust doc-tests; therefore, it is optional.
+    ///
+    /// The default is `false`.
+    #[must_use]
+    pub fn include_documentation(mut self, value: bool) -> Self {
+        self.flags.set(WriterFlags::INCLUDE_DOCUMENTATION, value);
+        self
+    }
+
     /// Sets whether the generated code contains explicit types when they could be omitted.
     ///
     /// The default is `false`.
@@ -233,6 +245,16 @@ impl Config {
             },
         )
     }
+
+    /// Read the [`Self::include_documentation()`] option.
+    ///
+    /// This method is public so that `naga-rust-macros` can use it.
+    /// It is not intended for general use.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn get_include_documentation(&self) -> bool {
+        self.flags.contains(WriterFlags::INCLUDE_DOCUMENTATION)
+    }
 }
 
 bitflags::bitflags! {
@@ -243,6 +265,12 @@ bitflags::bitflags! {
         ///
         /// If this is not set, only `struct` and `const` items are produced.
         const INCLUDE_FUNCTIONS = 1 << 0;
+
+        /// Include doc comments from the shader as Rust documentation.
+        ///
+        /// If the shader documentation has code blocks or indented text, this may result in
+        /// creating spurious failing Rust doc-tests.
+        const INCLUDE_DOCUMENTATION = 1 << 5;
 
         /// Always annotate the type information instead of inferring.
         const EXPLICIT_TYPES = 1 << 1;

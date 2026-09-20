@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "naga-rust-back"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.1",
@@ -858,7 +858,7 @@ dependencies = [
 
 [[package]]
 name = "naga-rust-embed"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "exhaust",
  "indoc",
@@ -870,7 +870,7 @@ dependencies = [
 
 [[package]]
 name = "naga-rust-macros"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "litrs",
  "naga",

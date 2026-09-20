@@ -84,6 +84,9 @@ impl ConfigAndStr {
                             config.explicit_types(input.expect_eq()?.expect_bool()?)
                         }
                         "global_struct" => config.global_struct(input.expect_eq()?.expect_ident()?),
+                        "include_documentation" => {
+                            config.include_documentation(input.expect_eq()?.expect_bool()?)
+                        }
                         "include_functions" => {
                             config.include_functions(input.expect_eq()?.expect_bool()?)
                         }

@@ -11,6 +11,13 @@ The available configuration options are:
 
   Whether the translated code contains explicit types when they could be omitted.
 
+* `include_documentation = true | false` (default: `false`):
+
+  Whether the translated code includes documentation.
+
+  If the shader documentation has code blocks or indented text, translating documentation
+  may result in creating spurious failing Rust doc-tests; therefore, it is optional.
+
 * `include_functions = true | false` (default: `true`):
 
   Whether the translated code includes functions.
