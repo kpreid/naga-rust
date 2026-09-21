@@ -73,9 +73,7 @@ jobs:
 
     - run: rustup toolchain install nightly --component miri
 
-    - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2.85.0
-      with:
-        tool: nextest@0.9
+    - run: cargo install --locked cargo-nextest@0.9.145
 
     # Using Nextest gets us faster overall execution...
     - run: cargo +nightly miri nextest run --package=naga-rust-embed --package=naga-rust-rt --features=std
