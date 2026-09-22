@@ -24,11 +24,8 @@ default = []
 bytemuck = ["naga-rust-rt/bytemuck"]
 
 [dependencies]
-naga-rust-macros.workspace = true
-naga-rust-rt.workspace = true
-
-[dev-dependencies]
-naga-rust-back = { workspace = true }
+naga-rust-macros = { version = "0.4.1", path = "../macros" }
+naga-rust-rt = { version = "0.4.0", path = "../rt" }
 
 exhaust.workspace = true
 indoc.workspace = true

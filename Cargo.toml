@@ -21,11 +21,11 @@ repository = "https://github.com/kpreid/naga-rust/"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-naga-rust-back = { version = "0.4.1", path = "back" }
-naga-rust-embed = { version = "0.3.2", path = "embed" }
-naga-rust-macros = { version = "0.4.1", path = "macros" }
-naga-rust-rt = { version = "0.4.0", path = "rt" }
-
+# Note: We *do not* use workspace dependencies for the workspace’s own packages.
+# This is because we have “backwards dependencies” in that naga-rust-back must generate code
+# compatible with naga-rust-rt, so we need to think carefully about the implications of our
+# dependency requirements and our incompatible changes, and using workspace dependencies makes it
+# easier to neglect thinking about those implications.
 arrayvec = { version = "0.7.6", default-features = false }
 bitflags = "2.9"
 bytemuck = { version = "1.25.0", default-features = false }
