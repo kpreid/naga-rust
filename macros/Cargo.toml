@@ -22,7 +22,7 @@ doctest = false
 # <https://github.com/rust-lang/rust/issues/136652>
 litrs = { version = "1.0.0", features = ["proc-macro2"] }
 naga = { workspace = true, features = ["wgsl-in"] }
-naga-rust-back.workspace = true
+naga-rust-back = { version = "0.4.1", path = "../back" }
 proc-macro2.workspace = true
 
 [dev-dependencies]

@@ -872,7 +872,6 @@ version = "0.3.2"
 dependencies = [
  "exhaust",
  "indoc",
- "naga-rust-back",
  "naga-rust-macros",
  "naga-rust-rt",
  "pretty_assertions",
