@@ -639,10 +639,9 @@ macro_rules! impl_vector_regular_fns {
             #[inline]
             pub fn dot(self, rhs: Self) -> Scalar<T>
             where
-                // TODO: the ConstZero is purely an artifact of the macro repetition
-                Scalar<T>: ops::Mul<Output = Scalar<T>> + num_traits::ConstZero,
+                Scalar<T>: ops::Add<Output = Scalar<T>> + ops::Mul<Output = Scalar<T>>,
             {
-                $( Scalar(self.$component) * Scalar(rhs.$component) + )* Scalar::<T>::ZERO
+                DummyZero $( + Scalar(self.$component) * Scalar(rhs.$component) )*
             }
 
         }
@@ -1063,4 +1062,17 @@ mod impl_bytemuck {
     unsafe impl<T: bytemuck::Zeroable> bytemuck::Zeroable for Vec2<T> {}
     unsafe impl<T: bytemuck::Zeroable> bytemuck::Zeroable for Vec3<T> {}
     unsafe impl<T: bytemuck::Zeroable> bytemuck::Zeroable for Vec4<T> {}
+}
+
+// -------------------------------------------------------------------------------------------------
+
+/// `DummyZero + T == T`. A helper for macro-generated code.
+struct DummyZero;
+
+impl<T> ops::Add<T> for DummyZero {
+    type Output = T;
+
+    fn add(self, rhs: T) -> Self::Output {
+        rhs
+    }
 }
