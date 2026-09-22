@@ -10,7 +10,7 @@ autobins = false
 name = "render"
 path = "src/main.rs"
 
-[dependencies]
+[dev-dependencies]
 naga-rust-embed = { path = "../../embed" }
 pollster.workspace = true
 rayon = "1.10.0"
