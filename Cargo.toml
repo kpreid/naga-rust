@@ -26,15 +26,18 @@ license = "MIT OR Apache-2.0"
 # compatible with naga-rust-rt, so we need to think carefully about the implications of our
 # dependency requirements and our incompatible changes, and using workspace dependencies makes it
 # easier to neglect thinking about those implications.
-arrayvec = { version = "0.7.6", default-features = false }
-bitflags = "2.9"
+#
+# Dependencies marked as “also used by naga” should be kept in sync to keep the build free of
+# unnecessary dependencies by reusing the same packages naga does.
+arrayvec = { version = "0.7.6", default-features = false } # also used by naga
+bitflags = "2.9" # also used by naga
 bytemuck = { version = "1.25.0", default-features = false }
 exhaust = { version = "0.2.0", default-features = false }
-half = { version = "2.5" } # must agree with version used by naga version
+half = { version = "2.5" } # also used publicly by naga, and *must* agree
 indoc = { version = "2.0.1", default-features = false }
 mutants = { version = ">=0.0.1, <0.0.5" }
 naga = { version = "30.0.0", default-features = false }
-num-traits = { version = "0.2.19", default-features = false }
+num-traits = { version = "0.2.19", default-features = false } # also used by naga
 once_cell = { version = "1.21.3", default-features = false }
 paste = {version = "1.0.15", default-features = false }
 pollster = { version = "1.0.0", default-features = false }
