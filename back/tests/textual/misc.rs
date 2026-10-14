@@ -164,6 +164,48 @@ fn documentation_disabled() {
     );
 }
 
+/// Type aliases are substituted by Naga, so we don’t need to substitute them ourselves.
+/// (They do get preserved somewhat in the name map, but not reliably enough to be a well-behaved
+/// feature of naga-rust.)
+/// But, while we do not ever generate Rust type aliases, it’s worth checking that aliases in the
+/// WGSL input still result in valid output.
+#[test]
+fn type_alias() {
+    assert_eq!(
+        translate(
+            Config::new(),
+            r"
+            struct Foo { x: Bar }
+            alias Bar = Baz;
+            struct Baz { y: Data }
+            alias Data = array<i32, 10>;
+            "
+        ),
+        indoc::indoc! {"
+            #[::naga_rust_rt::derive(::naga_rust_rt::Clone, ::naga_rust_rt::Copy, ::naga_rust_rt::Debug, ::naga_rust_rt::PartialEq)]
+            #[repr(C)]
+            struct Baz {
+                y: [i32; 10],
+            }
+            impl Baz {
+                fn new(y: impl ::naga_rust_rt::Into<[i32; 10]>) -> Self {
+                    Self { y: ::naga_rust_rt::into(y) }
+                }
+            }
+            #[::naga_rust_rt::derive(::naga_rust_rt::Clone, ::naga_rust_rt::Copy, ::naga_rust_rt::Debug, ::naga_rust_rt::PartialEq)]
+            #[repr(C)]
+            struct Foo {
+                x: Baz,
+            }
+            impl Foo {
+                fn new(x: impl ::naga_rust_rt::Into<Baz>) -> Self {
+                    Self { x: ::naga_rust_rt::into(x) }
+                }
+            }
+        "}
+    );
+}
+
 #[test]
 fn array_type_sizes() {
     assert_eq!(
