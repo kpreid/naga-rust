@@ -944,6 +944,11 @@ impl Writer {
             Statement::CooperativeStore { .. } => {
                 vec![self.unimplemented_stmt("cooperative store")?]
             }
+            Statement::DebugPrintf { .. } => {
+                // TODO: We can implement this, but we need to translate printf format strings
+                // to Rust format strings, carefully.
+                vec![self.unimplemented_stmt("debug printf")?]
+            }
         })
     }
 
