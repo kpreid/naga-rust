@@ -247,7 +247,12 @@ pub(crate) enum Expr {
     Struct(Type, Vec<(String, Expr)>),
 
     /// A macro call like `format!` or `panic!`: `a!("b")`
-    FormatLikeMacro(&'static str, String),
+    FormatLikeMacro {
+        macro_path: &'static str,
+        format_string: String,
+        /// Named arguments are not supported.
+        arguments: Vec<Expr>,
+    },
 }
 
 impl Expr {
@@ -756,12 +761,21 @@ impl PrintAst for Expr {
                 write!(out, " }}")
             }
 
-            Expr::FormatLikeMacro(macro_name, format_string) => {
+            Expr::FormatLikeMacro {
+                macro_path,
+                format_string,
+                arguments,
+            } => {
                 write!(
                     out,
-                    "{macro_name}!({escaped_string})",
+                    "{macro_path}!({escaped_string}",
                     escaped_string = proc_macro2::Literal::string(format_string)
-                )
+                )?;
+                for argument in arguments {
+                    out.write_str(", ")?;
+                    argument.write(out, ctx)?;
+                }
+                out.write_str(")")
             }
         }
     }
