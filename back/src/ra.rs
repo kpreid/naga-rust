@@ -313,6 +313,7 @@ pub(crate) enum RtItem {
 
 /// An item in the macro namespace (macro or non-macro attribute) from the runtime crate.
 pub(crate) enum RtMacro {
+    Eprintln,
     Unimplemented,
 }
 
@@ -832,6 +833,7 @@ impl fmt::Display for RtMacro {
     /// Formats as a path relative to the runtime crate root.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match *self {
+            RtMacro::Eprintln => "eprintln",
             RtMacro::Unimplemented => "unimplemented",
         })
     }

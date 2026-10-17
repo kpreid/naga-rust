@@ -308,6 +308,28 @@ fn precedence_of_prefix_and_postfix() {
 }
 
 #[test]
+fn debug_printf() {
+    // TODO: The extra backslashes are *probably* Naga’s fault; or at least, we can’t confidently
+    // do better until <https://github.com/gfx-rs/wgpu/issues/10659> is fixed.
+    // When it is, update this test to suit.
+    assert_eq!(
+        translate_body(
+            Config::new(),
+            r#"
+            enable wgpu_debug_printf;
+            fn f(value: u32) {
+                debugPrintf("%% \\ / {Hello}, %u! \\ / %%", value);
+            }
+            "#,
+        ),
+        indoc::indoc! {r#"{
+            ::naga_rust_rt::eprintln!("% \\\\ / {{Hello}}, {:?}! \\\\ / %", value);
+            return;
+        }"#}
+    );
+}
+
+#[test]
 fn unimplemented_feature_panic() {
     assert_eq!(
         translate_body(
