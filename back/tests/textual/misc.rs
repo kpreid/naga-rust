@@ -317,7 +317,7 @@ fn unimplemented_feature_panic() {
             }",
         ),
         indoc::indoc! {r#"{
-            unimplemented!("this shader function contains a feature which cannot yet be translated to Rust, barriers");
+            ::naga_rust_rt::unimplemented!("this shader function contains a feature which cannot yet be translated to Rust, barriers");
             return;
         }"#}
     );
