@@ -1926,8 +1926,7 @@ impl Writer {
 
         if self.config.flags.contains(WriterFlags::ALLOW_UNIMPLEMENTED) {
             Ok(ra::Expr::FormatLikeMacro {
-                // TODO: path needs to be qualified
-                macro_path: "unimplemented",
+                macro_path: ra::RtMacro::Unimplemented,
                 format_string: alloc::format!(
                     "this shader function contains a feature which \
                     cannot yet be translated to Rust, {unimplemented_feature}"

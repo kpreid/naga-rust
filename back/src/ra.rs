@@ -248,7 +248,7 @@ pub(crate) enum Expr {
 
     /// A macro call like `format!` or `panic!`: `a!("b")`
     FormatLikeMacro {
-        macro_path: &'static str,
+        macro_path: RtMacro,
         format_string: String,
         /// Named arguments are not supported.
         arguments: Vec<Expr>,
@@ -306,6 +306,11 @@ pub(crate) enum RtItem {
     DiscardFn,
     IntoFn,
     ZeroFn,
+}
+
+/// An item in the macro namespace (macro or non-macro attribute) from the runtime crate.
+pub(crate) enum RtMacro {
+    Unimplemented,
 }
 
 /// A block, `{ ... statement; ... tail_expr }`.
@@ -768,7 +773,7 @@ impl PrintAst for Expr {
             } => {
                 write!(
                     out,
-                    "{macro_path}!({escaped_string}",
+                    "{runtime_path}::{macro_path}!({escaped_string}",
                     escaped_string = proc_macro2::Literal::string(format_string)
                 )?;
                 for argument in arguments {
@@ -816,6 +821,15 @@ impl fmt::Display for RtItem {
             RtItem::DiscardFn => "discard",
             RtItem::IntoFn => "into",
             RtItem::ZeroFn => "zero",
+        })
+    }
+}
+
+impl fmt::Display for RtMacro {
+    /// Formats as a path relative to the runtime crate root.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match *self {
+            RtMacro::Unimplemented => "unimplemented",
         })
     }
 }

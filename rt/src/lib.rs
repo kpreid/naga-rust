@@ -30,8 +30,8 @@ pub use vector::*;
 
 // The generated code may use these items, so it needs to be able to name them unambiguously.
 pub use core::{
-    clone::Clone, cmp::PartialEq, convert::Into, default::Default, fmt::Debug, marker::Copy,
-    prelude::v1::derive,
+    clone::Clone, cmp::PartialEq, convert::Into, default::Default, fmt::Debug, marker::Copy, panic,
+    prelude::v1::derive, todo, unimplemented, unreachable,
 };
 
 // -------------------------------------------------------------------------------------------------
