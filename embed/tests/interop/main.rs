@@ -6,6 +6,7 @@ mod control_flow;
 mod globals_and_functions;
 mod math_functions;
 mod matrices;
+mod misc;
 mod operators;
 mod rules;
 mod storage;
