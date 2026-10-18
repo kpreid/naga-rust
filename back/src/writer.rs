@@ -944,6 +944,27 @@ impl Writer {
             Statement::CooperativeStore { .. } => {
                 vec![self.unimplemented_stmt("cooperative store")?]
             }
+            Statement::DebugPrintf {
+                ref format,
+                ref arguments,
+            } => {
+                let rust_format_string = self.translate_format_string(format)?;
+
+                // TODO: validate number of arguments, so that we can give an error in source context
+
+                vec![ra::Statement::Expr(ra::Expr::FormatLikeMacro {
+                    // Note that we use `eprintln!`, not `println!`, because, from what I can find
+                    // via wgpu’s documentation for this feature, the shader is expected *not* to
+                    // provide a newline, treating each call more like logging than writing to
+                    // stderr.
+                    //
+                    // TODO: Add configuration option to direct this to some `writeln!` or callback
+                    // instead of `eprintln!`.
+                    macro_path: ra::RtMacro::Eprintln,
+                    format_string: rust_format_string,
+                    arguments: self.translate_exprs(expr_ctx, arguments.iter().copied())?,
+                })]
+            }
         })
     }
 
@@ -1916,6 +1937,38 @@ impl Writer {
         })
     }
 
+    fn translate_format_string(
+        &self,
+        printf_format_string: &str,
+    ) -> Result<ra::FormatString, Error> {
+        // Per `wgpu` documentation, the exact format string support is backend-dependent.
+        // TODO: But we should make sure we’re not being gratuitously different.
+        let mut rust_format_string = String::with_capacity(printf_format_string.len());
+        let mut iter = printf_format_string.chars();
+
+        while let Some(c) = iter.next() {
+            match c {
+                // Parse printf-style formatting.
+                '%' => match iter
+                    .next()
+                    .ok_or_else(|| -> Error { todo!("report format string error") })?
+                {
+                    '%' => rust_format_string.push('%'),
+                    'u' | 'i' | 'f' => rust_format_string.push_str("{:?}"),
+                    fs => todo!("report unknown format specifier '{c}{fs}'"),
+                },
+
+                // Escape Rust format string characters.
+                '{' => rust_format_string.push_str("{{"),
+                '}' => rust_format_string.push_str("}}"),
+
+                _ => rust_format_string.push(c),
+            }
+        }
+
+        Ok(ra::FormatString(rust_format_string))
+    }
+
     /// For a feature that naga-rust does not support, either return an immediate conversion error, or emit
     /// an expression that panics when executed.
     fn unimplemented_expr(&self, unimplemented_feature: &'static str) -> Result<ra::Expr, Error> {
@@ -1927,10 +1980,10 @@ impl Writer {
         if self.config.flags.contains(WriterFlags::ALLOW_UNIMPLEMENTED) {
             Ok(ra::Expr::FormatLikeMacro {
                 macro_path: ra::RtMacro::Unimplemented,
-                format_string: alloc::format!(
+                format_string: ra::FormatString(alloc::format!(
                     "this shader function contains a feature which \
                     cannot yet be translated to Rust, {unimplemented_feature}"
-                ),
+                )),
                 arguments: Vec::new(),
             })
         } else {

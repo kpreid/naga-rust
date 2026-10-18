@@ -249,7 +249,7 @@ pub(crate) enum Expr {
     /// A macro call like `format!` or `panic!`: `a!("b")`
     FormatLikeMacro {
         macro_path: RtMacro,
-        format_string: String,
+        format_string: FormatString,
         /// Named arguments are not supported.
         arguments: Vec<Expr>,
     },
@@ -277,6 +277,9 @@ impl Expr {
         }
     }
 }
+
+/// A string which is a valid Rust format string.
+pub struct FormatString(pub String);
 
 /// A Rust pattern.
 pub(crate) enum Pattern {
@@ -310,6 +313,7 @@ pub(crate) enum RtItem {
 
 /// An item in the macro namespace (macro or non-macro attribute) from the runtime crate.
 pub(crate) enum RtMacro {
+    Eprintln,
     Unimplemented,
 }
 
@@ -768,7 +772,7 @@ impl PrintAst for Expr {
 
             Expr::FormatLikeMacro {
                 macro_path,
-                format_string,
+                format_string: FormatString(format_string),
                 arguments,
             } => {
                 write!(
@@ -829,6 +833,7 @@ impl fmt::Display for RtMacro {
     /// Formats as a path relative to the runtime crate root.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match *self {
+            RtMacro::Eprintln => "eprintln",
             RtMacro::Unimplemented => "unimplemented",
         })
     }

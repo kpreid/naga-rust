@@ -31,8 +31,11 @@ pub use vector::*;
 // The generated code may use these items, so it needs to be able to name them unambiguously.
 pub use core::{
     clone::Clone, cmp::PartialEq, convert::Into, default::Default, fmt::Debug, marker::Copy, panic,
-    prelude::v1::derive, todo, unimplemented, unreachable,
+    prelude::v1::derive, todo, unimplemented, unreachable, write, writeln,
 };
+
+#[cfg(feature = "std")]
+pub use std::{eprint, eprintln, print, println};
 
 // -------------------------------------------------------------------------------------------------
 
