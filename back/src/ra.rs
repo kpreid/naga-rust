@@ -249,7 +249,7 @@ pub(crate) enum Expr {
     /// A macro call like `format!` or `panic!`: `a!("b")`
     FormatLikeMacro {
         macro_path: RtMacro,
-        format_string: String,
+        format_string: FormatString,
         /// Named arguments are not supported.
         arguments: Vec<Expr>,
     },
@@ -277,6 +277,9 @@ impl Expr {
         }
     }
 }
+
+/// A string which is a valid Rust format string.
+pub struct FormatString(pub String);
 
 /// A Rust pattern.
 pub(crate) enum Pattern {
@@ -768,7 +771,7 @@ impl PrintAst for Expr {
 
             Expr::FormatLikeMacro {
                 macro_path,
-                format_string,
+                format_string: FormatString(format_string),
                 arguments,
             } => {
                 write!(
