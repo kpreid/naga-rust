@@ -306,3 +306,39 @@ fn precedence_of_prefix_and_postfix() {
         }"}
     );
 }
+
+#[test]
+fn unimplemented_feature_panic() {
+    assert_eq!(
+        translate_body(
+            Config::new().allow_unimplemented(true),
+            r"fn f() {
+                storageBarrier();
+            }",
+        ),
+        indoc::indoc! {r#"{
+            unimplemented!("this shader function contains a feature which cannot yet be translated to Rust, barriers");
+            return;
+        }"#}
+    );
+}
+
+#[test]
+fn unimplemented_feature_compile_error() {
+    let (module, module_info) = crate::parse_and_validate_wgsl(
+        r"fn f() {
+            storageBarrier();
+        }",
+    )
+    .unwrap();
+    assert_eq!(
+        naga_rust_back::translate_function_body_only_for_testing(
+            &module,
+            &module_info,
+            &Config::new()
+        )
+        .unwrap_err()
+        .to_string(),
+        "not yet implemented for Rust: barriers"
+    );
+}
