@@ -25,11 +25,13 @@ name = "bytemuck"
 required-features = ["bytemuck"]
 
 [features]
-default = []
-# If enabled, implement texture access traits for `Box`, `Rc`, and `Arc`
+# `"std"` is enabled by default because disabling it may be slower.
+default = ["std"]
+# If enabled, implement texture access traits for `Box`, `Rc`, and `Arc`.
 alloc = []
-# If enabled, use `std`’s math functions instead of `libm`’s
-std = []
+# If enabled, use `std`’s math functions instead of `libm`’s (which may be faster),
+# as well as the functionality of the `"alloc"` feature.
+std = ["alloc"]
 # Implement `bytemuck` traits for our types.
 bytemuck = ["dep:bytemuck"]
 
