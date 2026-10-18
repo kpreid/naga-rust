@@ -18,14 +18,20 @@ keywords = [
 ]
 
 [features]
-default = []
+# `"std"` is enabled by default because disabling it may be slower.
+default = ["std"]
+# If enabled, implement texture access traits for `Box`, `Rc`, and `Arc`.
+alloc = ["naga-rust-rt/alloc"]
 # Implement `bytemuck` traits for `naga_rust_embed::rt` types.
 # This does not affect generated code; that must be configured separately.
 bytemuck = ["naga-rust-rt/bytemuck"]
+# If enabled, use `std`’s math functions instead of `libm`’s (which may be faster),
+# as well as the functionality of the `"alloc"` feature.
+std = ["alloc", "naga-rust-rt/std"]
 
 [dependencies]
 naga-rust-macros = { version = "0.4.1", path = "../macros" }
-naga-rust-rt = { version = "0.4.0", path = "../rt" }
+naga-rust-rt = { version = "0.4.0", path = "../rt", default-features = false }
 
 exhaust.workspace = true
 indoc.workspace = true
