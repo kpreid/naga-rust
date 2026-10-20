@@ -42,7 +42,7 @@ jobs:
           rustup override set "${{ matrix.toolchain }}"
 
     # Load cache before doing any Rust builds
-    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         # Don’t save caches specific to PR branches.
         # This greatly reduces cache usage without significantly reducing the benefits, because
@@ -67,7 +67,7 @@ jobs:
       with:
         persist-credentials: false
 
-    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         save-if: ${{ github.event_name != 'pull_request' }}
 
@@ -110,7 +110,7 @@ jobs:
           rustup toolchain install "${{ matrix.toolchain }}" --profile=minimal --component=clippy
           rustup override set "${{ matrix.toolchain }}"
 
-    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         save-if: ${{ github.event_name != 'pull_request' }}
         # Job's likely to fail and yet have useful cache material.
@@ -157,7 +157,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.event_name != 'pull_request' }}
           # Job's likely to fail and yet have useful cache material.
@@ -189,7 +189,7 @@ jobs:
       with:
         persist-credentials: false
 
-    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         save-if: ${{ github.event_name != 'pull_request' }}
 
