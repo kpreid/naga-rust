@@ -1,15 +1,41 @@
 # Changelog for `naga-rust-back`
 
-## 0.4.1 (Unreleased)
+## 0.5.0 (Unreleased)
 
 ### Added
 
 * Doc comments (as recognized by Naga frontends) may now be translated to Rust by setting the `include_documentation` option.
   For compatibility, to avoid generating broken doc-tests, this option defaults to `false`.
 
+### Changed
+
+* The API now separates translating the shader from writing the Rust program text.
+  * `Writer` has been renamed to `Translator`.
+  * `Writer::write()` is now `Translator::translate_module()`, which returns a `Rust` value
+    that can be formatted to the Rust source text that would previously be written.
+
+    For example, you can replace the v0.4 code
+
+    ```rust
+    writer.write(&mut output, module, info)?;
+    ```
+
+    with v0.5 code
+
+    ```rust
+    write!(output, "{}", translator.translate_module(module, info)?)?;
+    ```
+
+    or if a `String` is desired,
+
+    ```rust
+    let output = translator.translate_module(module, info)?.to_string();
+    ```
+
 ### Removed
 
-* Entry point functions no longer receive automatically generated documentation stating that they are entry point.
+* Entry point functions no longer receive automatically generated documentation stating that they are entry points.
+* `Error` no longer has the `FmtError` variant and cannot be converted from `core::fmt::Error`.
 
 ## 0.4.0 (2026-07-31)
 

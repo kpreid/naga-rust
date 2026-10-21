@@ -342,3 +342,22 @@ fn unimplemented_feature_compile_error() {
         "not yet implemented for Rust: barriers"
     );
 }
+
+#[test]
+fn debug_formatting_of_ast() {
+    let (module, module_info) = crate::parse_and_validate_wgsl("const X: i32 = 1;").unwrap();
+
+    let rust = naga_rust_back::Translator::new(Config::new())
+        .translate_module(&module, &module_info)
+        .unwrap();
+
+    assert_eq!(
+        format!("{rust:?}"),
+        indoc::indoc! {"\
+            Rust(
+                #[allow(non_upper_case_globals)]
+                const X: ::naga_rust_rt::Scalar<i32> = ::naga_rust_rt::Scalar(1i32);
+            )\
+        "}
+    );
+}
