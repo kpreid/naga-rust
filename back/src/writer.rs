@@ -334,12 +334,12 @@ impl Writer {
             }
 
             // Translate all entry points
-            for (index, ep) in module.entry_points.iter().enumerate() {
+            for (index, ep) in (0..=proc::EntryPointIndex::MAX).zip(module.entry_points.iter()) {
                 // Note: We are not remembering that this is an entry point.
                 // We might eventually want to carry over the workgroup_size in some form.
                 let func_ctx = back::FunctionCtx {
-                    ty: back::FunctionType::EntryPoint(index.try_into().unwrap()),
-                    info: info.get_entry_point(index),
+                    ty: back::FunctionType::EntryPoint(index),
+                    info: info.get_entry_point(usize::from(index)),
                     expressions: &ep.function.expressions,
                     named_expressions: &ep.function.named_expressions,
                 };
@@ -347,7 +347,7 @@ impl Writer {
                     module,
                     &ep.function,
                     &func_ctx,
-                    |dc| dc.entry_points.get(&index),
+                    |dc| dc.entry_points.get(&usize::from(index)),
                     vec![],
                 )?);
             }
