@@ -40,11 +40,11 @@ mod config;
 mod conv;
 mod logic;
 mod ra;
+mod translator;
 mod util;
-mod writer;
 
 pub use config::{Condition, Config, Effect, Inline, Rule};
-pub use writer::Translator;
+pub use translator::Translator;
 
 /// The version of Naga we are compatible with.
 pub use naga;
