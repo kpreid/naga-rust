@@ -24,6 +24,7 @@
 
 extern crate alloc;
 
+use alloc::borrow::Cow;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -43,10 +44,54 @@ mod util;
 mod writer;
 
 pub use config::{Condition, Config, Effect, Inline, Rule};
-pub use writer::Writer;
+pub use writer::Translator;
 
 /// The version of Naga we are compatible with.
 pub use naga;
+
+// -------------------------------------------------------------------------------------------------
+
+/// A shader program ([`naga::Module`]) translated to Rust.
+///
+/// Obtain this by calling [`Translator::translate_module()`].
+///
+/// Produces a string of Rust code when formatted with [`fmt::Display`] or [`to_string()`].
+/// The code consists solely of [items], and can be placed inside a module or block.
+///
+/// [`to_string()`]: alloc::string::ToString::to_string
+/// [items]: https://doc.rust-lang.org/reference/items.html
+pub struct Rust {
+    runtime_path: Cow<'static, str>,
+    top_level_items: Vec<ra::Item>,
+}
+
+impl fmt::Display for Rust {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let print_ctx = ra::PrintCtx {
+            runtime_path: &self.runtime_path,
+            indent: naga::back::Level(0),
+        };
+        for item in &self.top_level_items {
+            item.write(f, print_ctx)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for Rust {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Rust(")?;
+        let print_ctx = ra::PrintCtx {
+            runtime_path: &self.runtime_path,
+            indent: naga::back::Level(1),
+        };
+        for item in &self.top_level_items {
+            item.write(f, print_ctx)?;
+        }
+        // Items format with trailing newlines, so we don’t add one here.
+        write!(f, ")")
+    }
+}
 
 // -------------------------------------------------------------------------------------------------
 
@@ -58,13 +103,10 @@ pub use naga;
 // either because we can support them or they don’t affect us.
 pub const CAPABILITIES: Capabilities = Capabilities::FLOAT64;
 
-/// Errors returned by the Rust-generating backend.
+/// Errors indicating that a shader cannot be translated to Rust by [`Translator`].
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
-    /// The provided [`fmt::Write`] implementation returned an error.
-    FmtError(fmt::Error),
-
     /// The Rust backend currently does not support this particular shader functionality.
     // TODO: this should not be a thing when finished; everything should be either supported
     // or fall into a well-defined category of unsupportedness.
@@ -85,17 +127,10 @@ pub enum Error {
     },
 }
 
-impl From<fmt::Error> for Error {
-    fn from(value: fmt::Error) -> Self {
-        Self::FmtError(value)
-    }
-}
-
 impl core::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::FmtError(fmt::Error) => write!(f, "formatting cancelled"),
             Error::Unimplemented(msg) => write!(f, "not yet implemented for Rust: {msg}"),
             Error::GlobalVariablesNotEnabled { example } => write!(
                 f,
@@ -109,9 +144,11 @@ impl fmt::Display for Error {
     }
 }
 
+// -------------------------------------------------------------------------------------------------
+
 /// Converts `module` to a string of Rust code.
 ///
-/// This is a convenience wrapper around [`Writer::write()`].
+/// This is a convenience wrapper around [`Translator::translate_module()`].
 ///
 /// # Errors
 ///
@@ -121,10 +158,10 @@ pub fn write_string(
     info: &naga::valid::ModuleInfo,
     config: Config,
 ) -> Result<String, Error> {
-    let mut w = Writer::new(config);
-    let mut output = String::new();
-    w.write(&mut output, module, info)?;
-    Ok(output)
+    Ok(format!(
+        "{}",
+        Translator::new(config).translate_module(module, info)?
+    ))
 }
 
 /// Converts `module` to Rust code, then throws away everything but the body of the single function.
@@ -138,10 +175,11 @@ pub fn translate_function_body_only_for_testing(
     info: &naga::valid::ModuleInfo,
     config: &Config,
 ) -> Result<String, Error> {
-    let mut w = Writer::new(config.clone());
-    let items = w.translate_module(module, info)?;
+    let mut w = Translator::new(config.clone());
+    let program = w.translate_module(module, info)?;
 
-    let functions: Vec<ra::FunctionItem> = items
+    let functions: Vec<ra::FunctionItem> = program
+        .top_level_items
         .into_iter()
         .filter_map(|item| {
             let ra::Item::Function(fn_item) = item else {
@@ -164,12 +202,15 @@ pub fn translate_function_body_only_for_testing(
     let function = functions.into_iter().next().unwrap();
 
     let mut output = String::new();
-    function.body.write(
-        &mut output,
-        ra::PrintCtx {
-            config,
-            indent: naga::back::Level(0),
-        },
-    )?;
+    function
+        .body
+        .write(
+            &mut output,
+            ra::PrintCtx {
+                runtime_path: &config.runtime_path,
+                indent: naga::back::Level(0),
+            },
+        )
+        .unwrap();
     Ok(output)
 }

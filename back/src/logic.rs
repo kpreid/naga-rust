@@ -7,11 +7,11 @@
 use crate::ra;
 
 #[cfg(doc)]
-use crate::writer::Writer;
+use crate::writer::Translator;
 
 // -------------------------------------------------------------------------------------------------
 
-/// The Rust form that [`Writer::expr_ast_with_indirection`] should use to render a Naga
+/// The Rust form that [`Translator::expr_ast_with_indirection`] should use to render a Naga
 /// expression.
 ///
 /// Sometimes a Naga `Expression` alone doesn't provide enough information to

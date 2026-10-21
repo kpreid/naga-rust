@@ -21,8 +21,6 @@ use core::fmt;
 use naga::VectorSize;
 use naga::back::{self, INDENT};
 
-use crate::config::WriterFlags;
-
 // -------------------------------------------------------------------------------------------------
 
 /// A set of generic parameters (of the only sorts we use).
@@ -369,7 +367,10 @@ pub(crate) enum Attribute {
     Doc(String),
 
     /// `allow` attribute for ignoring lints that might occur in a generated function body.
-    AllowFunctionBody,
+    AllowFunctionBody {
+        /// Whether to include `unreachable_code`.
+        unreachable_code: bool,
+    },
 
     /// `allow(non_upper_case_globals)`
     AllowNonUpperCaseGlobals,
@@ -444,14 +445,14 @@ pub(crate) struct Field {
 /// Parameters for printing a Rust AST using [`PrintAst`].
 #[derive(Clone, Copy)]
 pub(crate) struct PrintCtx<'ctx> {
-    pub config: &'ctx crate::Config,
+    pub runtime_path: &'ctx str,
     pub indent: back::Level,
 }
 
 impl PrintCtx<'_> {
     fn next_indent(self) -> Self {
         Self {
-            config: self.config,
+            runtime_path: self.runtime_path,
             indent: self.indent.next(),
         }
     }
@@ -474,7 +475,7 @@ impl fmt::Display for Generics {
 
 impl PrintAst for Type {
     fn write(&self, out: &mut dyn fmt::Write, ctx: PrintCtx<'_>) -> fmt::Result {
-        let runtime_path = &ctx.config.runtime_path;
+        let runtime_path = &ctx.runtime_path;
         match self {
             Type::Unit => out.write_str("()"),
             Type::Self_ => out.write_str("Self"),
@@ -577,7 +578,7 @@ impl PrintAst for Trait {
                 return out.write_str(name);
             }
         };
-        let runtime_path = &ctx.config.runtime_path;
+        let runtime_path = &ctx.runtime_path;
         write!(out, "{runtime_path}::{local_name}")
     }
 }
@@ -622,7 +623,7 @@ impl PrintAst for Expr {
     /// (e.g. a dereference expression will be printed as `(*ptr)`, not `*ptr`, because
     /// `*ptr[index]` would otherwise be parsed as `*(ptr[index])` instead of `(*ptr)[index]`).
     fn write(&self, out: &mut dyn fmt::Write, ctx: PrintCtx<'_>) -> fmt::Result {
-        let runtime_path = &ctx.config.runtime_path;
+        let runtime_path = &ctx.runtime_path;
         match self {
             Expr::LitF16(value) => write!(out, "{value}f16"),
             Expr::LitF32(value) => write!(out, "{value}f32"),
@@ -960,22 +961,20 @@ impl PrintAst for Statement {
 impl PrintAst for Attribute {
     /// Writes the attribute as one line without the outer `#[]` brackets.
     fn write(&self, out: &mut dyn fmt::Write, ctx: PrintCtx<'_>) -> fmt::Result {
-        let runtime_path = &ctx.config.runtime_path;
+        let runtime_path = &ctx.runtime_path;
         match *self {
             Attribute::Doc(ref doc_string) => {
                 write!(out, "doc = {}", proc_macro2::Literal::string(doc_string))?;
             }
 
-            Attribute::AllowFunctionBody => {
+            Attribute::AllowFunctionBody { unreachable_code } => {
                 write!(
                     out,
                     // `clippy::all` refers to all *default* clippy lints, not all clippy lints.
                     // We’re allowing all clippy categories except for restriction, which we
                     // shall assume is on purpose, and cargo, which is irrelvant.
                     "allow(unused_parens, clippy::all, clippy::pedantic, clippy::nursery{})",
-                    if ctx.config.flags.contains(WriterFlags::ALLOW_UNIMPLEMENTED) {
-                        // ALLOW_UNIMPLEMENTED generates `panic!()`s which will often be
-                        // followed by code that is therefore unreachable.
+                    if unreachable_code {
                         ", unreachable_code"
                     } else {
                         ""

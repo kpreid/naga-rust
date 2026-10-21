@@ -4,7 +4,6 @@ use alloc::format;
 use alloc::string::{String, ToString as _};
 use alloc::vec;
 use alloc::vec::Vec;
-use core::fmt::Write;
 
 use arrayvec::ArrayVec;
 
@@ -18,7 +17,7 @@ use crate::Effect;
 use crate::config::{RuleInput, WriterFlags};
 use crate::conv::{self, BinOpClassified};
 use crate::logic::{GlobalLocation, GlobalTranslation, Indirection, TypeTranslation};
-use crate::ra::{self, PrintAst as _};
+use crate::ra;
 use crate::util::Gensym;
 use crate::{Config, Error};
 
@@ -33,21 +32,21 @@ const FN_INTERNAL_TYPES_PREFIX: &str = "v_";
 /// [`naga`] backend allowing you to translate shader code in any language supported by Naga
 /// to Rust code.
 ///
-/// A `Writer` stores a [`Config`] and data structures that can be reused for writing multiple
-/// modules.
+/// A `Translator` stores a [`Config`] and data structures that can be reused for translating
+/// multiple Naga modules.
 #[allow(missing_debug_implementations, reason = "TODO")]
-pub struct Writer {
+pub struct Translator {
     config: Config,
     names: naga::FastHashMap<NameKey, String>,
     namer: proc::Namer,
     named_expressions: naga::FastIndexMap<Handle<Expression>, String>,
 }
 
-impl Writer {
-    /// Creates a new [`Writer`].
+impl Translator {
+    /// Creates a new [`Translator`].
     #[must_use]
     pub fn new(config: Config) -> Self {
-        Writer {
+        Translator {
             config,
             names: naga::FastHashMap::default(),
             namer: proc::Namer::default(),
@@ -83,43 +82,18 @@ impl Writer {
         named_expressions.clear();
     }
 
-    /// Converts `module` to a string of Rust code.
+    /// Converts `module` to Rust code.
     ///
-    /// This function’s behavior is independent of prior uses of this [`Writer`].
+    /// This function’s behavior is independent of prior uses of this [`Translator`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the module cannot be represented as Rust
-    /// or if `out` returns an error.
-    pub fn write(
-        &mut self,
-        out: &mut dyn Write,
-        module: &Module,
-        info: &ModuleInfo,
-    ) -> Result<(), Error> {
-        let top_level_items = self.translate_module(module, info)?;
-
-        let print_ctx = ra::PrintCtx {
-            config: &self.config,
-            indent: back::Level(0),
-        };
-        for item in top_level_items {
-            item.write(out, print_ctx)?;
-        }
-
-        Ok(())
-    }
-
-    /// Converts `module` to a Rust AST.
-    ///
-    /// This function’s behavior is independent of prior uses of this [`Writer`].
-    ///
-    /// (It is not public because the AST is not public)
-    pub(crate) fn translate_module(
+    /// Returns an error if the module cannot be represented as Rust.
+    pub fn translate_module(
         &mut self,
         module: &Module,
         info: &ModuleInfo,
-    ) -> Result<Vec<ra::Item>, Error> {
+    ) -> Result<crate::Rust, Error> {
         if !module.overrides.is_empty() {
             return Err(Error::Unimplemented("pipeline constants".into()));
         }
@@ -362,7 +336,10 @@ impl Writer {
             }
         }
 
-        Ok(top_level_items)
+        Ok(crate::Rust {
+            runtime_path: self.config.runtime_path.clone(),
+            top_level_items,
+        })
     }
 
     /// Translates a shader function to a pair of Rust functions.
@@ -428,7 +405,11 @@ impl Writer {
 
         if !is_public_shim {
             // Don’t lint extra parentheses and such that we might emit.
-            attributes.push(ra::Attribute::AllowFunctionBody);
+            attributes.push(ra::Attribute::AllowFunctionBody {
+                // ALLOW_UNIMPLEMENTED generates `panic!()`s which will often be
+                // followed by code that is therefore unreachable.
+                unreachable_code: self.config.flags.contains(WriterFlags::ALLOW_UNIMPLEMENTED),
+            });
         }
 
         let shader_func_name = match func_ctx.ty {

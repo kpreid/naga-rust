@@ -853,7 +853,7 @@ dependencies = [
 
 [[package]]
 name = "naga-rust-back"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.2",
