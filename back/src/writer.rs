@@ -24,9 +24,6 @@ use crate::{Config, Error};
 
 // -------------------------------------------------------------------------------------------------
 
-/// Shorthand result used internally by the backend
-type BackendResult = Result<(), Error>;
-
 /// Reserved prefix for the functions that use types chosen for the convenience of
 /// execution of the shader rather than for convenient public API.
 const FN_INTERNAL_TYPES_PREFIX: &str = "v_";
@@ -99,7 +96,7 @@ impl Writer {
         out: &mut dyn Write,
         module: &Module,
         info: &ModuleInfo,
-    ) -> BackendResult {
+    ) -> Result<(), Error> {
         let top_level_items = self.translate_module(module, info)?;
 
         let print_ctx = ra::PrintCtx {
