@@ -1,13 +1,13 @@
 //! Data types and algorithms for making decisions about how shader code is translated.
 //!
-//! This module does not perform the translation ([`crate::writer`] does), but provides
+//! This module does not perform the translation ([`crate::translator`] does), but provides
 //! data types and functions which assist in performing the translation *consistently*;
 //! that is, in a way which will not result in the generated code having a type mismatch.
 
 use crate::ra;
 
 #[cfg(doc)]
-use crate::writer::Translator;
+use crate::translator::Translator;
 
 // -------------------------------------------------------------------------------------------------
 
