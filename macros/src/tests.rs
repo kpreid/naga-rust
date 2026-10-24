@@ -6,7 +6,7 @@
 use quote::quote;
 
 use crate::ConfigAndStr;
-use crate::parsing::Parser;
+use crate::macro_util::Parser;
 
 // -------------------------------------------------------------------------------------------------
 

@@ -1,9 +1,14 @@
+use std::fs;
+use std::path::PathBuf;
+
 use proc_macro2::Delimiter;
 use proc_macro2::Group;
 use proc_macro2::Ident;
+use proc_macro2::Literal;
 use proc_macro2::Punct;
 use proc_macro2::Spacing;
 use proc_macro2::Span;
+use proc_macro2::TokenStream;
 use proc_macro2::TokenTree;
 
 // -------------------------------------------------------------------------------------------------
@@ -16,7 +21,7 @@ pub(crate) struct Parser {
 }
 
 impl Parser {
-    pub fn from_token_stream(token_stream: proc_macro2::TokenStream) -> Self {
+    pub fn from_token_stream(token_stream: TokenStream) -> Self {
         Self {
             previous_token_span: None,
             iter: token_stream.into_iter(),
@@ -166,15 +171,13 @@ impl MacroError {
         // TODO: There are no tests which demonstrate that this does its job properly.
         let Self { span, ref message } = *self;
 
-        proc_macro2::TokenStream::from_iter(
+        TokenStream::from_iter(
             simple_path_to_tokens(span, &["core", "compile_error"])
                 .chain([
                     TokenTree::Punct(Punct::new('!', Spacing::Alone)),
                     TokenTree::Group(Group::new(
                         Delimiter::Parenthesis,
-                        proc_macro2::TokenStream::from(TokenTree::Literal(
-                            proc_macro2::Literal::string(message),
-                        )),
+                        TokenStream::from(TokenTree::Literal(Literal::string(message))),
                     )),
                     TokenTree::Punct(Punct::new(';', Spacing::Alone)),
                 ])
@@ -197,4 +200,75 @@ pub(crate) fn simple_path_to_tokens(span: Span, path: &[&str]) -> impl Iterator<
             TokenTree::Ident(Ident::new(segment, span)),
         ]
     })
+}
+
+// -------------------------------------------------------------------------------------------------
+
+/// Read a file at a path which, if relative, is interpreted relative to the location of
+/// `Cargo.toml`, and generate a matching `include_str!` call to tell the compiler that
+/// the file is a dependency (since there is no proc-macro API to achieve that).
+pub(crate) fn read_file_manifest_relative(
+    path_span: Span,
+    path_text: &str,
+) -> Result<(String, TokenStream), MacroError> {
+    // We use manifest-relative paths because currently, there is no way to arrange for
+    // source-file-relative paths.
+    let mut absolute_path: PathBuf = PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo"),
+    );
+    absolute_path.push(path_text);
+
+    // If this fails then we can't generate the `include_str!` we must generate.
+    let absolute_path_str = absolute_path.to_str().ok_or_else(|| {
+        MacroError::new(
+            path_span,
+            format!(
+                "absolute path “{p:?}” must be UTF-8",
+                p = absolute_path.display()
+            ),
+        )
+    })?;
+
+    let file_contents: String = fs::read_to_string(&absolute_path).map_err(|error| {
+        MacroError::new(
+            path_span,
+            format!("failed to read “{absolute_path_str}”: {error}"),
+        )
+    })?;
+
+    // Dummy include_str! call tells the compiler that we depend on this file,
+    // which it would not notice otherwise.
+    let generated_span = Span::mixed_site(); // ideally would be def_site
+    let include_str_call = TokenStream::from_iter(
+        [
+            TokenTree::Ident(Ident::new("const", generated_span)),
+            TokenTree::Ident(Ident::new("_", generated_span)),
+            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+            TokenTree::Punct(Punct::new('&', Spacing::Alone)),
+        ]
+        .into_iter()
+        .chain(simple_path_to_tokens(
+            generated_span,
+            &["core", "primitive", "str"],
+        ))
+        .chain([TokenTree::Punct(Punct::new('=', Spacing::Alone))])
+        .chain(simple_path_to_tokens(
+            generated_span,
+            &["core", "include_str"],
+        ))
+        .chain([
+            TokenTree::Punct(Punct::new('!', Spacing::Alone)),
+            TokenTree::Group(Group::new(
+                Delimiter::Parenthesis,
+                TokenStream::from(TokenTree::Literal({
+                    let mut lit = Literal::string(absolute_path_str);
+                    lit.set_span(path_span);
+                    lit
+                })),
+            )),
+            TokenTree::Punct(Punct::new(';', Spacing::Alone)),
+        ]),
+    );
+
+    Ok((file_contents, include_str_call))
 }
