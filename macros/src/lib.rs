@@ -66,15 +66,6 @@ pub fn wgsl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     }
 }
 
-/// Returns the input unchanged.
-#[proc_macro_attribute]
-pub fn dummy_attribute(
-    _meta: proc_macro::TokenStream,
-    input: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    input
-}
-
 // -------------------------------------------------------------------------------------------------
 
 /// Implementation of the [`include_wgsl_mr!`] macro.
