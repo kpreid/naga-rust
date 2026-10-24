@@ -106,3 +106,15 @@ pub use naga_rust_macros::wgsl;
 /// Support library for the generated Rust code.
 /// Do not use this directly; its contents are not guaranteed to be stable.
 pub use naga_rust_rt as rt;
+
+#[cfg(doctest)]
+/// This is not a public item, but a test for code coverage.
+///
+/// Tests that when a macro is invoked erroneously, this produces a compilation error
+/// (though not that it is the *right* compilation error) rather than silence.
+/// Without this test, the proc-macro’s `MacroError::to_compile_error()` is never exercised.
+///
+/// ```compile_fail
+/// ::naga_rust_embed::wgsl!("xxx");
+/// ```
+pub struct ErrorCompileFailTest;
