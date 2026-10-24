@@ -9,7 +9,7 @@ use naga_rust_back::Effect;
 use naga_rust_back::Inline;
 use naga_rust_back::Rule;
 
-use crate::parsing::{MacroError, Parser, unwrap_invisible_groups};
+use crate::macro_util::{MacroError, Parser, unwrap_invisible_groups};
 
 // -------------------------------------------------------------------------------------------------
 

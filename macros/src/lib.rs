@@ -7,18 +7,9 @@
 
 use std::error::Error;
 use std::fmt;
-use std::fs;
-use std::path::PathBuf;
 
-use proc_macro2::Delimiter;
-use proc_macro2::Group;
-use proc_macro2::Ident;
-use proc_macro2::Literal;
-use proc_macro2::Punct;
-use proc_macro2::Spacing;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use proc_macro2::TokenTree;
 
 use naga_rust_back::Config;
 use naga_rust_back::naga;
@@ -28,8 +19,8 @@ use naga_rust_back::naga;
 mod parse_config;
 use parse_config::ConfigAndStr;
 
-mod parsing;
-use parsing::{MacroError, simple_path_to_tokens};
+mod macro_util;
+use macro_util::MacroError;
 
 #[cfg(test)]
 mod tests;
@@ -74,66 +65,13 @@ fn include_wgsl_mr_impl(
     path_span: Span,
     path_text: &str,
 ) -> Result<TokenStream, MacroError> {
-    // We use manifest-relative paths because currently, there is no way to arrange for
-    // source-file-relative paths.
-    let mut absolute_path: PathBuf = PathBuf::from(
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo"),
-    );
-    absolute_path.push(path_text);
-
-    // If this fails then we can't generate the `include_str!` we must generate.
-    let absolute_path_str = absolute_path.to_str().ok_or_else(|| {
-        MacroError::new(
-            path_span,
-            format!(
-                "absolute path “{p:?}” must be UTF-8",
-                p = absolute_path.display()
-            ),
-        )
-    })?;
-
-    let wgsl_source_text: String = fs::read_to_string(&absolute_path).map_err(|error| {
-        MacroError::new(
-            path_span,
-            format!("failed to read “{absolute_path_str}”: {error}"),
-        )
-    })?;
+    let (wgsl_source_text, include_str_call) =
+        macro_util::read_file_manifest_relative(path_span, path_text)?;
 
     let translated_tokens = parse_and_translate(config, path_span, &wgsl_source_text)?;
 
-    // Dummy include_str! call tells the compiler that we depend on this file,
-    // which it would not notice otherwise.
-    let generated_span = Span::mixed_site(); // ideally would be def_site
     Ok(TokenStream::from_iter(
-        [
-            TokenTree::Ident(Ident::new("const", generated_span)),
-            TokenTree::Ident(Ident::new("_", generated_span)),
-            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-            TokenTree::Punct(Punct::new('&', Spacing::Alone)),
-        ]
-        .into_iter()
-        .chain(simple_path_to_tokens(
-            generated_span,
-            &["core", "primitive", "str"],
-        ))
-        .chain([TokenTree::Punct(Punct::new('=', Spacing::Alone))])
-        .chain(simple_path_to_tokens(
-            generated_span,
-            &["core", "include_str"],
-        ))
-        .chain([
-            TokenTree::Punct(Punct::new('!', Spacing::Alone)),
-            TokenTree::Group(Group::new(
-                Delimiter::Parenthesis,
-                TokenStream::from(TokenTree::Literal({
-                    let mut lit = Literal::string(absolute_path_str);
-                    lit.set_span(path_span);
-                    lit
-                })),
-            )),
-            TokenTree::Punct(Punct::new(';', Spacing::Alone)),
-        ])
-        .chain(translated_tokens),
+        include_str_call.into_iter().chain(translated_tokens),
     ))
 }
 
